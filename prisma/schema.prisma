@@ -1,0 +1,405 @@
+// SmashBook — Prisma Schema (§6.2)
+// Xem thêm: badminton-booking-spec.md §6
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ───────────── Enums ─────────────
+enum Role {
+  CUSTOMER
+  STAFF
+  OWNER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum Sport {
+  BADMINTON
+  PICKLEBALL
+  TENNIS
+}
+
+enum VenueStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum CourtStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum PaymentMode {
+  ONLINE_FULL
+  AT_VENUE
+}
+
+enum BookingType {
+  SINGLE
+  RECURRING
+}
+
+enum BookingSource {
+  ONLINE
+  COUNTER
+  PHONE
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  NO_SHOW
+}
+
+enum ItemStatus {
+  HELD
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  VNPAY
+  MOMO
+  STRIPE
+  CASH
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum VoucherType {
+  PERCENT
+  FIXED
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_REMINDER
+  PAYMENT_FAILED
+  PROMOTION
+  SYSTEM
+}
+
+// ───────────── Auth.js (Prisma adapter) ─────────────
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Dùng cho đặt lại mật khẩu: identifier = email, token lưu dạng băm
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ───────────── Người dùng ─────────────
+model User {
+  id            String     @id @default(cuid())
+  name          String
+  email         String?    @unique
+  emailVerified DateTime?
+  phone         String?    @unique // dạng 0xxxxxxxxx
+  passwordHash  String?
+  image         String?
+  role          Role       @default(CUSTOMER)
+  status        UserStatus @default(ACTIVE)
+  loyaltyPoints Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  ownedVenues   Venue[]            @relation("VenueOwner")
+  staffOf       VenueStaff[]
+  bookings      Booking[]
+  reviews       Review[]
+  favorites     Favorite[]
+  notifications Notification[]
+  pushSubs      PushSubscription[]
+}
+
+// ───────────── Cơ sở / Sân / Giá ─────────────
+model Venue {
+  id                String      @id @default(cuid())
+  slug              String      @unique
+  name              String
+  sport             Sport       @default(BADMINTON)
+  description       String?
+  address           String
+  ward              String?
+  district          String
+  province          String      @default("Hà Nội")
+  lat               Float
+  lng               Float
+  phone             String
+  logoUrl           String?
+  coverUrl          String?
+  images            String[]
+  amenities         String[] // PARKING, SHOWER, WIFI, CANTEEN, RACKET_RENTAL, SHUTTLE_SALE, AIRCON, LOCKER
+  openMin           Int         @default(300) // 05:00
+  closeMin          Int         @default(1320) // 22:00
+  slotMinutes       Int         @default(30)
+  minBookingMin     Int         @default(60)
+  maxBookingMin     Int         @default(240)
+  advanceDays       Int         @default(30)
+  cancelBeforeHours Int         @default(4)
+  paymentMode       PaymentMode @default(ONLINE_FULL)
+  status            VenueStatus @default(PENDING)
+  priceFrom         Int         @default(0) // denormalized: giá vãng lai thấp nhất / giờ
+  ratingAvg         Float       @default(0)
+  ratingCount       Int         @default(0)
+  ownerId           String
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  owner     User          @relation("VenueOwner", fields: [ownerId], references: [id])
+  staff     VenueStaff[]
+  courts    Court[]
+  pricing   PricingRule[]
+  bookings  Booking[]
+  reviews   Review[]
+  favorites Favorite[]
+  vouchers  Voucher[]
+
+  @@index([status, district])
+  @@index([lat, lng])
+}
+
+model VenueStaff {
+  userId  String
+  venueId String
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue   Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@id([userId, venueId])
+}
+
+model Court {
+  id        String      @id @default(cuid())
+  venueId   String
+  name      String // "Sân 1"
+  sortOrder Int         @default(0)
+  surface   String?
+  status    CourtStatus @default(ACTIVE)
+
+  venue  Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  items  BookingItem[]
+  blocks CourtBlock[]
+
+  @@unique([venueId, name])
+  @@index([venueId, sortOrder])
+}
+
+model PricingRule {
+  id          String  @id @default(cuid())
+  venueId     String
+  label       String?
+  daysOfWeek  Int[] // 1=Thứ 2 ... 7=Chủ nhật
+  startMin    Int
+  endMin      Int
+  walkInPrice Int // VND / giờ — Vãng lai
+  fixedPrice  Int // VND / giờ — Cố định
+  venue       Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([venueId])
+}
+
+model CourtBlock {
+  id          String   @id @default(cuid())
+  courtId     String
+  date        DateTime @db.Date
+  startMin    Int
+  endMin      Int
+  reason      String?
+  createdById String
+  createdAt   DateTime @default(now())
+  court       Court    @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  @@index([courtId, date])
+}
+
+// ───────────── Đặt sân ─────────────
+model Booking {
+  id            String        @id @default(cuid())
+  code          String        @unique // ví dụ: SB-241002-7K2F
+  userId        String? // null = khách đặt hộ tại quầy
+  venueId       String
+  type          BookingType   @default(SINGLE)
+  source        BookingSource @default(ONLINE)
+  status        BookingStatus @default(PENDING_PAYMENT)
+  customerName  String
+  customerPhone String
+  note          String?
+  subtotal      Int
+  discount      Int           @default(0)
+  total         Int
+  voucherId     String?
+  paymentStatus PaymentStatus @default(UNPAID)
+  expiresAt     DateTime?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  recurringId   String? // Phase 2
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user     User?         @relation(fields: [userId], references: [id])
+  venue    Venue         @relation(fields: [venueId], references: [id])
+  voucher  Voucher?      @relation(fields: [voucherId], references: [id])
+  items    BookingItem[]
+  payments Payment[]
+  review   Review?
+
+  @@index([userId, createdAt])
+  @@index([venueId, status])
+  @@index([status, expiresAt])
+}
+
+model BookingItem {
+  id        String     @id @default(cuid())
+  bookingId String
+  courtId   String
+  date      DateTime   @db.Date
+  startMin  Int
+  endMin    Int
+  price     Int
+  status    ItemStatus @default(HELD)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  court   Court   @relation(fields: [courtId], references: [id])
+
+  @@index([courtId, date])
+  @@index([bookingId])
+}
+
+model Payment {
+  id            String          @id @default(cuid())
+  bookingId     String
+  provider      PaymentProvider
+  amount        Int
+  status        PaymentStatus   @default(PENDING)
+  txnRef        String          @unique // mã giao dịch gửi cổng, duy nhất mỗi lần thử
+  providerTxnNo String?
+  paidAt        DateTime?
+  rawPayload    Json?
+  createdAt     DateTime        @default(now())
+  booking       Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+// ───────────── Khuyến mãi, đánh giá, yêu thích, thông báo ─────────────
+model Voucher {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  type        VoucherType
+  value       Int // PERCENT: 1-100, FIXED: VND
+  maxDiscount Int?
+  minAmount   Int         @default(0)
+  venueId     String? // null = toàn hệ thống
+  validFrom   DateTime
+  validTo     DateTime
+  usageLimit  Int?
+  usedCount   Int         @default(0)
+  isActive    Boolean     @default(true)
+  venue       Venue?      @relation(fields: [venueId], references: [id])
+  bookings    Booking[]
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  bookingId String   @unique
+  userId    String
+  venueId   String
+  rating    Int // 1..5
+  comment   String?
+  createdAt DateTime @default(now())
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([venueId, createdAt])
+}
+
+model Favorite {
+  userId    String
+  venueId   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@id([userId, venueId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model PushSubscription {
+  id       String @id @default(cuid())
+  userId   String
+  endpoint String @unique
+  p256dh   String
+  auth     String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

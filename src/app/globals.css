@@ -2,32 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────── Design tokens (§9.2) ─────────────── */
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+  --bg: 243 245 251;
+  --surface: 255 255 255;
+  --ink: 14 29 87;
+  --muted: 90 100 130;
+  --border: 220 226 242;
+  --court: 29 61 184;
+  --racket: 255 106 61;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+.dark {
+  --bg: 11 16 32;
+  --surface: 18 26 51;
+  --ink: 232 236 250;
+  --muted: 154 165 199;
+  --border: 37 48 90;
+  --court: 47 87 204;
+  --racket: 255 106 61;
 }
 
+/* ─────────────── Base resets ─────────────── */
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  font-feature-settings: "tnum" 1;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* ─────────────── Reduced motion ─────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
   }
+}
+
+/* ─────────────── Focus ring ─────────────── */
+:focus-visible {
+  outline: 2px solid #5578DE;
+  outline-offset: 2px;
+}
+
+/* ─────────────── Scrollbar ─────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--muted));
 }

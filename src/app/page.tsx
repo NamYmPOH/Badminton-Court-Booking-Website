@@ -1,113 +1,124 @@
-import Image from "next/image";
+import Link from "next/link";
+import { BRAND } from "@/lib/config/brand";
+import { HeroSearch } from "@/components/features/home/HeroSearch";
+import { QuickFilters } from "@/components/features/home/QuickFilters";
+import { VenueCard } from "@/components/features/venues/VenueCard";
+import { getFeaturedVenues, getTopRatedVenues } from "@/services/venue.service";
 
-export default function Home() {
+export default async function HomePage() {
+  const [featuredVenues, topRatedVenues] = await Promise.all([
+    getFeaturedVenues(),
+    getTopRatedVenues(),
+  ]);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <div className="relative overflow-hidden pb-16">
+      {/* Hero section — nền court-700 với vạch sân SVG (§12.4) */}
+      <section className="relative flex min-h-[480px] items-center bg-court-700">
+        {/* SVG vạch sân — lệch phải, cắt mép, opacity 20% */}
+        <svg
+          viewBox="0 0 1340 610"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className="pointer-events-none absolute -right-20 top-1/2 h-[400px] w-auto -translate-y-1/2 opacity-20 lg:h-[500px]"
+          aria-hidden="true"
+        >
+          <rect x="0" y="0" width="1340" height="610" stroke="white" strokeWidth="6" />
+          <line x1="670" y1="0" x2="670" y2="610" stroke="white" strokeWidth="6" />
+          <line x1="0" y1="46" x2="1340" y2="46" stroke="white" strokeWidth="6" />
+          <line x1="0" y1="564" x2="1340" y2="564" stroke="white" strokeWidth="6" />
+          <line x1="472" y1="0" x2="472" y2="610" stroke="white" strokeWidth="6" />
+          <line x1="868" y1="0" x2="868" y2="610" stroke="white" strokeWidth="6" />
+          <line x1="76" y1="0" x2="76" y2="610" stroke="white" strokeWidth="6" />
+          <line x1="1264" y1="0" x2="1264" y2="610" stroke="white" strokeWidth="6" />
+          <line x1="0" y1="305" x2="472" y2="305" stroke="white" strokeWidth="6" />
+          <line x1="868" y1="305" x2="1340" y2="305" stroke="white" strokeWidth="6" />
+        </svg>
+
+        <div className="relative z-10 mx-auto w-full max-w-content px-6 py-16">
+          <h1 className="max-w-xl text-4xl font-bold leading-tight tracking-tight text-white lg:text-5xl">
+            {BRAND.tagline}
+          </h1>
+          <p className="mt-4 max-w-md text-lg text-court-200">
+            Xem lịch trống theo thời gian thực, đặt sân nhanh chóng, thanh toán an toàn.
+          </p>
+
+          {/* Ô tìm kiếm tương tác */}
+          <HeroSearch />
+
+          {/* Chip lọc nhanh */}
+          <QuickFilters />
         </div>
-      </div>
+      </section>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+      {/* Gần bạn — Danh sách VenueCard thực tế */}
+      <section className="mx-auto max-w-content px-6 py-12">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-ink">Gần bạn</h2>
+            <p className="mt-1 text-sm text-muted">
+              Các sân cầu lông được tìm thấy theo vị trí xung quanh bạn
+            </p>
+          </div>
+          <Link
+            href="/venues"
+            className="text-sm font-semibold text-court-600 hover:underline"
+          >
+            Xem tất cả →
+          </Link>
+        </div>
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {featuredVenues.map((venue) => (
+            <VenueCard key={venue.id} venue={venue} />
+          ))}
+        </div>
+      </section>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+      {/* Đánh giá cao nhất — Danh sách VenueCard thực tế */}
+      <section className="mx-auto max-w-content px-6 pb-12">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-ink">Đánh giá cao nhất</h2>
+            <p className="mt-1 text-sm text-muted">
+              Cơ sở đạt chuẩn thi đấu và được người chơi khen ngợi nhiều nhất
+            </p>
+          </div>
+          <Link
+            href="/venues?sort=rating"
+            className="text-sm font-semibold text-court-600 hover:underline"
+          >
+            Xem tất cả →
+          </Link>
+        </div>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
+        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {topRatedVenues.map((venue) => (
+            <VenueCard key={venue.id} venue={venue} />
+          ))}
+        </div>
+      </section>
 
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+      {/* Footer */}
+      <footer className="border-t border-border bg-surface">
+        <div className="mx-auto flex max-w-content flex-col gap-4 px-6 py-8 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+          <p>© 2026 {BRAND.name}. Tất cả quyền được bảo lưu.</p>
+          <div className="flex flex-wrap gap-6">
+            <Link href="/venues" className="hover:text-ink">
+              Danh sách sân
+            </Link>
+            <Link href="/venues?view=map" className="hover:text-ink">
+              Bản đồ sân
+            </Link>
+            <Link href="/account" className="hover:text-ink">
+              Hỗ trợ
+            </Link>
+            <Link href="/login" className="hover:text-ink">
+              Dành cho chủ sân
+            </Link>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }
