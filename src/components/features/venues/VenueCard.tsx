@@ -14,6 +14,7 @@ interface VenueCardProps {
 
 export function VenueCard({ venue, className = "" }: VenueCardProps) {
   const [isFavorite, setIsFavorite] = useState(false);
+  const [imgSrc, setImgSrc] = useState<string>(venue.images[0] || "/images/courts/court-1.svg");
 
   // Định dạng giờ mở/đóng (phút -> HH:MM)
   const formatHour = (min: number): string => {
@@ -28,14 +29,15 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
     >
       {/* Ảnh 16:9 */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-court-100 dark:bg-court-950">
-        {venue.images[0] ? (
+        {imgSrc ? (
           <Image
-            src={venue.images[0]}
+            src={imgSrc}
             alt={venue.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
+            onError={() => setImgSrc("/images/courts/court-1.svg")}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-4xl">

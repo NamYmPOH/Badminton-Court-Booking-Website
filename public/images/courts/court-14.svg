@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <linearGradient id="actHall-14" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#020617" />
+      <stop offset="60%" stop-color="#450a0a" />
+      <stop offset="100%" stop-color="#000000" />
+    </linearGradient>
+    <radialGradient id="smashGlow-14" cx="55%" cy="35%" r="45%">
+      <stop offset="0%" stop-color="#f87171" stop-opacity="0.45" />
+      <stop offset="70%" stop-color="#f87171" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#f87171" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#actHall-14)" />
+  <rect width="800" height="450" fill="url(#smashGlow-14)" />
+
+  <!-- Low Perspective Court Floor -->
+  <polygon points="0,220 800,220 800,450 0,450" fill="#dc2626" />
+  <polygon points="40,240 760,240 800,450 0,450" fill="#991b1b" stroke="#ffffff" stroke-width="2" />
+
+  <!-- Court lines rushing to baseline -->
+  <line x1="400" y1="240" x2="400" y2="450" stroke="#ffffff" stroke-width="3" />
+  <line x1="200" y1="240" x2="80" y2="450" stroke="#ffffff" stroke-width="2.5" />
+  <line x1="600" y1="240" x2="720" y2="450" stroke="#ffffff" stroke-width="2.5" />
+  <line x1="120" y1="360" x2="680" y2="360" stroke="#ffffff" stroke-width="2.5" />
+
+  <!-- Foreground Dramatic Badminton Net -->
+  <g>
+    <!-- Net Body Across Screen -->
+    <rect x="0" y="160" width="800" height="85" fill="#0f172a" fill-opacity="0.5" />
+    <!-- White Net Top Tape (High tension cord) -->
+    <rect x="0" y="156" width="800" height="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" />
+    <!-- Net mesh pattern lines -->
+    <line x1="0" y1="180" x2="800" y2="180" stroke="#94a3b8" stroke-width="0.8" opacity="0.6" />
+    <line x1="0" y1="200" x2="800" y2="200" stroke="#94a3b8" stroke-width="0.8" opacity="0.6" />
+    <line x1="0" y1="220" x2="800" y2="220" stroke="#94a3b8" stroke-width="0.8" opacity="0.6" />
+    <!-- Vertical mesh lines -->
+    <line x1="0" y1="168" x2="0" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="34" y1="168" x2="34" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="68" y1="168" x2="68" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="102" y1="168" x2="102" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="136" y1="168" x2="136" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="170" y1="168" x2="170" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="204" y1="168" x2="204" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="238" y1="168" x2="238" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="272" y1="168" x2="272" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="306" y1="168" x2="306" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="340" y1="168" x2="340" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="374" y1="168" x2="374" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="408" y1="168" x2="408" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="442" y1="168" x2="442" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="476" y1="168" x2="476" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="510" y1="168" x2="510" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="544" y1="168" x2="544" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="578" y1="168" x2="578" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="612" y1="168" x2="612" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="646" y1="168" x2="646" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="680" y1="168" x2="680" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="714" y1="168" x2="714" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="748" y1="168" x2="748" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="782" y1="168" x2="782" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <line x1="816" y1="168" x2="816" y2="245" stroke="#94a3b8" stroke-width="0.6" opacity="0.4" />
+    <!-- Center white cord strap -->
+    <rect x="396" y="156" width="8" height="89" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+  </g>
+
+  <!-- Smash Shuttlecock in High Speed Mid-Air Action -->
+  <g transform="translate(480, 110) rotate(-65) scale(1.4)">
+    <polygon points="-12,-8 12,-8 6,8 -6,8" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.8" />
+    <line x1="-10" y1="0" x2="10" y2="0" stroke="#ef4444" stroke-width="1.5" />
+    <circle cx="0" cy="11" r="5.5" fill="#ffffff" stroke="#94a3b8" stroke-width="0.6" />
+    <!-- Smash Glow Sparkle -->
+    <circle cx="0" cy="11" r="10" fill="#f87171" fill-opacity="0.3" />
+  </g>
+
+  <!-- Speed motion streaks behind shuttlecock -->
+  <line x1="620" y1="50" x2="520" y2="100" stroke="#f87171" stroke-width="3" stroke-linecap="round" opacity="0.8" />
+  <line x1="650" y1="40" x2="540" y2="90" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.9" />
+  <line x1="630" y1="65" x2="510" y2="115" stroke="#f87171" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+
+  <!-- Badge Top Left -->
+  <g transform="translate(25, 25)">
+    <rect width="190" height="40" rx="8" fill="#0f172a" fill-opacity="0.9" stroke="#334155" stroke-width="1.5" />
+    <circle cx="26" cy="20" r="12" fill="#fbbf24" />
+    <text x="26" y="24" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#0f172a" text-anchor="middle">14</text>
+    <text x="48" y="18" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#ffffff">SÂN THI ĐẤU 14</text>
+    <text x="48" y="32" font-family="Arial, sans-serif" font-size="9" fill="#fbbf24">TỐC ĐỘ &amp; CHÍNH XÁC</text>
+  </g>
+</svg>

@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <linearGradient id="hallGrad-6" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e17" />
+      <stop offset="40%" stop-color="#451a03" />
+      <stop offset="100%" stop-color="#05080e" />
+    </linearGradient>
+    <radialGradient id="lightGlow-6" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#fde68a" stop-opacity="0.35" />
+      <stop offset="50%" stop-color="#fde68a" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#fde68a" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="matGrad-6" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#78350f" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+    <linearGradient id="netTapeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Hall background & ambient floor -->
+  <rect width="800" height="450" fill="url(#hallGrad-6)" />
+  <rect width="800" height="450" fill="url(#lightGlow-6)" />
+
+  <!-- Overhead Truss & Spotlights -->
+  <g opacity="0.3" stroke="#94a3b8" stroke-width="1.5">
+    <line x1="80" y1="20" x2="720" y2="20" />
+    <line x1="120" y1="40" x2="680" y2="40" />
+    <line x1="80" y1="20" x2="120" y2="40" />
+    <line x1="200" y1="20" x2="220" y2="40" />
+    <line x1="400" y1="20" x2="400" y2="40" />
+    <line x1="600" y1="20" x2="580" y2="40" />
+    <line x1="720" y1="20" x2="680" y2="40" />
+  </g>
+  <!-- Spotlights beam cones -->
+  <polygon points="180,25 240,160 320,160" fill="#fde68a" opacity="0.06" />
+  <polygon points="620,25 480,160 560,160" fill="#fde68a" opacity="0.06" />
+
+  <!-- Surrounding Court Buffer Zone (Darker Mat) -->
+  <polygon points="140,150 660,150 750,430 50,430" fill="#451a03" stroke="#1e293b" stroke-width="2" />
+
+  <!-- Main Playing Court (Perspective Polygon) -->
+  <polygon points="200,165 600,165 680,410 120,410" fill="url(#matGrad-6)" stroke="#fef3c7" stroke-width="2.5" />
+
+  <!-- Inner Singles Sidelines -->
+  <line x1="230" y1="165" x2="160" y2="410" stroke="#fef3c7" stroke-width="2" stroke-opacity="0.9" />
+  <line x1="570" y1="165" x2="640" y2="410" stroke="#fef3c7" stroke-width="2" stroke-opacity="0.9" />
+
+  <!-- Service Boundaries & Center Lines -->
+  <!-- Far court back service line -->
+  <line x1="208" y1="180" x2="592" y2="180" stroke="#fef3c7" stroke-width="1.8" />
+  <!-- Far court short service line -->
+  <line x1="235" y1="230" x2="565" y2="230" stroke="#fef3c7" stroke-width="2" />
+  <!-- Center line far -->
+  <line x1="400" y1="165" x2="400" y2="230" stroke="#fef3c7" stroke-width="1.8" />
+
+  <!-- Near court short service line -->
+  <line x1="175" y1="310" x2="625" y2="310" stroke="#fef3c7" stroke-width="2" />
+  <!-- Near court back doubles service line -->
+  <line x1="135" y1="385" x2="665" y2="385" stroke="#fef3c7" stroke-width="1.8" />
+  <!-- Center line near -->
+  <line x1="400" y1="310" x2="400" y2="410" stroke="#fef3c7" stroke-width="2" />
+
+  <!-- Net System (Center of Court) -->
+  <g>
+    <!-- Left Net Post -->
+    <rect x="180" y="235" width="6" height="42" fill="#475569" rx="2" />
+    <!-- Right Net Post -->
+    <rect x="614" y="235" width="6" height="42" fill="#475569" rx="2" />
+    <!-- Net Mesh Shadow -->
+    <polygon points="186,252 614,252 614,282 186,282" fill="#000000" opacity="0.35" />
+    <!-- Net Mesh pattern simulation -->
+    <polygon points="186,242 614,242 614,272 186,272" fill="#1e293b" opacity="0.6" stroke="#475569" stroke-width="0.75" />
+    <!-- White Top Cord Tape -->
+    <polygon points="180,240 620,240 620,245 180,245" fill="url(#netTapeGrad)" stroke="#94a3b8" stroke-width="0.5" />
+    <!-- Center strap -->
+    <rect x="398" y="242" width="4" height="30" fill="#ffffff" opacity="0.8" />
+  </g>
+
+  <!-- Shuttlecock resting on near court -->
+  <g transform="translate(460, 340) rotate(-25) scale(0.9)">
+    <ellipse cx="0" cy="12" rx="14" ry="4" fill="#000000" opacity="0.35" />
+    <!-- Feathers -->
+    <polygon points="-12,-8 12,-8 6,8 -6,8" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.75" />
+    <line x1="-8" y1="-8" x2="-3" y2="8" stroke="#94a3b8" stroke-width="0.6" />
+    <line x1="0" y1="-8" x2="0" y2="8" stroke="#94a3b8" stroke-width="0.6" />
+    <line x1="8" y1="-8" x2="3" y2="8" stroke="#94a3b8" stroke-width="0.6" />
+    <line x1="-10" y1="0" x2="10" y2="0" stroke="#0284c7" stroke-width="1.2" />
+    <!-- Cork head -->
+    <circle cx="0" cy="10" r="5.5" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.5" />
+  </g>
+
+  <!-- Badminton Racket -->
+  <g transform="translate(300, 365) rotate(48) scale(0.65)">
+    <!-- Racket Head -->
+    <ellipse cx="0" cy="0" rx="34" ry="46" fill="none" stroke="#f59e0b" stroke-width="4.5" />
+    <!-- String Grid -->
+    <ellipse cx="0" cy="0" rx="32" ry="44" fill="#fde68a" fill-opacity="0.08" stroke="#ffffff" stroke-width="0.8" stroke-dasharray="2,2" />
+    <!-- Shaft & Throat -->
+    <line x1="0" y1="46" x2="0" y2="125" stroke="#94a3b8" stroke-width="4" />
+    <!-- Grip / Handle -->
+    <rect x="-4.5" y="125" width="9" height="50" fill="#f8fafc" stroke="#334155" stroke-width="1" rx="2" />
+    <rect x="-5" y="172" width="10" height="6" fill="#f59e0b" rx="1" />
+  </g>
+
+  <!-- Court Badge & Info Header -->
+  <rect x="25" y="22" width="180" height="34" rx="6" fill="#0f172a" fill-opacity="0.85" stroke="#334155" stroke-width="1" />
+  <circle cx="44" cy="39" r="10" fill="#f59e0b" />
+  <text x="44" y="43" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#0f172a" text-anchor="middle">06</text>
+  <text x="62" y="36" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#ffffff">SÂN SỐ 06</text>
+  <text x="62" y="48" font-family="Arial, sans-serif" font-size="9" fill="#f59e0b">PARQUET TIMBER</text>
+
+  <!-- Watermark badge right bottom -->
+  <g transform="translate(640, 25)">
+    <rect width="135" height="28" rx="5" fill="#0f172a" fill-opacity="0.75" stroke="#334155" stroke-width="1" />
+    <text x="67" y="18" font-family="Arial, sans-serif" font-size="10" font-weight="600" fill="#94a3b8" text-anchor="middle">TIÊU CHUẨN BWF</text>
+  </g>
+</svg>

@@ -89,7 +89,21 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
           <SlidersHorizontal size={15} className="text-court-600" />
           <span className="font-medium text-ink">Quận:</span>
         </div>
-        {["all", "Thanh Xuân", "Tây Hồ", "Nam Từ Liêm", "Long Biên", "Hà Đông"].map(
+        {[
+          "all",
+          "Cầu Giấy",
+          "Đống Đa",
+          "Thanh Xuân",
+          "Ba Đình",
+          "Tây Hồ",
+          "Nam Từ Liêm",
+          "Bắc Từ Liêm",
+          "Hà Đông",
+          "Long Biên",
+          "Hoàng Mai",
+          "Hai Bà Trưng",
+          "Hoàn Kiếm"
+        ].map(
           (d) => (
             <Link
               key={d}

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <linearGradient id="wideHall-85" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#020617" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#2e1065" />
+    </linearGradient>
+    <radialGradient id="arenaLight-85" cx="50%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#c084fc" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#c084fc" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="wideMat-85" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4c1d95" />
+      <stop offset="100%" stop-color="#6d28d9" />
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#wideHall-85)" />
+  <rect width="800" height="450" fill="url(#arenaLight-85)" />
+
+  <!-- Stadium Audience Stands / Silhouettes in Distance -->
+  <g opacity="0.25">
+    <rect x="0" y="80" width="800" height="70" fill="#1e293b" />
+    <line x1="0" y1="100" x2="800" y2="100" stroke="#334155" stroke-width="1" />
+    <line x1="0" y1="120" x2="800" y2="120" stroke="#334155" stroke-width="1" />
+    <line x1="0" y1="140" x2="800" y2="140" stroke="#334155" stroke-width="1" />
+  </g>
+
+  <!-- LED Ribbon Banner -->
+  <rect x="0" y="145" width="800" height="18" fill="#0f172a" stroke="#334155" stroke-width="1" />
+  <text x="400" y="158" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#e879f9" text-anchor="middle" letter-spacing="4">SMASHBOOK ARENA • COURT 85 • BWF CERTIFIED MAT</text>
+
+  <!-- Multi-Court Stadium Hall Floor -->
+  <!-- Center Main Feature Court -->
+  <polygon points="170,185 630,185 710,430 90,430" fill="url(#wideMat-85)" stroke="#ffffff" stroke-width="2.5" />
+  <!-- Left Side Adjacent Court Snippet -->
+  <polygon points="0,195 110,195 30,430 0,430" fill="#2e1065" opacity="0.6" stroke="#ffffff" stroke-width="1.5" />
+  <!-- Right Side Adjacent Court Snippet -->
+  <polygon points="690,195 800,195 800,430 770,430" fill="#2e1065" opacity="0.6" stroke="#ffffff" stroke-width="1.5" />
+
+  <!-- Center Court Lines -->
+  <line x1="170" y1="290" x2="630" y2="290" stroke="#ffffff" stroke-width="2" />
+  <line x1="130" y1="380" x2="670" y2="380" stroke="#ffffff" stroke-width="2" />
+  <line x1="400" y1="185" x2="400" y2="430" stroke="#ffffff" stroke-width="2" />
+
+  <!-- Net in Center Court -->
+  <polygon points="160,285 640,285 640,305 160,305" fill="#020617" fill-opacity="0.7" stroke="#64748b" stroke-width="0.8" />
+  <line x1="155" y1="285" x2="645" y2="285" stroke="#ffffff" stroke-width="2.5" />
+  <rect x="155" y="278" width="5" height="30" fill="#f59e0b" />
+  <rect x="640" y="278" width="5" height="30" fill="#f59e0b" />
+
+  <!-- Badge Top Left -->
+  <g transform="translate(30, 25)">
+    <rect width="220" height="42" rx="8" fill="#0f172a" fill-opacity="0.9" stroke="#334155" stroke-width="1.5" />
+    <circle cx="28" cy="21" r="13" fill="#6d28d9" />
+    <text x="28" y="26" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">85</text>
+    <text x="50" y="18" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#ffffff">NHÀ THI ĐẤU QUỐC GIA</text>
+    <text x="50" y="33" font-family="Arial, sans-serif" font-size="9" fill="#e879f9">SÂN SỐ 85 — OLYMPIC ARENA</text>
+  </g>
+</svg>
