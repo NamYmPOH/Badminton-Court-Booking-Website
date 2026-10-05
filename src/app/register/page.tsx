@@ -90,7 +90,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Số điện thoại <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
               <Phone size={16} className="text-muted" />
               <input
                 type="tel"
@@ -98,7 +98,7 @@ export default function RegisterPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="0912 345 678"
-                className="w-full bg-transparent text-sm text-ink outline-none"
+                className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
               />
             </div>
           </div>
@@ -107,7 +107,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Họ và tên <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
               <User size={16} className="text-muted" />
               <input
                 type="text"
@@ -115,7 +115,7 @@ export default function RegisterPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Nguyễn Văn A"
-                className="w-full bg-transparent text-sm text-ink outline-none"
+                className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
               />
             </div>
           </div>
@@ -124,14 +124,14 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Email (tuỳ chọn để khôi phục mật khẩu)
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
               <Mail size={16} className="text-muted" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="email@example.com"
-                className="w-full bg-transparent text-sm text-ink outline-none"
+                className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
               />
             </div>
           </div>
@@ -140,7 +140,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Mật khẩu <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
               <Lock size={16} className="text-muted" />
               <input
                 type="password"
@@ -148,7 +148,7 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Tối thiểu 8 ký tự, có chữ và số"
-                className="w-full bg-transparent text-sm text-ink outline-none"
+                className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
               />
             </div>
 
@@ -184,7 +184,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Nhập lại mật khẩu <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
               <Lock size={16} className="text-muted" />
               <input
                 type="password"
@@ -192,7 +192,7 @@ export default function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Nhập lại mật khẩu"
-                className="w-full bg-transparent text-sm text-ink outline-none"
+                className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
               />
             </div>
           </div>

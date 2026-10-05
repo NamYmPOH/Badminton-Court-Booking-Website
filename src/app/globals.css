@@ -17,8 +17,8 @@
   --bg: 11 16 32;
   --surface: 18 26 51;
   --ink: 232 236 250;
-  --muted: 154 165 199;
-  --border: 37 48 90;
+  --muted: 165 178 212;
+  --border: 45 58 100;
   --court: 47 87 204;
   --racket: 255 106 61;
 }
@@ -44,6 +44,26 @@ body {
 :focus-visible {
   outline: 2px solid #5578DE;
   outline-offset: 2px;
+}
+
+/* ─────────────── Form inputs — luôn nền trắng + chữ đen ─────────────── */
+input,
+textarea,
+select {
+  background: #ffffff !important;
+  color: #1a1a1a !important;
+  caret-color: #1D3DB8;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6b7280 !important;
+  opacity: 1;
+}
+
+select option {
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 /* ─────────────── Scrollbar ─────────────── */

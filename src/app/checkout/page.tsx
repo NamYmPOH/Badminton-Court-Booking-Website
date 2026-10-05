@@ -104,7 +104,7 @@ function CheckoutContent() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="mt-1 w-full rounded-control border border-border bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/40"
+                  className="mt-1 w-full rounded-control border border-border bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/60 placeholder:text-muted/70"
                   placeholder="Nhập họ và tên của bạn"
                 />
               </div>
@@ -119,7 +119,7 @@ function CheckoutContent() {
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="mt-1 w-full rounded-control border border-border bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/40"
+                  className="mt-1 w-full rounded-control border border-border bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/60 placeholder:text-muted/70"
                   placeholder="0912 345 678"
                 />
               </div>
@@ -132,7 +132,7 @@ function CheckoutContent() {
                   rows={2}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  className="mt-1 w-full rounded-control border border-border bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/40"
+                  className="mt-1 w-full rounded-control border border-border bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/60 placeholder:text-muted/70"
                   placeholder="Ví dụ: Cần mượn thêm vợt, cần bật thêm đèn..."
                 />
               </div>
@@ -143,14 +143,14 @@ function CheckoutContent() {
           <div className="rounded-card border border-border bg-surface p-6 shadow-sm">
             <h2 className="text-base font-bold text-ink">Mã ưu đãi / Voucher</h2>
             <form onSubmit={handleApplyVoucher} className="mt-3 flex gap-2">
-              <div className="flex flex-1 items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+              <div className="flex flex-1 items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
                 <Tag size={16} className="text-muted" />
                 <input
                   type="text"
                   value={voucherCode}
                   onChange={(e) => { setVoucherCode(e.target.value); setAppliedCode(""); }}
                   placeholder="Nhập mã (thử: CHAOBAN10 hoặc GIAM20K)"
-                  className="w-full bg-transparent uppercase outline-none text-ink text-xs sm:text-sm"
+                  className="w-full bg-transparent uppercase outline-none text-ink text-xs sm:text-sm placeholder:text-muted/70"
                 />
               </div>
               <button

@@ -96,7 +96,7 @@ export default function LoginPage() {
             <label className="block text-xs font-medium text-ink">
               {tab === "phone" ? "Số điện thoại" : "Địa chỉ Email"}
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
               {tab === "phone" ? (
                 <Phone size={16} className="text-muted" />
               ) : (
@@ -110,7 +110,7 @@ export default function LoginPage() {
                 placeholder={
                   tab === "phone" ? "0912 345 678" : "ten@gmail.com"
                 }
-                className="w-full bg-transparent text-sm text-ink outline-none"
+                className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
               />
             </div>
           </div>
@@ -131,7 +131,7 @@ export default function LoginPage() {
                 Quên mật khẩu?
               </a>
             </div>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm dark:bg-court-950/40">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
               <Lock size={16} className="text-muted" />
               <input
                 type="password"
@@ -139,7 +139,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-transparent text-sm text-ink outline-none"
+                className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
               />
             </div>
           </div>

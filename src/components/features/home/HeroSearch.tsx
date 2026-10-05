@@ -28,19 +28,19 @@ export function HeroSearch() {
       className="mt-8 flex max-w-3xl flex-col gap-3 rounded-card bg-surface/95 p-3.5 shadow-lg backdrop-blur dark:bg-surface/95 sm:flex-row sm:items-center"
     >
       {/* Ô tìm kiếm khu vực / tên sân */}
-      <div className="flex flex-1 items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm text-ink dark:bg-court-950/40">
+      <div className="flex flex-1 items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60">
         <MapPin size={18} className="shrink-0 text-court-500" />
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Khu vực / tên sân (ví dụ: Thanh Xuân)"
-          className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+          className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
         />
       </div>
 
       {/* Chọn quận / huyện nhanh */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm text-ink dark:bg-court-950/40 sm:w-40">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60 sm:w-40">
         <select
           value={district}
           onChange={(e) => setDistrict(e.target.value)}
@@ -58,7 +58,7 @@ export function HeroSearch() {
       </div>
 
       {/* Chọn ngày */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm text-ink dark:bg-court-950/40 sm:w-36">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60 sm:w-36">
         <Calendar size={18} className="shrink-0 text-court-500" />
         <select
           value={date}
@@ -72,7 +72,7 @@ export function HeroSearch() {
       </div>
 
       {/* Chọn giờ bắt đầu */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm text-ink dark:bg-court-950/40 sm:w-32">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60 sm:w-32">
         <Clock size={18} className="shrink-0 text-court-500" />
         <select
           value={fromHour}

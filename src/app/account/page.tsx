@@ -106,7 +106,7 @@ export default function AccountPage() {
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
                 placeholder="vidu@gmail.com"
-                className="w-full rounded-control border border-border bg-white px-3.5 py-2 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/50"
+                className="w-full rounded-control border border-border bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-court-600 dark:bg-court-950/60 placeholder:text-muted/70"
               />
               <div className="flex justify-end gap-2">
                 <button
