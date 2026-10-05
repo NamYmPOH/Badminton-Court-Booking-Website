@@ -4,23 +4,35 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BRAND } from "@/lib/config/brand";
-import { ArrowLeft, Phone, Mail, Lock } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { ArrowLeft, Phone, Mail, Lock, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [tab, setTab] = useState<"phone" | "email">("phone");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Giả lập đăng nhập thành công sau 600ms
-    setTimeout(() => {
-      setIsLoading(false);
+    setErrorMsg("");
+
+    const res = await login({ identifier, password });
+    setIsLoading(false);
+
+    if (res.success) {
+      toast.success("Đăng nhập thành công!");
       router.push("/");
-    }, 600);
+      router.refresh();
+    } else {
+      setErrorMsg(res.error || "Đăng nhập thất bại");
+      toast.error(res.error || "Đăng nhập thất bại");
+    }
   };
 
   return (
@@ -70,6 +82,13 @@ export default function LoginPage() {
             Email
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="mt-4 flex items-center gap-2 rounded-control border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         {/* Form đăng nhập */}
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">

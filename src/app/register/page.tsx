@@ -4,16 +4,20 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BRAND } from "@/lib/config/brand";
-import { ArrowLeft, Phone, User, Mail, Lock, Check } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { ArrowLeft, Phone, User, Mail, Lock, Check, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { register: registerUser } = useAuth();
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   // Đo độ mạnh mật khẩu (≥ 8 ký tự, có cả chữ và số per D-07)
   const hasMinLen = password.length >= 8;
@@ -21,23 +25,36 @@ export default function RegisterPage() {
   const hasNumber = /[0-9]/.test(password);
   const isPasswordStrong = hasMinLen && hasLetter && hasNumber;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg("");
+
     if (password !== confirmPassword) {
-      alert("Mật khẩu nhập lại không khớp!");
+      setErrorMsg("Mật khẩu nhập lại không khớp!");
       return;
     }
     if (!isPasswordStrong) {
-      alert("Mật khẩu phải từ 8 ký tự trở lên và bao gồm cả chữ và số.");
+      setErrorMsg("Mật khẩu phải từ 8 ký tự trở lên và bao gồm cả chữ và số.");
       return;
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      alert("Đăng ký tài khoản thành công! Bạn có thể sử dụng số điện thoại để đăng nhập.");
-      router.push("/login");
-    }, 600);
+    const res = await registerUser({
+      name,
+      phone,
+      password,
+      email: email.trim() || undefined,
+    });
+    setIsLoading(false);
+
+    if (res.success) {
+      toast.success("Đăng ký tài khoản thành công! Bạn đã được đăng nhập.");
+      router.push("/");
+      router.refresh();
+    } else {
+      setErrorMsg(res.error || "Đăng ký thất bại");
+      toast.error(res.error || "Đăng ký thất bại");
+    }
   };
 
   return (
@@ -60,6 +77,13 @@ export default function RegisterPage() {
             Tham gia cộng đồng cầu lông phong trào lớn nhất
           </p>
         </div>
+
+        {errorMsg && (
+          <div className="mt-4 flex items-center gap-2 rounded-control border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>

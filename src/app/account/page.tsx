@@ -1,22 +1,62 @@
 "use client";
 
 import Link from "next/link";
-import { User, Mail, Phone, Calendar, Heart, Bell, Shield, LogOut, AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { User, Mail, Phone, Calendar, Heart, Bell, Shield, LogOut, AlertCircle, LogIn } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
 
 export default function AccountPage() {
+  const router = useRouter();
+  const { user, isLoading, logout } = useAuth();
   const [emailLinked, setEmailLinked] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [showEmailModal, setShowEmailModal] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push("/login");
+    }
+  }, [isLoading, user, router]);
 
   const handleLinkEmail = (e: React.FormEvent) => {
     e.preventDefault();
     if (emailInput.trim()) {
       setEmailLinked(true);
       setShowEmailModal(false);
-      alert("Đã liên kết email thành công! Bạn có thể dùng email này để đăng nhập và khôi phục mật khẩu.");
+      toast.success("Đã liên kết email thành công!");
     }
   };
+
+  const handleLogout = async () => {
+    await logout();
+    toast.success("Đã đăng xuất tài khoản thành công.");
+    router.push("/");
+  };
+
+  if (isLoading) {
+    return (
+      <div className="mx-auto flex min-h-[50vh] max-w-2xl items-center justify-center">
+        <p className="text-sm text-muted">Đang tải thông tin tài khoản...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="mx-auto flex min-h-[50vh] max-w-2xl flex-col items-center justify-center gap-4">
+        <p className="text-sm text-muted">Vui lòng đăng nhập để xem thông tin tài khoản.</p>
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-2 rounded-control bg-court-600 px-4 py-2 text-xs font-bold text-white hover:bg-court-700"
+        >
+          <LogIn size={16} />
+          Đăng nhập ngay
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
@@ -95,8 +135,10 @@ export default function AccountPage() {
             <User size={28} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-ink">Nguyễn Văn Nam</h2>
-            <p className="text-xs text-muted">Hội viên Bạc • 120 điểm thưởng</p>
+            <h2 className="text-lg font-bold text-ink">{user.name}</h2>
+            <p className="text-xs text-muted">
+              {user.role === "ADMIN" ? "Quản trị viên" : user.role === "OWNER" ? "Chủ sân" : "Hội viên"} • {user.loyaltyPoints} điểm thưởng
+            </p>
           </div>
         </div>
 
@@ -106,7 +148,7 @@ export default function AccountPage() {
               <Phone size={14} className="text-court-500" />
               Số điện thoại
             </span>
-            <span className="font-semibold text-ink">0912 345 678</span>
+            <span className="font-semibold text-ink">{user.phone}</span>
           </div>
 
           <div className="flex items-center justify-between pt-3">
@@ -115,7 +157,7 @@ export default function AccountPage() {
               Email
             </span>
             <span className="font-semibold text-ink">
-              {emailLinked ? emailInput : "Chưa liên kết"}
+              {user.email || (emailLinked ? emailInput : "Chưa liên kết")}
             </span>
           </div>
         </div>
@@ -161,7 +203,7 @@ export default function AccountPage() {
       <div className="mt-8 text-center">
         <button
           type="button"
-          onClick={() => alert("Đã đăng xuất tài khoản thành công.")}
+          onClick={handleLogout}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:underline"
         >
           <LogOut size={14} />

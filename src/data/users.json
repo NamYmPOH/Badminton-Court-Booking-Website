@@ -1,0 +1,28 @@
+[
+  {
+    "id": "user-1791225275232-huszo",
+    "name": "Nguyễn Văn Đạt",
+    "phone": "0988776655",
+    "email": "dat.test@gmail.com",
+    "passwordHash": "$2b$10$9W2Z/HqNChkKanOHPF877.exd9PKJG1hhQJvxnnsevtAytzZIeAnq",
+    "role": "CUSTOMER",
+    "status": "ACTIVE",
+    "loyaltyPoints": 0,
+    "image": null,
+    "createdAt": "2026-10-05T18:34:35.232Z",
+    "updatedAt": "2026-10-05T18:34:35.232Z"
+  },
+  {
+    "id": "user-1791225399856-wb1u0",
+    "name": "DANG PHUONG NAM",
+    "phone": "0358388901",
+    "email": "namdangphuong308205@gmail.com",
+    "passwordHash": "$2b$10$VdPUbFtRECE5JksMH4yIi.AEdldWtl58ppN7Einkyu5/U4Afx95mu",
+    "role": "CUSTOMER",
+    "status": "ACTIVE",
+    "loyaltyPoints": 0,
+    "image": null,
+    "createdAt": "2026-10-05T18:36:39.856Z",
+    "updatedAt": "2026-10-05T18:36:39.856Z"
+  }
+]

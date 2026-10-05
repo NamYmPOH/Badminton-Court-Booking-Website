@@ -1,17 +1,46 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { MapPin, Bell, User, LogIn } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { MapPin, Bell, User, LogIn, LogOut, Calendar, ChevronDown } from "lucide-react";
 import { BRAND } from "@/lib/config/brand";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
-// TODO(decision): Session sẽ được truyền vào sau M2 khi có Auth.js
 interface NavbarProps {
   className?: string;
 }
 
 export function Navbar({ className }: NavbarProps) {
+  const router = useRouter();
+  const { user, isLoading, logout } = useAuth();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Đóng dropdown khi click ra ngoài
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    setDropdownOpen(false);
+    await logout();
+    toast.success("Đã đăng xuất thành công");
+    router.push("/");
+  };
+
   return (
     <header
       className={cn(
@@ -26,7 +55,7 @@ export function Navbar({ className }: NavbarProps) {
             href="/"
             className="flex items-center gap-2 text-lg font-bold text-court-600"
           >
-            {/* Biểu tượng cầu lông đơn giản bằng emoji — sẽ thay bằng SVG logo sau */}
+            {/* Biểu tượng cầu lông */}
             <span className="text-2xl">🏸</span>
             <span>{BRAND.name}</span>
           </Link>
@@ -53,22 +82,80 @@ export function Navbar({ className }: NavbarProps) {
             <Bell size={20} />
           </Link>
 
-          {/* Chưa có session → hiện nút đăng nhập/đăng ký. Sau M2 sẽ kiểm tra session */}
-          <div className="ml-2 flex items-center gap-2">
-            <Link
-              href="/login"
-              className="inline-flex h-10 items-center gap-2 rounded-control px-4 text-sm font-medium text-muted transition-colors hover:bg-court-50 dark:hover:bg-surface"
-            >
-              <LogIn size={16} />
-              Đăng nhập
-            </Link>
-            <Link
-              href="/register"
-              className="inline-flex h-10 items-center rounded-control bg-court-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-court-700"
-            >
-              Đăng ký
-            </Link>
-          </div>
+          {/* Trạng thái xác thực */}
+          {!isLoading && user ? (
+            <div className="relative ml-2" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-court-50 dark:hover:bg-surface/80"
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-court-600 text-xs font-bold text-white">
+                  {user.name.charAt(0).toUpperCase()}
+                </div>
+                <span className="max-w-[120px] truncate">{user.name}</span>
+                <ChevronDown size={14} className="text-muted" />
+              </button>
+
+              {/* Menu thả xuống */}
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 rounded-card border border-border bg-surface p-2 shadow-lg animate-in fade-in zoom-in-95">
+                  <div className="border-b border-border/60 px-3 py-2">
+                    <p className="text-xs font-bold text-ink truncate">{user.name}</p>
+                    <p className="text-[11px] text-muted truncate">
+                      {user.phone || user.email}
+                    </p>
+                  </div>
+
+                  <div className="py-1">
+                    <Link
+                      href="/account"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-50 hover:text-ink dark:hover:bg-court-950/40"
+                    >
+                      <User size={15} />
+                      Tài khoản của tôi
+                    </Link>
+                    <Link
+                      href="/bookings"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-50 hover:text-ink dark:hover:bg-court-950/40"
+                    >
+                      <Calendar size={15} />
+                      Lịch đặt của tôi
+                    </Link>
+                  </div>
+
+                  <div className="border-t border-border/60 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                    >
+                      <LogOut size={15} />
+                      Đăng xuất
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="ml-2 flex items-center gap-2">
+              <Link
+                href="/login"
+                className="inline-flex h-10 items-center gap-2 rounded-control px-4 text-sm font-medium text-muted transition-colors hover:bg-court-50 dark:hover:bg-surface"
+              >
+                <LogIn size={16} />
+                Đăng nhập
+              </Link>
+              <Link
+                href="/register"
+                className="inline-flex h-10 items-center rounded-control bg-court-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-court-700"
+              >
+                Đăng ký
+              </Link>
+            </div>
+          )}
         </div>
       </nav>
     </header>

@@ -13,15 +13,18 @@ interface Tab {
   match?: string;
 }
 
-const tabs: Tab[] = [
-  { href: "/", label: "Trang chủ", icon: Home },
-  { href: "/venues?view=map", label: "Bản đồ", icon: Map, match: "/venues" },
-  { href: "/bookings", label: "Lịch của tôi", icon: CalendarDays },
-  { href: "/account", label: "Tài khoản", icon: UserCircle },
-];
+import { useAuth } from "@/context/AuthContext";
 
 export function MobileTabBar() {
   const pathname = usePathname();
+  const { user } = useAuth();
+
+  const mobileTabs = [
+    { href: "/", label: "Trang chủ", icon: Home },
+    { href: "/venues?view=map", label: "Bản đồ", icon: Map, match: "/venues" },
+    { href: user ? "/bookings" : "/login", label: "Lịch của tôi", icon: CalendarDays },
+    { href: user ? "/account" : "/login", label: user ? "Tài khoản" : "Đăng nhập", icon: UserCircle },
+  ];
 
   return (
     <nav
@@ -29,7 +32,7 @@ export function MobileTabBar() {
       aria-label="Điều hướng chính"
     >
       <div className="mx-auto flex h-16 max-w-lg items-center justify-around">
-        {tabs.map((tab) => {
+        {mobileTabs.map((tab) => {
           const isActive =
             pathname === tab.href ||
             (tab.match && pathname.startsWith(tab.match));
