@@ -1,54 +1,62 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatVND } from "@/lib/utils";
 import { ArrowLeft, Clock, ShieldCheck, Tag } from "lucide-react";
 
+import { MOCK_VENUES } from "@/services/venue.service";
+import { parseSelection, formatHour, voucherDiscount } from "@/lib/booking";
+
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const venueName = searchParams.get("venueName") || "Sân Cầu Lông Thanh Xuân Xanh";
-  const date = searchParams.get("date") || "2026-10-05";
-  const totalParam = searchParams.get("total");
-  const baseTotal = totalParam ? parseInt(totalParam, 10) : 165000;
-
-  // Form states
-  const [name, setName] = useState("Nguyễn Văn Nam");
-  const [phone, setPhone] = useState("0912345678");
+  const [ready, setReady] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"VNPAY" | "AT_VENUE">("VNPAY");
   const [voucherCode, setVoucherCode] = useState("");
-  const [discount, setDiscount] = useState(0);
-  const [voucherApplied, setVoucherApplied] = useState(false);
-
+  const [appliedCode, setAppliedCode] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => { setReady(true); }, []);
+  const selection = ready ? parseSelection(MOCK_VENUES, searchParams) : null;
+  if (!ready) return <p className="p-8">Đang tải thông tin đặt sân...</p>;
+  if (!selection) return <div className="mx-auto max-w-xl p-8"><h1 className="text-xl font-bold">Lựa chọn sân không hợp lệ hoặc đã hết hạn</h1><p className="my-4">Vui lòng chọn lại sân, ngày và các ô giờ liên tiếp.</p><Link href="/venues" className="text-court-600 underline">Chọn sân</Link></div>;
+  const { venue, date, slots, total: baseTotal } = selection;
+  const venueName = venue.name;
+  const paymentMethod = venue.paymentMode === "AT_VENUE" ? "AT_VENUE" : "VNPAY";
+  const discount = voucherDiscount(appliedCode, baseTotal);
+  const voucherApplied = !!appliedCode;
+  const finalTotal = baseTotal - discount;
   const handleApplyVoucher = (e: React.FormEvent) => {
     e.preventDefault();
-    if (voucherCode.toUpperCase() === "CHAOBAN10") {
-      const disc = Math.round(baseTotal * 0.1);
-      setDiscount(disc);
-      setVoucherApplied(true);
-    } else if (voucherCode.toUpperCase() === "GIAM20K") {
-      setDiscount(20000);
-      setVoucherApplied(true);
-    } else {
-      alert("Mã ưu đãi không hợp lệ hoặc đã hết lượt.");
+    const code = voucherCode.trim().toUpperCase();
+    if (!["CHAOBAN10", "GIAM20K"].includes(code)) {
+      setAppliedCode(""); setError("Mã ưu đãi không hợp lệ hoặc đã hết lượt."); return;
     }
+    setAppliedCode(code); setError("");
   };
-
-  const finalTotal = Math.max(0, baseTotal - discount);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Tạo mã đặt sân ngẫu nhiên theo chuẩn SB-yymmdd-XXXX
-    const randomCode = `SB-261005-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-    router.push(
-      `/payment/result?code=${randomCode}&venue=${encodeURIComponent(
-        venueName
-      )}&total=${finalTotal}&method=${paymentMethod}`
-    );
+    if (submitting) return;
+    if (!name.trim() || !/^(0[35789]\d{8}|\+84[35789]\d{8})$/.test(phone.replace(/\s/g, ""))) {
+      setError("Nhập họ tên và số điện thoại Việt Nam hợp lệ."); return;
+    }
+    if (!parseSelection(MOCK_VENUES, searchParams)) {
+      setError("Lựa chọn đã hết hạn. Vui lòng chọn lại giờ chơi."); return;
+    }
+    setSubmitting(true);
+    try {
+      const id = crypto.randomUUID();
+      const code = "DEMO-" + date.replace(/-/g, "").slice(2) + "-" + id.slice(0, 8).toUpperCase();
+      sessionStorage.setItem("smashbook-demo-" + id, JSON.stringify({ code, venueId: venue.id, date, slots, voucher: appliedCode, method: paymentMethod, createdAt: new Date().toISOString() }));
+      router.push("/payment/result?demo=" + id);
+    } catch {
+      setSubmitting(false); setError("Không lưu được kết quả thử nghiệm. Vui lòng cho phép lưu trữ trong trình duyệt rồi thử lại.");
+    }
   };
 
   return (
@@ -56,7 +64,7 @@ function CheckoutContent() {
       {/* Nút quay lại */}
       <div className="mb-6">
         <Link
-          href="/venues"
+          href={`/venues/${venue.slug}/book`}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-ink"
         >
           <ArrowLeft size={16} />
@@ -64,6 +72,8 @@ function CheckoutContent() {
         </Link>
       </div>
 
+      <p className="mb-6 rounded-card bg-amber-50 p-4 text-sm text-amber-900">Bản thử nghiệm: chưa giữ chỗ hoặc thu tiền. Thông tin này dùng để xem trước lượt đặt sân.</p>
+      {error && <p role="alert" className="mb-4 text-sm text-rose-600">{error}</p>}
       {/* Thanh 3 bước theo §9.5 */}
       <div className="mb-8 flex items-center justify-center gap-2 text-xs font-semibold sm:gap-4 sm:text-sm">
         <span className="text-muted">① Chọn sân và giờ</span>
@@ -80,15 +90,16 @@ function CheckoutContent() {
           <div className="rounded-card border border-border bg-surface p-6 shadow-sm">
             <h2 className="text-base font-bold text-ink">Thông tin người đặt</h2>
             <p className="mt-1 text-xs text-muted">
-              Thông tin sẽ được dùng để xác nhận tại quầy và nhận thông báo lịch thi đấu
+              Nhập thông tin để kiểm tra biểu mẫu đặt sân.
             </p>
 
             <form onSubmit={handleSubmit} id="checkout-form" className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-ink">
+                <label htmlFor="booking-name" className="block text-xs font-medium text-ink">
                   Họ và tên <span className="text-rose-500">*</span>
                 </label>
                 <input
+                  id="booking-name"
                   type="text"
                   required
                   value={name}
@@ -99,10 +110,11 @@ function CheckoutContent() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-ink">
+                <label htmlFor="booking-phone" className="block text-xs font-medium text-ink">
                   Số điện thoại <span className="text-rose-500">*</span>
                 </label>
                 <input
+                  id="booking-phone"
                   type="tel"
                   required
                   value={phone}
@@ -113,10 +125,10 @@ function CheckoutContent() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-ink">
+                <label htmlFor="booking-note" className="block text-xs font-medium text-ink">
                   Ghi chú cho cơ sở (tuỳ chọn)
                 </label>
-                <textarea
+                <textarea id="booking-note"
                   rows={2}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
@@ -136,7 +148,7 @@ function CheckoutContent() {
                 <input
                   type="text"
                   value={voucherCode}
-                  onChange={(e) => setVoucherCode(e.target.value)}
+                  onChange={(e) => { setVoucherCode(e.target.value); setAppliedCode(""); }}
                   placeholder="Nhập mã (thử: CHAOBAN10 hoặc GIAM20K)"
                   className="w-full bg-transparent uppercase outline-none text-ink text-xs sm:text-sm"
                 />
@@ -158,43 +170,8 @@ function CheckoutContent() {
           {/* Phương thức thanh toán */}
           <div className="rounded-card border border-border bg-surface p-6 shadow-sm">
             <h2 className="text-base font-bold text-ink">Phương thức thanh toán</h2>
-            <div className="mt-4 space-y-3">
-              <label className="flex cursor-pointer items-start gap-3 rounded-control border border-border p-3.5 transition hover:bg-court-50/50">
-                <input
-                  type="radio"
-                  name="payment"
-                  checked={paymentMethod === "VNPAY"}
-                  onChange={() => setPaymentMethod("VNPAY")}
-                  className="mt-1"
-                />
-                <div>
-                  <span className="text-sm font-bold text-ink">
-                    Cổng VNPAY (Quét mã QR / Thẻ ATM & Tài khoản ngân hàng)
-                  </span>
-                  <p className="mt-0.5 text-xs text-muted">
-                    Thanh toán bảo mật tức thì, xác nhận ngay không cần gọi điện
-                  </p>
-                </div>
-              </label>
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-control border border-border p-3.5 transition hover:bg-court-50/50">
-                <input
-                  type="radio"
-                  name="payment"
-                  checked={paymentMethod === "AT_VENUE"}
-                  onChange={() => setPaymentMethod("AT_VENUE")}
-                  className="mt-1"
-                />
-                <div>
-                  <span className="text-sm font-bold text-ink">
-                    Trả tiền mặt tại sân (Nếu cơ sở hỗ trợ)
-                  </span>
-                  <p className="mt-0.5 text-xs text-muted">
-                    Thanh toán trực tiếp cho nhân viên khi đến nhận sân
-                  </p>
-                </div>
-              </label>
-            </div>
+            <p className="mt-4 text-sm text-ink">{paymentMethod === "AT_VENUE" ? "Trả tiền tại sân" : "VNPAY"}</p>
+            <p className="mt-2 text-xs text-muted">Phương thức theo chính sách cơ sở. Chưa thực hiện giao dịch trong bản thử nghiệm.</p>
           </div>
         </div>
 
@@ -206,7 +183,7 @@ function CheckoutContent() {
             <div className="mt-4 space-y-2 border-b border-border/80 pb-4 text-xs">
               <div className="font-bold text-ink text-sm">{venueName}</div>
               <div className="text-muted">Ngày thi đấu: {date}</div>
-              <div className="text-muted">Khung giờ: 18:00 – 19:30 (Sân 1)</div>
+              <div className="text-muted">Khung giờ: {formatHour(slots[0].startMin)} – {formatHour(slots[slots.length - 1].endMin)} ({slots[0].courtName})</div>
             </div>
 
             <div className="mt-4 space-y-2 text-xs">
@@ -231,21 +208,22 @@ function CheckoutContent() {
             {/* Đồng hồ đếm ngược giữ chỗ */}
             <div className="mt-4 flex items-center justify-center gap-1.5 rounded-control bg-amber-50 p-2.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
               <Clock size={15} />
-              <span>Thời gian giữ chỗ còn: 09:45</span>
+              <span>Chưa giữ chỗ — bản thử nghiệm</span>
             </div>
 
             {/* Nút gửi form */}
             <button
               type="submit"
               form="checkout-form"
+              disabled={submitting}
               className="mt-6 flex w-full items-center justify-center rounded-control bg-racket-500 py-3 text-center text-sm font-bold text-court-900 transition hover:bg-racket-600"
             >
-              Thanh toán {formatVND(finalTotal)}
+              {submitting ? "Đang xử lý..." : `Xem kết quả thử nghiệm · ${formatVND(finalTotal)}`}
             </button>
 
             <div className="mt-3 flex items-center justify-center gap-1 text-[11px] text-muted">
               <ShieldCheck size={14} className="text-emerald-600" />
-              <span>Giao dịch được mã hoá bảo mật 256-bit</span>
+              <span>Không thu tiền trong bản thử nghiệm</span>
             </div>
           </div>
         </div>

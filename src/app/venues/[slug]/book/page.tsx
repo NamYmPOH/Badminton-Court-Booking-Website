@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Calendar as CalendarIcon, Clock } from "lucide-react";
+import { useRouter, notFound } from "next/navigation";
+import { ArrowLeft, Check } from "lucide-react";
 import { MOCK_VENUES } from "@/services/venue.service";
 import { formatVND } from "@/lib/utils";
+
+import { bookingDates, formatHour, isDemoBooked, isPastSlot, selectionError, slotPrice, parseSelection, type SelectedSlot } from "@/lib/booking";
 
 interface BookPageProps {
   params: {
@@ -13,99 +15,53 @@ interface BookPageProps {
   };
 }
 
-interface SelectedSlot {
-  courtId: string;
-  courtName: string;
-  startMin: number;
-  endMin: number;
-  price: number;
-}
 
 export default function CourtBookingGridPage({ params }: BookPageProps) {
   const router = useRouter();
-  const venue = MOCK_VENUES.find((v) => v.slug === params.slug) || MOCK_VENUES[0];
+  const venue = MOCK_VENUES.find((v) => v.slug === params.slug);
 
-  // Ngày được chọn (mặc định hôm nay)
-  const [selectedDate, setSelectedDate] = useState("2026-10-05");
+  const [now, setNow] = useState<Date | null>(null);
+  const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([]);
-
-  // Sinh các dải ngày 7 ngày tới
-  const dates = [
-    { label: "Hôm nay", value: "2026-10-05", sub: "05/10" },
-    { label: "Ngày mai", value: "2026-10-06", sub: "06/10" },
-    { label: "Thứ 4", value: "2026-10-07", sub: "07/10" },
-    { label: "Thứ 5", value: "2026-10-08", sub: "08/10" },
-    { label: "Thứ 6", value: "2026-10-09", sub: "09/10" },
-    { label: "Thứ 7", value: "2026-10-10", sub: "10/10" },
-    { label: "Chủ nhật", value: "2026-10-11", sub: "11/10" },
-  ];
-
-  // Danh sách các khung giờ 30 phút từ 17:00 đến 22:00
-  const timeSlots = [
-    { startMin: 1020, endMin: 1050, label: "17:00" },
-    { startMin: 1050, endMin: 1080, label: "17:30" },
-    { startMin: 1080, endMin: 1110, label: "18:00" },
-    { startMin: 1110, endMin: 1140, label: "18:30" },
-    { startMin: 1140, endMin: 1170, label: "19:00" },
-    { startMin: 1170, endMin: 1200, label: "19:30" },
-    { startMin: 1200, endMin: 1230, label: "20:00" },
-    { startMin: 1230, endMin: 1260, label: "20:30" },
-    { startMin: 1260, endMin: 1290, label: "21:00" },
-    { startMin: 1290, endMin: 1320, label: "21:30" },
-  ];
-
-  // Một số ô giả lập đã có người đặt trước
-  const bookedKeySet = useMemo(() => {
-    return new Set([
-      "court-1-1-1080",
-      "court-1-1-1110",
-      "court-1-2-1140",
-      "court-1-3-1200",
-    ]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setNow(new Date());
+    setSelectedDate(bookingDates()[0].value);
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
   }, []);
-
+  const dates = now ? bookingDates(now) : [];
+  const timeSlots = venue ? Array.from({ length: Math.floor((venue.closeMin - venue.openMin) / 30) }, (_, i) => {
+    const startMin = venue.openMin + i * 30;
+    return { startMin, endMin: startMin + 30, label: formatHour(startMin) };
+  }) : [];
   const toggleSlot = (courtId: string, courtName: string, startMin: number, endMin: number) => {
-    const key = `${courtId}-${startMin}`;
-    if (bookedKeySet.has(key)) return;
-
-    const exists = selectedSlots.some(
-      (s) => s.courtId === courtId && s.startMin === startMin
-    );
-
-    if (exists) {
-      setSelectedSlots(
-        selectedSlots.filter(
-          (s) => !(s.courtId === courtId && s.startMin === startMin)
-        )
-      );
-    } else {
-      // Giá tạm tính 55.000 ₫ / 30 phút giờ cao điểm
-      const slotPrice = Math.round((venue.priceFrom * 1.5) / 2);
-      setSelectedSlots([
-        ...selectedSlots,
-        { courtId, courtName, startMin, endMin, price: slotPrice },
-      ]);
-    }
+    if (!venue || isDemoBooked(courtId, startMin) || isPastSlot(selectedDate, startMin)) return;
+    const price = slotPrice(venue, selectedDate, startMin, endMin);
+    if (price === null) return;
+    setError("");
+    setSelectedSlots(previous => previous.some(s => s.courtId === courtId && s.startMin === startMin)
+      ? previous.filter(s => !(s.courtId === courtId && s.startMin === startMin))
+      : [...previous, { courtId, courtName, startMin, endMin, price }]);
   };
 
   const totalPrice = useMemo(() => {
     return selectedSlots.reduce((sum, s) => sum + s.price, 0);
   }, [selectedSlots]);
 
+  if (!venue) notFound();
+  const invalidSelection = selectionError(selectedSlots);
   const handleCheckout = () => {
-    if (selectedSlots.length === 0) return;
-    // Chuyển hướng tới trang thanh toán
-    router.push(
-      `/checkout?venueId=${venue.id}&venueName=${encodeURIComponent(
-        venue.name
-      )}&date=${selectedDate}&slots=${encodeURIComponent(
-        JSON.stringify(selectedSlots)
-      )}&total=${totalPrice}`
-    );
+    const params = new URLSearchParams({ venueId: venue.id, date: selectedDate, slots: JSON.stringify(selectedSlots) });
+    if (!parseSelection(MOCK_VENUES, params)) {
+      setError(invalidSelection || "Lựa chọn đã hết hạn. Vui lòng chọn lại giờ chơi.");
+      return;
+    }
+    router.push(`/checkout?${params}`);
   };
 
   return (
-    <div className="min-h-screen bg-bg pb-32">
+    <div className="min-h-screen bg-bg pb-48 lg:pb-32">
       {/* Header thanh điều hướng phía trên */}
       <div className="border-b border-border bg-surface px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-content items-center justify-between">
@@ -121,7 +77,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                 Lịch trống — {venue.name}
               </h1>
               <p className="text-xs text-muted">
-                Chọn các ô giờ liên tiếp bạn muốn thi đấu
+                Bản thử nghiệm: chọn các ô giờ liên tiếp trên cùng một sân. Chưa giữ chỗ thực tế.
               </p>
             </div>
           </div>
@@ -135,7 +91,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
             <button
               key={d.value}
               type="button"
-              onClick={() => setSelectedDate(d.value)}
+              onClick={() => { setSelectedDate(d.value); setSelectedSlots([]); setError(""); }}
               className={`flex min-w-[96px] flex-col items-center rounded-card border px-3 py-2 text-xs transition ${
                 selectedDate === d.value
                   ? "border-court-600 bg-court-600 font-bold text-white shadow-sm"
@@ -190,7 +146,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {venue.courts.slice(0, 4).map((court) => (
+              {venue.courts.filter(court => court.isActive).map((court) => (
                 <tr key={court.id}>
                   {/* Cột tên sân cố định bên trái */}
                   <td className="sticky left-0 z-10 bg-surface p-3 text-left font-bold text-xs text-ink shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
@@ -200,7 +156,8 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                   {/* Các ô giờ 30 phút */}
                   {timeSlots.map((ts) => {
                     const key = `${court.id}-${ts.startMin}`;
-                    const isBooked = bookedKeySet.has(key);
+                    const isBooked = isDemoBooked(court.id, ts.startMin);
+                    const unavailable = !now || isPastSlot(selectedDate, ts.startMin, now) || slotPrice(venue, selectedDate, ts.startMin, ts.endMin) === null;
                     const isSelected = selectedSlots.some(
                       (s) => s.courtId === court.id && s.startMin === ts.startMin
                     );
@@ -209,7 +166,9 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                       <td key={ts.startMin} className="p-1">
                         <button
                           type="button"
-                          disabled={isBooked}
+                          aria-label={`${court.name}, ${ts.label} – ${formatHour(ts.endMin)}`}
+                          aria-pressed={isSelected}
+                          disabled={isBooked || unavailable}
                           onClick={() =>
                             toggleSlot(
                               court.id,
@@ -244,8 +203,10 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
         </div>
       </div>
 
+
       {/* Thanh tóm tắt cố định dưới đáy (§9.5) */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 p-4 shadow-lg backdrop-blur">
+      <div className="fixed inset-x-0 bottom-16 z-30 lg:bottom-0 border-t border-border bg-surface/95 p-4 shadow-lg backdrop-blur">
+        {(error || (selectedSlots.length > 0 && invalidSelection)) && <p role="alert" className="mx-auto max-w-content px-4 text-sm text-rose-600">{error || invalidSelection}</p>}
         <div className="mx-auto flex max-w-content flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xs text-muted">
@@ -267,7 +228,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
 
           <button
             type="button"
-            disabled={selectedSlots.length === 0}
+            disabled={!!invalidSelection}
             onClick={handleCheckout}
             className="rounded-control bg-racket-500 px-8 py-3 text-sm font-bold text-court-900 transition-colors hover:bg-racket-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
