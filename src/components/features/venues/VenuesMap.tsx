@@ -40,7 +40,7 @@ export function VenuesMap({ venues }: { venues: Venue[] }) {
         if (visible.length) instance.fitBounds(L.latLngBounds(visible.map(v => [v.lat, v.lng])), { padding: [40, 40], maxZoom: 15 });
         else instance.setView([21.0285, 105.8542], 12);
         map.current = instance;
-        tiles.current = L.tileLayer(process.env.NEXT_PUBLIC_MAP_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        tiles.current = L.tileLayer(process.env.NEXT_PUBLIC_MAP_TILE_URL || "/api/map/tiles/{z}/{x}/{y}", {
           maxZoom: 19,
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
         }).addTo(instance);
