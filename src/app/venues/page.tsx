@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { getVenues } from "@/services/venue.service";
 import { VenueCard } from "@/components/features/venues/VenueCard";
-import { MapPin, List, SlidersHorizontal, Search } from "lucide-react";
+import { MapPin, List, SlidersHorizontal } from "lucide-react";
+
+import { VenuesMap } from "@/components/features/venues/VenuesMap";
+import { venuesHref } from "@/lib/venue-map";
 
 interface VenuesPageProps {
   searchParams: {
@@ -33,6 +36,8 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
     amenities,
   });
 
+  const href = (overrides: Record<string, string | undefined>) => venuesHref(searchParams, overrides);
+
   return (
     <div className="mx-auto max-w-content px-4 py-8 sm:px-6">
       {/* Tiêu đề & thanh công cụ */}
@@ -49,11 +54,7 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
         {/* Chuyển đổi Danh sách / Bản đồ */}
         <div className="flex items-center gap-2 self-start rounded-control border border-border bg-surface p-1">
           <Link
-            href={`/venues?${new URLSearchParams({
-              ...(query ? { q: query } : {}),
-              ...(district !== "all" ? { district } : {}),
-              ...(sort ? { sort } : {}),
-            }).toString()}`}
+            href={href({ view: undefined })}
             className={`inline-flex items-center gap-1.5 rounded-control px-3 py-1.5 text-xs font-semibold transition ${
               !isMapView
                 ? "bg-court-600 text-white"
@@ -65,11 +66,7 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
           </Link>
 
           <Link
-            href={`/venues?${new URLSearchParams({
-              ...(query ? { q: query } : {}),
-              ...(district !== "all" ? { district } : {}),
-              view: "map",
-            }).toString()}`}
+            href={href({ view: "map" })}
             className={`inline-flex items-center gap-1.5 rounded-control px-3 py-1.5 text-xs font-semibold transition ${
               isMapView
                 ? "bg-court-600 text-white"
@@ -107,12 +104,7 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
           (d) => (
             <Link
               key={d}
-              href={`/venues?${new URLSearchParams({
-                ...(query ? { q: query } : {}),
-                district: d,
-                ...(isMapView ? { view: "map" } : {}),
-                sort,
-              }).toString()}`}
+              href={href({ district: d === "all" ? undefined : d })}
               className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                 district.toLowerCase() === d.toLowerCase()
                   ? "bg-court-600 text-white"
@@ -126,12 +118,7 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
 
         {/* Lọc Còn trống tối nay */}
         <Link
-          href={`/venues?${new URLSearchParams({
-            ...(query ? { q: query } : {}),
-            ...(district !== "all" ? { district } : {}),
-            hasSlotTonight: hasSlotTonight ? "false" : "true",
-            ...(isMapView ? { view: "map" } : {}),
-          }).toString()}`}
+          href={href({ hasSlotTonight: hasSlotTonight ? undefined : "true" })}
           className={`rounded-full px-3 py-1 text-xs font-medium transition ${
             hasSlotTonight
               ? "bg-racket-500 font-semibold text-court-900"
@@ -144,44 +131,7 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
 
       {/* Nội dung: Chế độ Bản đồ hoặc Danh sách */}
       {isMapView ? (
-        <div className="mt-6 flex flex-col gap-6 lg:flex-row">
-          {/* Cột trái: Giả lập bản đồ tương tác với các ghim sân */}
-          <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-card border border-border bg-court-950/10 p-6 dark:bg-court-950/40">
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-              {/* Minh hoạ bản đồ với các điểm ghim */}
-              <div className="relative h-64 w-full max-w-lg rounded-card border border-court-200/50 bg-court-100/50 p-4 shadow-inner dark:border-court-800/50 dark:bg-surface/40">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xs font-medium text-court-700 dark:text-court-300">
-                    Bản đồ tương tác khu vực Hà Nội (OpenStreetMap)
-                  </span>
-                </div>
-                {venues.map((v, idx) => (
-                  <div
-                    key={v.id}
-                    style={{
-                      top: `${25 + idx * 18}%`,
-                      left: `${20 + idx * 16}%`,
-                    }}
-                    className="absolute flex -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center gap-1 rounded-full bg-court-600 px-2 py-1 text-[11px] font-bold text-white shadow-md transition hover:scale-110"
-                  >
-                    <MapPin size={12} />
-                    <span>{v.name.split(" ")[0]}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-4 text-xs text-muted">
-                Bấm vào từng sân bên phải để xem thông tin chi tiết và đặt lịch
-              </p>
-            </div>
-          </div>
-
-          {/* Cột phải: Danh sách các sân */}
-          <div className="flex w-full flex-col gap-4 lg:w-96">
-            {venues.map((venue) => (
-              <VenueCard key={venue.id} venue={venue} />
-            ))}
-          </div>
-        </div>
+        <VenuesMap venues={venues} />
       ) : (
         /* Chế độ danh sách thẻ */
         <div className="mt-8">

@@ -4,6 +4,7 @@ import { BRAND } from "@/lib/config/brand";
 import { Providers } from "@/components/Providers";
 import { Navbar } from "@/components/features/layout/Navbar";
 import { MobileTabBar } from "@/components/features/layout/MobileTabBar";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 const beVietnamPro = Be_Vietnam_Pro({
