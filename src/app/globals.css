@@ -84,3 +84,16 @@ select option {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--muted));
 }
+
+/* Map colours stay readable independently of the app's theme. */
+.venue-map { z-index: 0; background: #e2e8f0; color: #172033; font-family: inherit; }
+.venue-map .leaflet-popup-content-wrapper, .venue-map .leaflet-popup-tip { background: #fff; color: #172033; }
+.venue-map .leaflet-popup-content p { margin: 8px 0; }
+.venue-map .leaflet-popup-content a { color: #1d3db8; font-weight: 700; }
+.venue-map .leaflet-control-attribution { background: rgba(255,255,255,.95); color: #334155; }
+.venue-map .leaflet-control-attribution a { color: #1d3db8; }
+.venue-map-marker { background: transparent; border: none; }
+.venue-map-marker span { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 2px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: #1d3db8; color: #fff; box-shadow: 0 2px 6px #0005; font: 700 11px system-ui; }
+.venue-map-marker b { transform: rotate(45deg); }
+.venue-map-marker.is-selected span { background: #c2410c; border-color: #ffedd5; }
+.venue-map-marker:focus-visible { outline: 3px solid #f97316; outline-offset: 4px; }
