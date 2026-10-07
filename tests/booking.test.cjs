@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 // Compile the real TypeScript modules in memory without adding a test dependency.
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, filename);
-const { MOCK_VENUES } = require('../src/services/venue.service.ts');
+const { MOCK_VENUES } = require('../src/data/venues.data.ts');
 const { bookingDates, vietnamDate, slotPrice, parseSelection, selectionError, voucherDiscount, isPastSlot } = require('../src/lib/booking.ts');
 const venue = MOCK_VENUES[0];
 const now = new Date('2026-10-06T00:00:00+07:00');

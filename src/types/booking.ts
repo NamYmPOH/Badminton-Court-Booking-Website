@@ -2,12 +2,15 @@ export type BookingStatus =
   | "PENDING_PAYMENT"
   | "CONFIRMED"
   | "CHECKED_IN"
+  | "NO_SHOW"
   | "COMPLETED"
   | "CANCELLED"
   | "EXPIRED";
 
 export type PaymentStatus =
   | "UNPAID"
+  | "PENDING"
+  | "FAILED"
   | "PAID"
   | "REFUND_PENDING"
   | "REFUNDED";
@@ -32,7 +35,7 @@ export interface Booking {
   venueSlug: string;
   status: BookingStatus;
   paymentStatus: PaymentStatus;
-  paymentMethod: "VNPAY" | "AT_VENUE";
+  paymentMethod: "VNPAY" | "AT_VENUE" | "BANK_TRANSFER";
   subtotal: number;
   discount: number;
   total: number;

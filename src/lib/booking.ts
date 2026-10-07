@@ -20,7 +20,7 @@ export function bookingDates(now = new Date()) {
   });
 }
 
-export function slotPrice(venue: Venue, date: string, start: number, end: number): number | null {
+export function slotPrice(venue: Pick<Venue, "openMin" | "closeMin" | "pricingRules">, date: string, start: number, end: number): number | null {
   const day = new Date(`${date}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== date || !Number.isInteger(start) || !Number.isInteger(end) || end - start !== 30 || (start - venue.openMin) % 30 !== 0 || start < venue.openMin || end > venue.closeMin) return null;
   const weekday = day.getUTCDay() || 7;
@@ -51,7 +51,7 @@ export function selectionError(slots: SelectedSlot[]) {
 
 // Rebuild all names and prices from the catalogue; URL amounts are never trusted.
 // This validates the demo only. Real reservations require a server-side availability check.
-export function parseSelection(venues: Venue[], params: Pick<URLSearchParams, "get">, now = new Date()) {
+export function parseSelection(venues: Venue[], params: Pick<URLSearchParams, "get">, now = new Date(), demo = true) {
   const venue = venues.find(v => v.id === params.get("venueId"));
   const date = params.get("date") || "";
   if (!venue || !bookingDates(now).some(d => d.value === date)) return null;
@@ -63,7 +63,7 @@ export function parseSelection(venues: Venue[], params: Pick<URLSearchParams, "g
       if (!item || typeof item !== "object") return null;
       const court = venue.courts.find(c => c.id === item.courtId && c.isActive);
       const price = slotPrice(venue, date, item.startMin, item.endMin);
-      if (!court || price === null || isPastSlot(date, item.startMin, now) || isDemoBooked(court.id, item.startMin)) return null;
+      if (!court || price === null || isPastSlot(date, item.startMin, now) || (demo && isDemoBooked(court.id, item.startMin))) return null;
       slots.push({ courtId: court.id, courtName: court.name, startMin: item.startMin, endMin: item.endMin, price });
     }
     if (selectionError(slots)) return null;

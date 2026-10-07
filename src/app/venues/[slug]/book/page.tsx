@@ -2,12 +2,12 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, notFound } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Check } from "lucide-react";
-import { MOCK_VENUES } from "@/services/venue.service";
+import type { Venue } from "@/types/venue";
 import { formatVND } from "@/lib/utils";
 
-import { bookingDates, formatHour, isDemoBooked, isPastSlot, selectionError, slotPrice, parseSelection, type SelectedSlot } from "@/lib/booking";
+import { bookingDates, formatHour, isPastSlot, selectionError, slotPrice, parseSelection, type SelectedSlot } from "@/lib/booking";
 
 interface BookPageProps {
   params: {
@@ -18,12 +18,24 @@ interface BookPageProps {
 
 export default function CourtBookingGridPage({ params }: BookPageProps) {
   const router = useRouter();
-  const venue = MOCK_VENUES.find((v) => v.slug === params.slug);
+  const [venue, setVenue] = useState<Venue | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
 
   const [now, setNow] = useState<Date | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([]);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState<{ courtId: string; startMin: number; endMin: number }[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setCatalogLoading(true);
+    fetch(`/api/booking-catalog?slug=${encodeURIComponent(params.slug)}&date=${selectedDate}`, { signal: controller.signal, cache: "no-store" })
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.message); return data; })
+      .then(data => { setVenue(data.venue); setBusy(data.busy || []); })
+      .catch(error => { if (!controller.signal.aborted) { setVenue(null); setError(error.message || "Không tải được lịch sân."); } })
+      .finally(() => { if (!controller.signal.aborted) setCatalogLoading(false); });
+    return () => controller.abort();
+  }, [params.slug, selectedDate]);
   useEffect(() => {
     setNow(new Date());
     setSelectedDate(bookingDates()[0].value);
@@ -36,7 +48,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
     return { startMin, endMin: startMin + 30, label: formatHour(startMin) };
   }) : [];
   const toggleSlot = (courtId: string, courtName: string, startMin: number, endMin: number) => {
-    if (!venue || isDemoBooked(courtId, startMin) || isPastSlot(selectedDate, startMin)) return;
+    if (!venue || isPastSlot(selectedDate, startMin) || busy.some(b => b.courtId === courtId && b.startMin < endMin && b.endMin > startMin)) return;
     const price = slotPrice(venue, selectedDate, startMin, endMin);
     if (price === null) return;
     setError("");
@@ -49,11 +61,12 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
     return selectedSlots.reduce((sum, s) => sum + s.price, 0);
   }, [selectedSlots]);
 
-  if (!venue) notFound();
+  if (catalogLoading) return <p className="p-8">Đang tải thông tin sân...</p>;
+  if (!venue) return <div className="p-8"><p role="alert">{error || "Cơ sở chưa mở đặt sân trực tuyến."}</p><Link href="/venues" className="text-court-600 underline">Quay lại danh sách sân</Link></div>;
   const invalidSelection = selectionError(selectedSlots);
   const handleCheckout = () => {
     const params = new URLSearchParams({ venueId: venue.id, date: selectedDate, slots: JSON.stringify(selectedSlots) });
-    if (!parseSelection(MOCK_VENUES, params)) {
+    if (!parseSelection([venue], params, new Date(), false)) {
       setError(invalidSelection || "Lựa chọn đã hết hạn. Vui lòng chọn lại giờ chơi.");
       return;
     }
@@ -77,7 +90,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                 Lịch trống — {venue.name}
               </h1>
               <p className="text-xs text-muted">
-                Bản thử nghiệm: chọn các ô giờ liên tiếp trên cùng một sân. Chưa giữ chỗ thực tế.
+                Chọn các ô giờ liên tiếp trên cùng một sân. Chỗ trống được kiểm tra lại khi tạo đơn.
               </p>
             </div>
           </div>
@@ -156,7 +169,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                   {/* Các ô giờ 30 phút */}
                   {timeSlots.map((ts) => {
                     const key = `${court.id}-${ts.startMin}`;
-                    const isBooked = isDemoBooked(court.id, ts.startMin);
+                    const isBooked = busy.some(b => b.courtId === court.id && b.startMin < ts.endMin && b.endMin > ts.startMin);
                     const unavailable = !now || isPastSlot(selectedDate, ts.startMin, now) || slotPrice(venue, selectedDate, ts.startMin, ts.endMin) === null;
                     const isSelected = selectedSlots.some(
                       (s) => s.courtId === court.id && s.startMin === ts.startMin

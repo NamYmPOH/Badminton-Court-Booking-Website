@@ -1,4 +1,5 @@
 import Link from "next/link";
+export const dynamic = "force-dynamic";
 import { BRAND } from "@/lib/config/brand";
 import { HeroSearch } from "@/components/features/home/HeroSearch";
 import { QuickFilters } from "@/components/features/home/QuickFilters";

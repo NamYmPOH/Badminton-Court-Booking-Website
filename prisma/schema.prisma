@@ -272,6 +272,7 @@ model CourtBlock {
 // ───────────── Đặt sân ─────────────
 model Booking {
   id            String        @id @default(cuid())
+  requestId     String?       @unique // chống tạo đơn lặp khi trình duyệt thử lại
   code          String        @unique // ví dụ: SB-241002-7K2F
   userId        String? // null = khách đặt hộ tại quầy
   venueId       String
@@ -336,6 +337,18 @@ model Payment {
   booking       Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
+}
+
+// Lưu cả giao dịch không khớp đơn để chủ sân đối soát; không xóa khi xóa booking.
+model SepayReceipt {
+  transactionId String   @id
+  fingerprint   String
+  bookingCode   String?
+  result        String
+  payload       Json
+  receivedAt    DateTime @default(now())
+
+  @@index([result, receivedAt])
 }
 
 // ───────────── Khuyến mãi, đánh giá, yêu thích, thông báo ─────────────

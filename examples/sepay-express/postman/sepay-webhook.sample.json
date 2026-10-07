@@ -1,0 +1,14 @@
+{
+  "id": 92704,
+  "gateway": "Vietcombank",
+  "transactionDate": "2026-10-08 11:08:33",
+  "accountNumber": "0123456789",
+  "subAccount": "",
+  "code": "DATSAN123",
+  "content": "NGUYEN VAN A chuyen tien DATSAN123",
+  "transferType": "in",
+  "description": "Thanh toan dat san cau long",
+  "transferAmount": 150000,
+  "accumulated": 1000000,
+  "referenceCode": "FT2628192704"
+}

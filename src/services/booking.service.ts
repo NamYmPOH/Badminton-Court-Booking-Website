@@ -98,16 +98,23 @@ export const MOCK_BOOKINGS: Booking[] = [
 export async function getUserBookings(
   tab: "upcoming" | "past" | "cancelled" = "upcoming"
 ): Promise<Booking[]> {
+  const response = await fetch("/api/bookings", { cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || "Không tải được lịch đặt sân.");
+  const bookings: Booking[] = data.bookings;
   if (tab === "upcoming") {
-    return MOCK_BOOKINGS.filter((b) => b.status === "CONFIRMED" || b.status === "PENDING_PAYMENT");
+    return bookings.filter((b) => ["CONFIRMED", "PENDING_PAYMENT", "CHECKED_IN"].includes(b.status));
   }
   if (tab === "past") {
-    return MOCK_BOOKINGS.filter((b) => b.status === "COMPLETED");
+    return bookings.filter((b) => ["COMPLETED", "NO_SHOW"].includes(b.status));
   }
-  return MOCK_BOOKINGS.filter((b) => b.status === "CANCELLED" || b.status === "EXPIRED");
+  return bookings.filter((b) => b.status === "CANCELLED" || b.status === "EXPIRED");
 }
 
 export async function getBookingByCode(code: string): Promise<Booking | null> {
-  const booking = MOCK_BOOKINGS.find((b) => b.code.toUpperCase() === code.toUpperCase());
-  return booking ?? null;
+  const response = await fetch(`/api/bookings/${encodeURIComponent(code)}`, { cache: "no-store" });
+  if (response.status === 404) return null;
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || "Không tải được đơn đặt sân.");
+  return data.booking;
 }

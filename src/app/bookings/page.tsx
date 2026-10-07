@@ -13,15 +13,19 @@ function BookingsContent() {
   const currentTab = (searchParams.get("tab") as "upcoming" | "past" | "cancelled") || "upcoming";
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    setError("");
     getUserBookings(currentTab).then((data) => {
       if (isMounted) {
         setBookings(data);
         setLoading(false);
       }
+    }).catch(error => {
+      if (isMounted) { setError(error.message || "Không tải được lịch đặt sân."); setBookings([]); setLoading(false); }
     });
     return () => {
       isMounted = false;
@@ -35,12 +39,12 @@ function BookingsContent() {
   };
 
   const handleCancelBooking = (code: string) => {
-    alert(`Yêu cầu huỷ lịch ${code} đã được tiếp nhận theo chính sách huỷ của cơ sở.`);
-    setBookings((prev) => prev.filter((b) => b.code !== code));
+    alert(`Vui lòng liên hệ cơ sở để yêu cầu hủy đơn ${code}. Đơn chưa được hủy trên hệ thống.`);
   };
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+      {error && <p role="alert" className="mb-4 text-rose-600">{error} <Link href="/login" className="underline">Đăng nhập</Link></p>}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">
@@ -193,13 +197,11 @@ function BookingsContent() {
                 )}
 
                 <Link
-                  href={`/payment/result?code=${booking.code}&venue=${encodeURIComponent(
-                    booking.venueName
-                  )}&total=${booking.total}`}
+                  href={`/payment/result?booking=${encodeURIComponent(booking.code)}`}
                   className="inline-flex items-center gap-1 rounded-control bg-court-600 px-3.5 py-1.5 font-semibold text-white hover:bg-court-700"
                 >
                   <QrCode size={13} />
-                  <span>Xem mã QR</span>
+                  <span>{booking.status === "PENDING_PAYMENT" ? "Thanh toán" : "Xem đơn"}</span>
                 </Link>
               </div>
             </div>
