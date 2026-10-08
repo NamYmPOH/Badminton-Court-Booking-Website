@@ -41,6 +41,15 @@ Catalogue tại thời điểm triển khai gồm 98 cơ sở, 587 sân và 295 
 
 ## Kiểm tra
 
+### Lỗi PostgreSQL 42P05: prepared statement already exists
+
+Với Prisma 5.18 và Supabase transaction pooler (host `*.pooler.supabase.com`, cổng `6543`), `DATABASE_URL` phải có `pgbouncer=true`.
+Trong Vercel → Environment Variables → DATABASE_URL → Production, thêm `?pgbouncer=true` nếu URL chưa có tham số; nếu đã có `?`, thêm `&pgbouncer=true`. Nếu đã có `pgbouncer=false`, đổi thành `true`, không thêm bản trùng. Giữ nguyên tài khoản, mật khẩu, host, SSL và các tham số khác. Lưu rồi redeploy bản Production hiện tại để cấu hình mới có hiệu lực.
+
+`src/lib/database-url.ts` cũng chuẩn hóa tham số này khi tạo Prisma Client cho đúng host/cổng transaction pooler. Code không sửa biến môi trường trên Vercel, không đổi kết nối direct/session, và không ghi mật khẩu vào log. DIRECT_URL dành cho migration được giữ nguyên.
+
+Tham khảo: [Supabase — Prepared statement already exists](https://supabase.com/docs/guides/database/prisma/prisma-troubleshooting#prepared-statement-already-exists).
+
 `npm test`, `npm run lint`, `npm run build`.
 Test quản trị kiểm tra vai trò, CSRF, chuyển trạng thái, tự khóa admin, rollback nhật ký, thu tiền trùng và đối soát sai / trùng / hết hạn. Transaction double không thay thế stress test tranh chấp trên PostgreSQL.
 
