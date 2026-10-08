@@ -24,6 +24,13 @@ async function main() {
     assert.ok(ready, 'local server ready');
     assert.equal((await fetch(base + '/api/payment/webhook')).status, 405);
     assert.equal((await fetch(base + '/api/bookings')).status, 401);
+    assert.equal((await fetch(base + '/api/admin?tab=overview')).status, 401);
+    assert.equal((await fetch(base + '/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+    assert.equal((await fetch(base + '/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: '{}' })).status, 403);
+    assert.equal((await fetch(base + '/api/venue-registration', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+    const adminPage = await fetch(base + '/admin', { redirect: 'manual' });
+    assert.equal(adminPage.status, 307);
+    assert.equal(new URL(adminPage.headers.get('location'), base).pathname, '/login');
     const send = (body, valid) => {
       const timestamp = String(Math.floor(Date.now() / 1000));
       const headers = { 'Content-Type': 'application/json' };
@@ -39,7 +46,7 @@ async function main() {
     const response = await send(JSON.stringify({ id: 1, gateway: 'VietinBank', accountNumber: '0001234703', transferType: 'in', transferAmount: 150000, content: 'DATSAN1234567890' }), true);
     assert.equal(response.status, 500);
     assert.equal((await response.json()).success, false);
-    console.log('HTTP smoke passed: GET 405, login required, HMAC 401, malformed payload 400, DB failure 500 without ACK.');
+    console.log('HTTP smoke passed: admin and registration require login; cross-origin admin blocked; admin page redirects; webhook rejects invalid HMAC/JSON and DB failure without ACK.');
   } finally { server.kill(); }
 }
 main().catch(() => { console.error('HTTP smoke failed'); process.exitCode = 1; });

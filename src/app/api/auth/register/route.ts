@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     });
 
     if (!result.success) {
-      return apiError(result.code, result.error, 400);
+      return apiError(result.code, result.error, result.code === "SERVICE_UNAVAILABLE" ? 503 : 400);
     }
 
     // Tự động cấp session token để đăng nhập ngay sau khi đăng ký

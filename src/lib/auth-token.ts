@@ -1,6 +1,10 @@
 import crypto from "crypto";
 
-const SECRET = process.env.AUTH_SECRET || "dev-secret-smashbook-token-must-be-long-key-2026";
+function sessionSecret() {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret || secret.length < 32) throw new Error("AUTH_SECRET must contain at least 32 characters.");
+  return secret;
+}
 const COOKIE_NAME = "sb_session";
 const MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 ngày
 
@@ -16,7 +20,7 @@ export function signSessionToken(userId: string): string {
   };
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const signature = crypto
-    .createHmac("sha256", SECRET)
+    .createHmac("sha256", sessionSecret())
     .update(data)
     .digest("base64url");
   return `${data}.${signature}`;
@@ -28,7 +32,7 @@ export function verifySessionToken(token: string): string | null {
     if (parts.length !== 2) return null;
     const [data, signature] = parts;
     const expectedSig = crypto
-      .createHmac("sha256", SECRET)
+      .createHmac("sha256", sessionSecret())
       .update(data)
       .digest("base64url");
 
@@ -42,7 +46,7 @@ export function verifySessionToken(token: string): string | null {
     const payloadRaw = Buffer.from(data, "base64url").toString("utf-8");
     const payload = JSON.parse(payloadRaw) as TokenPayload;
 
-    if (payload.exp < Math.floor(Date.now() / 1000)) {
+    if (typeof payload.userId !== "string" || !payload.userId || !Number.isSafeInteger(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)) {
       return null; // Token expired
     }
 

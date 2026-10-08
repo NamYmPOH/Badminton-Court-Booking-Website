@@ -108,6 +108,8 @@ export function Navbar({ className }: NavbarProps) {
                   </div>
 
                   <div className="py-1">
+                    {user.role === "ADMIN" && <Link href="/admin" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-semibold text-court-500 hover:bg-court-500/10">Quản trị hệ thống</Link>}
+                    <Link href="/venues/register" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-500/10">Đăng ký cơ sở sân</Link>
                     <Link
                       href="/account"
                       onClick={() => setDropdownOpen(false)}

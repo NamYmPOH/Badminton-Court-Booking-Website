@@ -68,6 +68,10 @@ export default function AccountPage() {
       </p>
 
       {/* Banner liên kết email để khôi phục mật khẩu (§1.3 & D-08) */}
+      <div className="mt-5 flex flex-wrap gap-3">
+        {user.role === "ADMIN" && <Link href="/admin" className="rounded-control bg-court-600 px-4 py-2 text-sm font-semibold text-white">Quản trị hệ thống</Link>}
+        <Link href="/venues/register" className="rounded-control border border-border px-4 py-2 text-sm font-medium">Đăng ký cơ sở sân</Link>
+      </div>
       {!emailLinked && (
         <div className="mt-6 flex flex-col gap-3 rounded-card border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-2.5">

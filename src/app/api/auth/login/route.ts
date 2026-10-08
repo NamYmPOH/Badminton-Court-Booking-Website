@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     const result = await loginUser({ identifier, password });
 
     if (!result.success) {
-      return apiError(result.code, result.error, 401);
+      return apiError(result.code, result.error, result.code === "SERVICE_UNAVAILABLE" ? 503 : 401);
     }
 
     // Cấp session token qua cookie
