@@ -60,6 +60,7 @@ type Row = {
   entityId?: string;
   details?: unknown;
   venue?: { name: string; paymentMode: string };
+  paymentMethod?: string | null;
   owner?: { name: string };
   booking?: { code: string; customerName: string };
   _count?: { courts: number; pricing: number };
@@ -521,7 +522,7 @@ export default function AdminDashboard() {
                         new Date(r.expiresAt) > new Date() && (
                           <>
                             {(r.paymentStatus === "PAID" ||
-                              r.venue?.paymentMode === "AT_VENUE") &&
+                              r.paymentMethod === "CASH" || (!r.paymentMethod && r.venue?.paymentMode === "AT_VENUE")) &&
                               actionButton("Xác nhận đặt sân", {
                                 action: "CONFIRM",
                                 id: r.id,
@@ -534,7 +535,7 @@ export default function AdminDashboard() {
                         )}
                       {r.status === "CONFIRMED" && (
                         <>
-                          {r.venue?.paymentMode === "AT_VENUE" &&
+                          {(r.paymentMethod === "CASH" || (!r.paymentMethod && r.venue?.paymentMode === "AT_VENUE")) &&
                             ["UNPAID", "PENDING"].includes(
                               r.paymentStatus || "",
                             ) &&

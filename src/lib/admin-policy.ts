@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PaymentError } from "./sepay";
+import { isCashBooking } from "./booking-payment";
 
 export function assertAdmin(user: { role: string; status: string } | null) {
   if (!user || user.status !== "ACTIVE" || user.role !== "ADMIN") {
@@ -65,6 +66,7 @@ export function checkBookingAction(
     status: string;
     paymentStatus: string;
     expiresAt: Date | null;
+    paymentMethod?: string | null;
     venue: { paymentMode: string };
   },
   action: string,
@@ -76,7 +78,7 @@ export function checkBookingAction(
     booking.expiresAt > now;
   const confirmed = booking.status === "CONFIRMED";
   const paid = booking.paymentStatus === "PAID";
-  const atVenue = booking.venue.paymentMode === "AT_VENUE";
+  const atVenue = isCashBooking(booking);
   const permitted =
     action === "CONFIRM"
       ? pendingLive && (paid || atVenue)

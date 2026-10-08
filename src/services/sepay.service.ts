@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { eventFingerprint, extractBookingCode, PaymentError, type SepayConfig, type SepayEvent } from "../lib/sepay";
+import { canPayBooking } from "../lib/booking-payment";
 
 // Retry transaction bị tranh chấp; không gọi dịch vụ ngoài khi đang giữ transaction.
 export async function serializable<T>(db: PrismaClient, work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
@@ -32,15 +33,15 @@ export async function receiveSepayPayment(db: PrismaClient, event: SepayEvent, c
       const booking = await tx.booking.findUnique({ where: { code }, include: { items: true } });
       const now = new Date();
       if (!booking) result = "REVIEW_BOOKING_NOT_FOUND";
-      else if (booking.status !== "PENDING_PAYMENT" || !["PENDING", "UNPAID"].includes(booking.paymentStatus)) result = "REVIEW_BOOKING_NOT_PENDING";
-      else if (!booking.expiresAt || booking.expiresAt <= now) result = "REVIEW_EXPIRED";
+      else if (!["PENDING_PAYMENT", "CONFIRMED"].includes(booking.status) || !["PENDING", "UNPAID"].includes(booking.paymentStatus)) result = "REVIEW_BOOKING_NOT_PENDING";
+      else if (booking.status === "PENDING_PAYMENT" && (!booking.expiresAt || booking.expiresAt <= now)) result = "REVIEW_EXPIRED";
       else if (booking.total !== event.transferAmount) result = "REVIEW_AMOUNT_MISMATCH";
-      else if (!booking.items.length || booking.items.some(item => item.status !== "HELD")) result = "REVIEW_SLOT_RELEASED";
+      else if (!canPayBooking(booking, now)) result = "REVIEW_SLOT_RELEASED";
       else {
         // Cập nhật có điều kiện chống hai giao dịch cùng xác nhận một booking.
         const updated = await tx.booking.updateMany({
-          where: { id: booking.id, status: "PENDING_PAYMENT", paymentStatus: { in: ["UNPAID", "PENDING"] }, expiresAt: { gt: now }, total: event.transferAmount },
-          data: { status: "CONFIRMED", paymentStatus: "PAID", expiresAt: null },
+          where: { id: booking.id, status: booking.status, paymentStatus: { in: ["UNPAID", "PENDING"] }, ...(booking.status === "PENDING_PAYMENT" ? { expiresAt: { gt: now } } : {}), total: event.transferAmount },
+          data: { status: "CONFIRMED", paymentStatus: "PAID", paymentMethod: "BANK_TRANSFER", expiresAt: null },
         });
         if (updated.count !== 1) result = "REVIEW_BOOKING_NOT_PENDING";
         else {

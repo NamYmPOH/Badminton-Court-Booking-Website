@@ -287,6 +287,7 @@ model Booking {
   total         Int
   voucherId     String?
   paymentStatus PaymentStatus @default(UNPAID)
+  paymentMethod PaymentProvider? // null: legacy venue policy; new orders default to BANK_TRANSFER
   expiresAt     DateTime?
   cancelledAt   DateTime?
   cancelReason  String?

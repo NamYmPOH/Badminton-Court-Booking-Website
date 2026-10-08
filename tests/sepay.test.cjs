@@ -73,7 +73,7 @@ function paymentDb(patch = {}, fail = false) {
         booking: {
           findUnique: async ({ where }) => copy.booking.code === where.code ? copy.booking : null,
           updateMany: async ({ where, data }) => {
-            assert.equal(where.status, 'PENDING_PAYMENT');
+            assert.equal(where.status, copy.booking.status);
             assert.deepEqual(where.paymentStatus.in, ['UNPAID', 'PENDING']);
             assert.equal(where.total, copy.booking.total);
             Object.assign(copy.booking, data); return { count: 1 };
@@ -131,6 +131,23 @@ test('wrong configured VA requires review; gateway case does not change fingerpr
   assert.equal((await receiveSepayPayment(db, event, { ...config, SEPAY_SUB_ACCOUNT: 'VA1' })).result, 'REVIEW_WRONG_ACCOUNT');
   assert.equal(eventFingerprint(event), eventFingerprint({ ...event, gateway: 'vietinbank' }));
 });
+test('bank transfer after cash selection or approval pays once; cash-paid bookings go to review', async () => {
+  const future = new Date(Date.now() + 86400000);
+  for (const patch of [
+    { paymentMethod: 'CASH' },
+    { paymentMethod: 'CASH', status: 'CONFIRMED', paymentStatus: 'UNPAID', expiresAt: null, items: [{ status: 'CONFIRMED', date: future, startMin: 600 }] },
+  ]) {
+    const db = paymentDb(patch);
+    assert.equal((await receiveSepayPayment(db, event, config)).result, 'PAID');
+    assert.equal(db.state.booking.paymentMethod, 'BANK_TRANSFER');
+    assert.equal((await receiveSepayPayment(db, event, config)).result, 'DUPLICATE');
+    assert.equal(db.state.payments.length, 1);
+  }
+  const db = paymentDb({ paymentMethod: 'CASH', paymentStatus: 'PAID', status: 'CONFIRMED' });
+  assert.equal((await receiveSepayPayment(db, event, config)).result, 'REVIEW_BOOKING_NOT_PENDING');
+  assert.equal(db.state.payments.length, 0);
+});
+
 test('payment write failure rolls back booking and receipt, returns 500', async () => {
   const db = paymentDb({}, true);
   let failure;

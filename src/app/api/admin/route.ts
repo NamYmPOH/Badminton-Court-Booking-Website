@@ -123,6 +123,7 @@ export async function GET(request: Request) {
           customerPhone: true,
           status: true,
           paymentStatus: true,
+          paymentMethod: true,
           total: true,
           expiresAt: true,
           createdAt: true,

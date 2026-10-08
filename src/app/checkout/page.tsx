@@ -36,7 +36,6 @@ function CheckoutContent() {
   if (loading) return <p className="p-8">Đang tải thông tin đặt sân...</p>;
   if (!selection) return <div className="mx-auto max-w-xl p-8"><h1 className="text-xl font-bold">Chưa thể tạo đơn đặt sân</h1><p className="my-4">{error || "Lựa chọn đã hết hạn hoặc không hợp lệ. Vui lòng chọn lại giờ chơi."}</p><Link href="/venues" className="text-court-600 underline">Chọn sân</Link></div>;
   const { slots, date, total } = selection;
-  const online = venue!.paymentMode !== "AT_VENUE";
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (inFlight.current || !selection) return;
@@ -73,14 +72,14 @@ function CheckoutContent() {
         <label className="block text-sm">Ghi chú<textarea maxLength={1000} value={note} onChange={e => setNote(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg p-3" /></label>
         {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
         {authLoading ? <p className="text-sm text-muted">Đang kiểm tra đăng nhập...</p> : !user && <p className="text-sm text-muted">Bạn cần <Link href="/login" className="text-court-600 underline">đăng nhập</Link> để tạo và quản lý đơn.</p>}
-        <button disabled={submitting || authLoading || !user} className="w-full rounded-control bg-court-600 p-3 font-bold text-white disabled:opacity-50">{submitting ? "Đang tạo đơn..." : online ? "Tạo đơn và hiển thị mã QR" : "Xác nhận đặt sân"}</button>
+        <button disabled={submitting || authLoading || !user} className="w-full rounded-control bg-court-600 p-3 font-bold text-white disabled:opacity-50">{submitting ? "Đang tạo đơn..." : "Tạo đơn và chọn thanh toán"}</button>
       </form>
       <div className="space-y-4 rounded-card border border-border bg-surface p-6">
         <h2 className="font-bold">{venue!.name}</h2><p>{date} · {slots[0].courtName}</p>
         <p>{formatHour(slots[0].startMin)} – {formatHour(slots[slots.length - 1].endMin)}</p>
-        <p>{online ? "Chuyển khoản VietQR — xác nhận tự động qua SePay" : "Thanh toán tại sân"}</p>
+        <p>Thanh toán online qua QR hoặc chọn thanh toán bằng tiền mặt tại sân.</p>
         <p className="border-t border-border pt-4 text-xl font-bold text-court-600">{formatVND(total)}</p>
-        <p className="text-sm text-muted">{online ? "Đơn được giữ tối đa 10 phút sau khi tạo. Hãy kiểm tra số tiền và người nhận trên màn hình QR trước khi chuyển khoản." : "Chỗ được xác nhận khi tạo đơn thành công."}</p>
+        <p className="text-sm text-muted">Đơn được giữ tối đa 10 phút. Mã QR hiển thị sau khi tạo đơn; nếu chọn tiền mặt, nhân viên hoặc chủ sân cần duyệt trước khi hết hạn giữ sân.</p>
       </div>
     </div>
   </div>;

@@ -126,6 +126,7 @@ export function Navbar({ className }: NavbarProps) {
                       <Calendar size={15} />
                       Lịch đặt của tôi
                     </Link>
+                    {["ADMIN", "OWNER", "STAFF"].includes(user.role) && <Link href="/venue-operations" onClick={() => setDropdownOpen(false)} className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink">Quản lý đơn tại sân</Link>}
                   </div>
 
                   <div className="border-t border-border/60 pt-1">

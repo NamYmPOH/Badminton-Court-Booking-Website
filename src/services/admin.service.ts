@@ -6,6 +6,7 @@ import {
 } from "../lib/admin-policy";
 import { getSepayConfig, parseSepayEvent, PaymentError } from "../lib/sepay";
 import { serializable } from "./sepay.service";
+import { operatorVenueScope } from "../lib/venue-operations";
 
 export async function performAdminAction(
   db: PrismaClient,
@@ -18,7 +19,9 @@ export async function performAdminAction(
       where: { id: actorId },
       select: { id: true, name: true, role: true, status: true },
     });
-    assertAdmin(actor);
+    const bookingAction = ["CONFIRM", "CHECK_IN", "COMPLETE", "CANCEL", "CASH_PAID"].includes(input.action);
+    if (!bookingAction || !actor) assertAdmin(actor);
+    else operatorVenueScope(actor);
     let details: Prisma.InputJsonObject = {};
     const now = new Date();
     if (input.action === "USER_ACCESS") {
@@ -172,6 +175,10 @@ export async function performAdminAction(
         include: { venue: true, items: true },
       });
       if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
+      if (actor!.role !== "ADMIN") {
+        const allowed = await tx.venue.findFirst({ where: { id: booking.venueId, ...operatorVenueScope(actor!) }, select: { id: true } });
+        if (!allowed) throw new PaymentError(403, "Bạn không được phân quyền tại sân này.");
+      }
       checkBookingAction(booking, input.action, now);
       const update: Prisma.BookingUpdateInput = {};
       if (input.action === "CONFIRM") {
@@ -221,6 +228,7 @@ export async function performAdminAction(
           },
         });
         update.paymentStatus = "PAID";
+        update.paymentMethod = "CASH";
       }
       await tx.booking.update({ where: { id: booking.id }, data: update });
       details = {
