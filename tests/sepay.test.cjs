@@ -10,6 +10,17 @@ const { bookingRequestSchema, priceBooking } = require('../src/lib/booking-reque
 const { createReservation, publicBooking } = require('../src/services/reservation.service.ts');
 const config = getSepayConfig({ SEPAY_WEBHOOK_SECRET: 'test-only-secret-not-for-real-transfers', BANK_BIN: '970415', BANK_ACCOUNT_NO: '0001234703', BANK_ACCOUNT_NAME: 'NGUYEN VAN A', SEPAY_BANK_GATEWAY: 'VietinBank' });
 const event = { id: 92704, accountNumber: config.BANK_ACCOUNT_NO, gateway: 'VietinBank', content: 'chuyen tien DATSAN1234567890', transferAmount: 150000, transferType: 'in' };
+test('configuration diagnostics name invalid fields without exposing values', () => {
+  const logs = [];
+  const original = console.error;
+  console.error = (...args) => logs.push(args.join(' '));
+  try {
+    assert.throws(() => getSepayConfig({ ...config, SEPAY_AUTH_MODE: 'private-mode-value', SEPAY_WEBHOOK_SECRET: 'short-secret', BANK_ACCOUNT_NO: 'private-account' }), error => error.status === 503);
+  } finally { console.error = original; }
+  assert.equal(logs.length, 1);
+  for (const key of ['SEPAY_AUTH_MODE', 'SEPAY_WEBHOOK_SECRET', 'BANK_ACCOUNT_NO']) assert.ok(logs[0].includes(key));
+  for (const value of ['private-mode-value', 'short-secret', 'private-account', config.BANK_ACCOUNT_NAME]) assert.ok(!logs[0].includes(value));
+});
 function signed(raw, seconds = Math.floor(Date.now() / 1000)) {
   const timestamp = String(seconds);
   return new Headers({ 'X-SePay-Timestamp': timestamp, 'X-SePay-Signature': 'sha256=' + createHmac('sha256', config.SEPAY_WEBHOOK_SECRET).update(timestamp + '.').update(raw).digest('hex') });

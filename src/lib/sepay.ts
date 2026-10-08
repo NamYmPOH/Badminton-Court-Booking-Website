@@ -16,7 +16,12 @@ export function getSepayConfig(env = process.env) {
     SEPAY_SUB_ACCOUNT: z.string().default(""),
   });
   const parsed = schema.safeParse(env);
-  if (!parsed.success) throw new PaymentError(503, "Thanh toán chưa được cấu hình đầy đủ.");
+  if (!parsed.success) {
+    // Only log field names, never values or the raw validation error (which may contain secrets).
+    const fields = Array.from(new Set(parsed.error.issues.map(issue => String(issue.path[0]))));
+    console.error("Payment configuration invalid:", fields.join(", "));
+    throw new PaymentError(503, "Thanh toán chưa được cấu hình đầy đủ.");
+  }
   return parsed.data;
 }
 export type SepayConfig = ReturnType<typeof getSepayConfig>;

@@ -6,10 +6,12 @@ import Link from "next/link";
 import type { Venue } from "@/types/venue";
 import { formatHour, parseSelection } from "@/lib/booking";
 import { formatVND } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 
 function CheckoutContent() {
   const params = useSearchParams();
   const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
   const venueId = params.get("venueId") || "";
   const [venue, setVenue] = useState<Venue | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +40,8 @@ function CheckoutContent() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (inFlight.current || !selection) return;
+    if (authLoading) return;
+    if (!user) { setError("Vui lòng đăng nhập trước khi đặt sân."); return; }
     inFlight.current = true; setSubmitting(true); setError("");
     try {
       const input = {
@@ -68,8 +72,8 @@ function CheckoutContent() {
         <label className="block text-sm">Số điện thoại<input required type="tel" maxLength={20} value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg p-3" /></label>
         <label className="block text-sm">Ghi chú<textarea maxLength={1000} value={note} onChange={e => setNote(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg p-3" /></label>
         {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
-        <p className="text-sm text-muted">Bạn cần <Link href="/login" className="text-court-600 underline">đăng nhập</Link> để tạo và quản lý đơn.</p>
-        <button disabled={submitting} className="w-full rounded-control bg-court-600 p-3 font-bold text-white disabled:opacity-50">{submitting ? "Đang tạo đơn..." : online ? "Tạo đơn và hiển thị mã QR" : "Xác nhận đặt sân"}</button>
+        {authLoading ? <p className="text-sm text-muted">Đang kiểm tra đăng nhập...</p> : !user && <p className="text-sm text-muted">Bạn cần <Link href="/login" className="text-court-600 underline">đăng nhập</Link> để tạo và quản lý đơn.</p>}
+        <button disabled={submitting || authLoading || !user} className="w-full rounded-control bg-court-600 p-3 font-bold text-white disabled:opacity-50">{submitting ? "Đang tạo đơn..." : online ? "Tạo đơn và hiển thị mã QR" : "Xác nhận đặt sân"}</button>
       </form>
       <div className="space-y-4 rounded-card border border-border bg-surface p-6">
         <h2 className="font-bold">{venue!.name}</h2><p>{date} · {slots[0].courtName}</p>
