@@ -56,7 +56,19 @@ export interface VenueFilterParams {
   minPrice?: number;
   maxPrice?: number;
   hasSlotTonight?: boolean;
+  isOpenNow?: boolean;
   sort?: "distance" | "rating" | "price_asc" | "price_desc";
   date?: string;
   fromMin?: number;
+}
+
+export interface VenueSearchSuggestion {
+  id: string;
+  name: string;
+  slug: string;
+  address: string;
+  district: string;
+  priceFrom: number;
+  ratingAvg: number;
+  images: string[];
 }
