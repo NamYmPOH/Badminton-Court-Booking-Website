@@ -90,7 +90,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Số điện thoại <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2.5 text-sm focus-within:border-court-500 focus-within:ring-1 focus-within:ring-court-500">
               <Phone size={16} className="text-muted" />
               <input
                 type="tel"
@@ -107,7 +107,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Họ và tên <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2.5 text-sm focus-within:border-court-500 focus-within:ring-1 focus-within:ring-court-500">
               <User size={16} className="text-muted" />
               <input
                 type="text"
@@ -124,7 +124,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Email (tuỳ chọn để khôi phục mật khẩu)
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2.5 text-sm focus-within:border-court-500 focus-within:ring-1 focus-within:ring-court-500">
               <Mail size={16} className="text-muted" />
               <input
                 type="email"
@@ -140,7 +140,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Mật khẩu <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2.5 text-sm focus-within:border-court-500 focus-within:ring-1 focus-within:ring-court-500">
               <Lock size={16} className="text-muted" />
               <input
                 type="password"
@@ -184,7 +184,7 @@ export default function RegisterPage() {
             <label className="block text-xs font-medium text-ink">
               Nhập lại mật khẩu <span className="text-rose-500">*</span>
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2.5 text-sm focus-within:border-court-500 focus-within:ring-1 focus-within:ring-court-500">
               <Lock size={16} className="text-muted" />
               <input
                 type="password"

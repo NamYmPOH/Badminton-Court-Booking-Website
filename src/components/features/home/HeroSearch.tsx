@@ -100,7 +100,7 @@ export function HeroSearch() {
     >
       {/* Ô tìm kiếm khu vực / tên sân */}
       <div
-        className="relative flex flex-1 items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60"
+        className="relative flex flex-1 items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white"
         ref={containerRef}
       >
         <MapPin size={18} className="shrink-0 text-court-500" />
@@ -113,7 +113,7 @@ export function HeroSearch() {
           }}
           onKeyDown={handleKeyDown}
           placeholder="Khu vực / tên sân (ví dụ: Thanh Xuân, Sân 1...)"
-          className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted/70"
+          className="w-full bg-transparent text-sm text-black font-medium outline-none placeholder:text-gray-500"
         />
         {query && (
           <button
@@ -122,7 +122,7 @@ export function HeroSearch() {
               setQuery("");
               setIsSuggestionsOpen(false);
             }}
-            className="rounded-full p-0.5 text-muted hover:text-ink"
+            className="rounded-full p-0.5 text-gray-500 hover:text-black"
             aria-label="Xóa"
           >
             <X size={15} />
@@ -140,53 +140,53 @@ export function HeroSearch() {
       </div>
 
       {/* Chọn quận / huyện nhanh */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60 sm:w-40">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-40">
         <select
           value={district}
           onChange={(e) => setDistrict(e.target.value)}
-          className="w-full cursor-pointer bg-transparent text-sm text-ink outline-none"
+          className="w-full cursor-pointer bg-transparent text-sm text-black font-medium outline-none"
         >
-          <option value="all">Tất cả quận</option>
-          <option value="Thanh Xuân">Thanh Xuân</option>
-          <option value="Tây Hồ">Tây Hồ</option>
-          <option value="Nam Từ Liêm">Nam Từ Liêm</option>
-          <option value="Bắc Từ Liêm">Bắc Từ Liêm</option>
-          <option value="Long Biên">Long Biên</option>
-          <option value="Hà Đông">Hà Đông</option>
-          <option value="Cầu Giấy">Cầu Giấy</option>
-          <option value="Đống Đa">Đống Đa</option>
-          <option value="Ba Đình">Ba Đình</option>
-          <option value="Hoàng Mai">Hoàng Mai</option>
+          <option value="all" className="bg-white text-black">Tất cả quận</option>
+          <option value="Thanh Xuân" className="bg-white text-black">Thanh Xuân</option>
+          <option value="Tây Hồ" className="bg-white text-black">Tây Hồ</option>
+          <option value="Nam Từ Liêm" className="bg-white text-black">Nam Từ Liêm</option>
+          <option value="Bắc Từ Liêm" className="bg-white text-black">Bắc Từ Liêm</option>
+          <option value="Long Biên" className="bg-white text-black">Long Biên</option>
+          <option value="Hà Đông" className="bg-white text-black">Hà Đông</option>
+          <option value="Cầu Giấy" className="bg-white text-black">Cầu Giấy</option>
+          <option value="Đống Đa" className="bg-white text-black">Đống Đa</option>
+          <option value="Ba Đình" className="bg-white text-black">Ba Đình</option>
+          <option value="Hoàng Mai" className="bg-white text-black">Hoàng Mai</option>
         </select>
       </div>
 
       {/* Chọn ngày */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60 sm:w-36">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-36">
         <Calendar size={18} className="shrink-0 text-court-500" />
         <select
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="w-full cursor-pointer bg-transparent text-sm text-ink outline-none"
+          className="w-full cursor-pointer bg-transparent text-sm text-black font-medium outline-none"
         >
-          <option value="today">Hôm nay</option>
-          <option value="tomorrow">Ngày mai</option>
-          <option value="weekend">Cuối tuần</option>
+          <option value="today" className="bg-white text-black">Hôm nay</option>
+          <option value="tomorrow" className="bg-white text-black">Ngày mai</option>
+          <option value="weekend" className="bg-white text-black">Cuối tuần</option>
         </select>
       </div>
 
       {/* Chọn giờ bắt đầu */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-ink dark:border-court-800/60 dark:bg-court-950/60 sm:w-32">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-32">
         <Clock size={18} className="shrink-0 text-court-500" />
         <select
           value={fromHour}
           onChange={(e) => setFromHour(e.target.value)}
-          className="w-full cursor-pointer bg-transparent text-sm text-ink outline-none"
+          className="w-full cursor-pointer bg-transparent text-sm text-black font-medium outline-none"
         >
-          <option value="now">Từ giờ</option>
-          <option value="1020">Từ 17:00</option>
-          <option value="1080">Từ 18:00</option>
-          <option value="1140">Từ 19:00</option>
-          <option value="1200">Từ 20:00</option>
+          <option value="now" className="bg-white text-black">Từ giờ</option>
+          <option value="1020" className="bg-white text-black">Từ 17:00</option>
+          <option value="1080" className="bg-white text-black">Từ 18:00</option>
+          <option value="1140" className="bg-white text-black">Từ 19:00</option>
+          <option value="1200" className="bg-white text-black">Từ 20:00</option>
         </select>
       </div>
 

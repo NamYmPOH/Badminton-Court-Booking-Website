@@ -93,7 +93,7 @@ export default function RegisterVenuePage() {
                 defaultValue={value}
                 step={step || undefined}
                 maxLength={300}
-                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2.5"
+                className="mt-1 w-full rounded-lg border border-border bg-surface text-ink px-3 py-2.5 outline-none focus:border-court-500"
               />
             </label>
           ))}
