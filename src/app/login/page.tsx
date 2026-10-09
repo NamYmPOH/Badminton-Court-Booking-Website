@@ -58,13 +58,13 @@ export default function LoginPage() {
         </div>
 
         {/* Tabs chọn Số điện thoại / Email per §1.3 */}
-        <div className="mt-6 flex rounded-control border border-border bg-court-50/50 p-1 dark:bg-court-950/40">
+        <div className="mt-6 flex rounded-control border border-border bg-surface p-1">
           <button
             type="button"
             onClick={() => setTab("phone")}
             className={`flex-1 rounded-control py-2 text-xs font-semibold transition ${
               tab === "phone"
-                ? "bg-surface text-court-600 shadow-sm"
+                ? "bg-court-600 text-white shadow-sm"
                 : "text-muted hover:text-ink"
             }`}
           >
@@ -75,7 +75,7 @@ export default function LoginPage() {
             onClick={() => setTab("email")}
             className={`flex-1 rounded-control py-2 text-xs font-semibold transition ${
               tab === "email"
-                ? "bg-surface text-court-600 shadow-sm"
+                ? "bg-court-600 text-white shadow-sm"
                 : "text-muted hover:text-ink"
             }`}
           >
@@ -96,7 +96,7 @@ export default function LoginPage() {
             <label className="block text-xs font-medium text-ink">
               {tab === "phone" ? "Số điện thoại" : "Địa chỉ Email"}
             </label>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2.5 text-sm focus-within:border-court-500 focus-within:ring-1 focus-within:ring-court-500">
               {tab === "phone" ? (
                 <Phone size={16} className="text-muted" />
               ) : (
@@ -131,7 +131,7 @@ export default function LoginPage() {
                 Quên mật khẩu?
               </a>
             </div>
-            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm dark:bg-court-950/60">
+            <div className="mt-1 flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2.5 text-sm focus-within:border-court-500 focus-within:ring-1 focus-within:ring-court-500">
               <Lock size={16} className="text-muted" />
               <input
                 type="password"

@@ -22,6 +22,7 @@ const config: Config = {
           700: "#173195",
           800: "#122774",
           900: "#0E1D57",
+          950: "#070D28",
         },
         // Racket coral scale
         racket: {

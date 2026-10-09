@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check } from "lucide-react";
+import { toast } from "sonner";
 import type { Venue } from "@/types/venue";
 import { formatVND } from "@/lib/utils";
 
@@ -21,12 +22,15 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
   const [venue, setVenue] = useState<Venue | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
 
-  const [now, setNow] = useState<Date | null>(null);
-  const [selectedDate, setSelectedDate] = useState("");
+  const [now, setNow] = useState<Date>(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<string>(() => bookingDates()[0].value);
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<{ courtId: string; startMin: number; endMin: number }[]>([]);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
+    if (!selectedDate) return;
     const controller = new AbortController();
     setCatalogLoading(true);
     fetch(`/api/booking-catalog?slug=${encodeURIComponent(params.slug)}&date=${selectedDate}`, { signal: controller.signal, cache: "no-store" })
@@ -36,21 +40,58 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
       .finally(() => { if (!controller.signal.aborted) setCatalogLoading(false); });
     return () => controller.abort();
   }, [params.slug, selectedDate]);
+
   useEffect(() => {
-    setNow(new Date());
-    setSelectedDate(bookingDates()[0].value);
     const timer = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(timer);
   }, []);
-  const dates = now ? bookingDates(now) : [];
+
+  const dates = useMemo(() => bookingDates(now), [now]);
   const timeSlots = venue ? Array.from({ length: Math.floor((venue.closeMin - venue.openMin) / 30) }, (_, i) => {
     const startMin = venue.openMin + i * 30;
     return { startMin, endMin: startMin + 30, label: formatHour(startMin) };
   }) : [];
+
+  // Tự động cuộn đến khung giờ hiện tại hoặc khung giờ trống đầu tiên khi xem ngày "Hôm nay"
+  useEffect(() => {
+    if (!gridContainerRef.current || !venue || !timeSlots.length) return;
+    const isToday = selectedDate === dates[0]?.value;
+    if (isToday) {
+      const currentMin = now.getHours() * 60 + now.getMinutes();
+      const firstAvailableIndex = timeSlots.findIndex(ts => ts.endMin > currentMin);
+      if (firstAvailableIndex > 0) {
+        // Cột tên sân sticky (120px) + mỗi cột giờ khoảng 76px
+        const targetScroll = Math.max(0, (firstAvailableIndex - 1) * 76);
+        gridContainerRef.current.scrollTo({ left: targetScroll, behavior: "smooth" });
+      }
+    } else {
+      gridContainerRef.current.scrollTo({ left: 0, behavior: "smooth" });
+    }
+  }, [selectedDate, venue?.id, timeSlots.length, dates]);
+
   const toggleSlot = (courtId: string, courtName: string, startMin: number, endMin: number) => {
-    if (!venue || isPastSlot(selectedDate, startMin) || busy.some(b => b.courtId === courtId && b.startMin < endMin && b.endMin > startMin)) return;
+    if (!venue) return;
+
+    if (isPastSlot(selectedDate, startMin, now)) {
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const nextAvailableSlotMin = Math.ceil(currentMinutes / 30) * 30;
+      toast.warning(
+        `Khung giờ ${formatHour(startMin)} đã qua thời gian đặt của ngày hôm nay. Vui lòng chọn từ ${formatHour(nextAvailableSlotMin)} trở đi hoặc chọn ngày tiếp theo.`
+      );
+      return;
+    }
+
+    if (busy.some(b => b.courtId === courtId && b.startMin < endMin && b.endMin > startMin)) {
+      toast.error(`Khung giờ ${formatHour(startMin)} trên sân này đã có khách đặt trước.`);
+      return;
+    }
+
     const price = slotPrice(venue, selectedDate, startMin, endMin);
-    if (price === null) return;
+    if (price === null) {
+      toast.error("Không tìm thấy bảng giá áp dụng cho khung giờ này.");
+      return;
+    }
+
     setError("");
     setSelectedSlots(previous => previous.some(s => s.courtId === courtId && s.startMin === startMin)
       ? previous.filter(s => !(s.courtId === courtId && s.startMin === startMin))
@@ -63,6 +104,10 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
 
   if (catalogLoading) return <p className="p-8">Đang tải thông tin sân...</p>;
   if (!venue) return <div className="p-8"><p role="alert">{error || "Cơ sở chưa mở đặt sân trực tuyến."}</p><Link href="/venues" className="text-court-600 underline">Quay lại danh sách sân</Link></div>;
+  const isToday = selectedDate === dates[0]?.value;
+  const currentMin = now.getHours() * 60 + now.getMinutes();
+  const isTodayExpired = isToday && venue ? currentMin >= venue.closeMin : false;
+
   const invalidSelection = selectionError(selectedSlots);
   const handleCheckout = () => {
     const params = new URLSearchParams({ venueId: venue.id, date: selectedDate, slots: JSON.stringify(selectedSlots) });
@@ -140,22 +185,60 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
           </div>
         </div>
 
+        {/* Thông báo nếu toàn bộ khung giờ hôm nay đã kết thúc */}
+        {isTodayExpired && (
+          <div className="mt-4 flex flex-col items-start justify-between gap-3 rounded-card border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200 sm:flex-row sm:items-center">
+            <div>
+              <p className="font-bold">Các khung giờ hôm nay đã kết thúc lúc {formatHour(venue.closeMin)}</p>
+              <p className="mt-0.5 text-amber-800 dark:text-amber-300">
+                Hiện không còn giờ trống để đặt cho hôm nay. Bạn có thể chuyển sang Ngày mai để đặt sân sớm.
+              </p>
+            </div>
+            {dates[1] && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate(dates[1].value);
+                  setSelectedSlots([]);
+                  setError("");
+                }}
+                className="shrink-0 rounded-control bg-court-600 px-4 py-2 font-bold text-white transition hover:bg-court-700"
+              >
+                Chuyển sang Ngày mai ({dates[1].sub}) →
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Lưới lịch thi đấu Sân × Giờ */}
-        <div className="mt-6 overflow-x-auto rounded-card border border-border bg-surface p-4 shadow-sm">
+        <div
+          ref={gridContainerRef}
+          className="mt-6 overflow-x-auto rounded-card border border-border bg-surface p-4 shadow-sm scroll-smooth"
+        >
           <table className="w-full border-collapse text-center">
             <thead>
               <tr>
-                <th className="sticky left-0 z-10 min-w-[120px] bg-court-700 p-2.5 text-left text-xs font-bold text-white">
+                <th className="sticky left-0 z-20 min-w-[120px] bg-court-700 p-2.5 text-left text-xs font-bold text-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.2)]">
                   Sân đấu
                 </th>
-                {timeSlots.map((ts) => (
-                  <th
-                    key={ts.startMin}
-                    className="min-w-[68px] border-l border-white/20 bg-court-700 p-2.5 text-xs font-semibold text-white"
-                  >
-                    {ts.label}
-                  </th>
-                ))}
+                {timeSlots.map((ts) => {
+                  const isCurrentSlot = isToday && currentMin >= ts.startMin && currentMin < ts.endMin;
+                  return (
+                    <th
+                      key={ts.startMin}
+                      className={`min-w-[68px] border-l border-white/20 p-2.5 text-xs font-semibold text-white relative transition-colors ${
+                        isCurrentSlot ? "bg-court-800 font-bold" : "bg-court-700"
+                      }`}
+                    >
+                      <div>{ts.label}</div>
+                      {isCurrentSlot && (
+                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded bg-amber-400 px-1 py-0.2 text-[8px] font-black text-court-950 uppercase shadow-sm">
+                          Bây giờ
+                        </span>
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -168,9 +251,10 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
 
                   {/* Các ô giờ 30 phút */}
                   {timeSlots.map((ts) => {
-                    const key = `${court.id}-${ts.startMin}`;
                     const isBooked = busy.some(b => b.courtId === court.id && b.startMin < ts.endMin && b.endMin > ts.startMin);
-                    const unavailable = !now || isPastSlot(selectedDate, ts.startMin, now) || slotPrice(venue, selectedDate, ts.startMin, ts.endMin) === null;
+                    const isPast = isPastSlot(selectedDate, ts.startMin, now);
+                    const price = slotPrice(venue, selectedDate, ts.startMin, ts.endMin);
+                    const isUnavailable = isPast || price === null;
                     const isSelected = selectedSlots.some(
                       (s) => s.courtId === court.id && s.startMin === ts.startMin
                     );
@@ -181,7 +265,6 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                           type="button"
                           aria-label={`${court.name}, ${ts.label} – ${formatHour(ts.endMin)}`}
                           aria-pressed={isSelected}
-                          disabled={isBooked || unavailable}
                           onClick={() =>
                             toggleSlot(
                               court.id,
@@ -190,9 +273,22 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                               ts.endMin
                             )
                           }
+                          title={
+                            isBooked
+                              ? `${court.name}: ${ts.label} - Đã có người đặt`
+                              : isPast
+                              ? `${court.name}: ${ts.label} - Giờ chơi đã qua (Không thể đặt)`
+                              : price === null
+                              ? "Không khả dụng"
+                              : isSelected
+                              ? `${court.name}: ${ts.label} - Đang chọn (${formatVND(price)})`
+                              : `${court.name}: ${ts.label} - Trống (${formatVND(price)}/30ph)`
+                          }
                           className={`h-11 w-full rounded-slot border text-xs font-medium transition flex items-center justify-center ${
                             isBooked
                               ? "cursor-not-allowed border-rose-200 bg-rose-50 text-rose-400 dark:border-rose-900/50 dark:bg-rose-950/40"
+                              : isUnavailable
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 hover:bg-slate-200/70 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-500"
                               : isSelected
                               ? "border-court-600 bg-court-600 font-bold text-white shadow-sm"
                               : "border-border bg-white text-ink hover:border-court-400 hover:bg-court-50 dark:bg-surface"
@@ -201,10 +297,10 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                           {isSelected ? (
                             <Check size={14} strokeWidth={3} />
                           ) : isBooked ? (
-                            "▨"
-                          ) : (
-                            ""
-                          )}
+                            <span className="text-[11px] select-none text-rose-400">▨</span>
+                          ) : isUnavailable ? (
+                            <span className="text-[11px] select-none text-slate-400 dark:text-slate-500 font-light">—</span>
+                          ) : null}
                         </button>
                       </td>
                     );

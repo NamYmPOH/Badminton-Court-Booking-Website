@@ -67,9 +67,9 @@ function CheckoutContent() {
     <div className="grid gap-6 md:grid-cols-2">
       <form onSubmit={submit} className="space-y-4 rounded-card border border-border bg-surface p-6">
         <h2 className="font-bold">Thông tin người đặt</h2>
-        <label className="block text-sm">Họ và tên<input required minLength={2} maxLength={100} value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg p-3" /></label>
-        <label className="block text-sm">Số điện thoại<input required type="tel" maxLength={20} value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg p-3" /></label>
-        <label className="block text-sm">Ghi chú<textarea maxLength={1000} value={note} onChange={e => setNote(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg p-3" /></label>
+        <label className="block text-sm">Họ và tên<input required minLength={2} maxLength={100} value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg text-ink p-3 outline-none focus:border-court-500" /></label>
+        <label className="block text-sm">Số điện thoại<input required type="tel" maxLength={20} value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg text-ink p-3 outline-none focus:border-court-500" /></label>
+        <label className="block text-sm">Ghi chú<textarea maxLength={1000} value={note} onChange={e => setNote(e.target.value)} className="mt-1 block w-full rounded-control border border-border bg-bg text-ink p-3 outline-none focus:border-court-500" /></label>
         {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
         {authLoading ? <p className="text-sm text-muted">Đang kiểm tra đăng nhập...</p> : !user && <p className="text-sm text-muted">Bạn cần <Link href="/login" className="text-court-600 underline">đăng nhập</Link> để tạo và quản lý đơn.</p>}
         <button disabled={submitting || authLoading || !user} className="w-full rounded-control bg-court-600 p-3 font-bold text-white disabled:opacity-50">{submitting ? "Đang tạo đơn..." : "Tạo đơn và chọn thanh toán"}</button>

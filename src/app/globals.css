@@ -46,24 +46,39 @@ body {
   outline-offset: 2px;
 }
 
-/* ─────────────── Form inputs — luôn nền trắng + chữ đen ─────────────── */
+/* ─────────────── Form inputs: Thích ứng Light & Dark mode ─────────────── */
 input,
 textarea,
 select {
-  background: #ffffff !important;
-  color: #1a1a1a !important;
+  background-color: rgb(var(--surface));
+  color: rgb(var(--ink));
   caret-color: #1D3DB8;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: rgb(var(--surface));
+  color: rgb(var(--ink));
+  caret-color: #5578DE;
+}
+
+input.bg-transparent,
+textarea.bg-transparent,
+select.bg-transparent {
+  background-color: transparent !important;
+  color: inherit !important;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #6b7280 !important;
-  opacity: 1;
+  color: rgb(var(--muted));
+  opacity: 0.8;
 }
 
 select option {
-  background: #ffffff;
-  color: #1a1a1a;
+  background-color: rgb(var(--surface));
+  color: rgb(var(--ink));
 }
 
 /* ─────────────── Scrollbar ─────────────── */

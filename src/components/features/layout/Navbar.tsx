@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { NavbarSearch } from "./NavbarSearch";
 
 interface NavbarProps {
   className?: string;
@@ -68,6 +69,11 @@ export function Navbar({ className }: NavbarProps) {
               Bản đồ
             </NavLink>
           </div>
+        </div>
+
+        {/* Thanh tìm kiếm nhanh ở giữa */}
+        <div className="mx-6 hidden md:flex flex-1 justify-center max-w-md xl:max-w-lg">
+          <NavbarSearch />
         </div>
 
         {/* Actions bên phải */}
