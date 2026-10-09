@@ -50,14 +50,25 @@ body {
 input,
 textarea,
 select {
-  background: #ffffff !important;
-  color: #1a1a1a !important;
+  background: #ffffff;
+  color: #1a1a1a;
   caret-color: #1D3DB8;
+}
+
+input.bg-transparent,
+textarea.bg-transparent {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.dark input.bg-transparent,
+.dark textarea.bg-transparent {
+  color: rgb(var(--ink)) !important;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #6b7280 !important;
+  color: #6b7280;
   opacity: 1;
 }
 
