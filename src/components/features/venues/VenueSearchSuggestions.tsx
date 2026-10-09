@@ -28,7 +28,7 @@ export function VenueSearchSuggestions({
   return (
     <div
       role="listbox"
-      className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-card border border-border bg-surface shadow-xl backdrop-blur-lg animate-in fade-in slide-in-from-top-2 duration-150"
+      className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-border bg-surface/95 p-2.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150"
     >
       {suggestions.length > 0 ? (
         <div className="p-2">

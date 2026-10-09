@@ -72,7 +72,7 @@ export function Navbar({ className }: NavbarProps) {
         </div>
 
         {/* Thanh tìm kiếm nhanh ở giữa */}
-        <div className="mx-4 hidden md:block">
+        <div className="mx-6 hidden md:flex flex-1 justify-center max-w-md xl:max-w-lg">
           <NavbarSearch />
         </div>
 

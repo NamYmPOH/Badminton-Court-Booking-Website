@@ -88,10 +88,10 @@ export function NavbarSearch() {
   };
 
   return (
-    <div className="relative w-full max-w-xs xl:max-w-sm" ref={containerRef}>
+    <div className="relative w-full" ref={containerRef}>
       <form onSubmit={handleSubmit} className="relative">
-        <div className="flex items-center rounded-full border border-border bg-surface px-3 py-1.5 shadow-sm transition focus-within:border-court-500 focus-within:ring-2 focus-within:ring-court-500/20">
-          <Search size={15} className="shrink-0 text-muted" />
+        <div className="group flex h-10 w-full items-center rounded-full border border-border/80 bg-surface/90 px-3.5 py-2 shadow-sm transition-all duration-200 hover:border-court-400 hover:shadow-md focus-within:border-court-500 focus-within:bg-surface focus-within:ring-4 focus-within:ring-court-500/15">
+          <Search size={17} className="shrink-0 text-muted transition-colors group-focus-within:text-court-500" />
           <input
             type="text"
             value={searchTerm}
@@ -100,8 +100,8 @@ export function NavbarSearch() {
               if (suggestions.length > 0) setIsOpen(true);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Tìm tên sân, khu vực..."
-            className="w-full bg-transparent px-2 text-xs text-ink outline-none placeholder:text-muted/70"
+            placeholder="Tìm tên sân, khu vực quận/huyện..."
+            className="w-full bg-transparent px-2.5 text-sm text-ink outline-none placeholder:text-muted/70"
           />
           {searchTerm && (
             <button
@@ -110,10 +110,10 @@ export function NavbarSearch() {
                 setSearchTerm("");
                 setIsOpen(false);
               }}
-              className="rounded-full p-0.5 text-muted hover:text-ink"
+              className="rounded-full p-1 text-muted transition hover:bg-court-100/60 hover:text-ink dark:hover:bg-surface/80"
               aria-label="Xóa"
             >
-              <X size={13} />
+              <X size={14} />
             </button>
           )}
         </div>

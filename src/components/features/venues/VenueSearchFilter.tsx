@@ -234,9 +234,9 @@ export function VenueSearchFilter({ totalResults }: VenueSearchFilterProps) {
       <div className="relative" ref={searchContainerRef}>
         <form
           onSubmit={handleSearchSubmit}
-          className="flex items-center gap-2 rounded-card border border-border bg-surface p-1.5 shadow-sm transition focus-within:border-court-500 focus-within:ring-2 focus-within:ring-court-500/20"
+          className="flex items-center gap-2 rounded-full border border-border bg-surface p-1.5 shadow-sm transition-all hover:border-court-400 hover:shadow-md focus-within:border-court-500 focus-within:ring-4 focus-within:ring-court-500/15"
         >
-          <div className="flex flex-1 items-center gap-2 px-3">
+          <div className="flex flex-1 items-center gap-2 px-3.5">
             <Search size={18} className="shrink-0 text-muted" />
             <input
               type="text"
@@ -266,7 +266,7 @@ export function VenueSearchFilter({ totalResults }: VenueSearchFilterProps) {
 
           <button
             type="submit"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-control bg-court-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-court-700"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-court-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-court-700"
           >
             <Search size={15} />
             <span className="hidden sm:inline">Tìm kiếm</span>
