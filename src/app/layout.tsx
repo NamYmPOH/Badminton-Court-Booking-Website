@@ -42,7 +42,7 @@ export default function RootLayout({
       <body className={`${beVietnamPro.variable} font-sans antialiased`}>
         <Providers>
           <Navbar />
-          <main className="min-h-screen pb-20 lg:pb-0">{children}</main>
+          <main className="min-h-screen pb-20 lg:pb-0">{process.env.GROUP_TRIAL_MODE === "true" && <p role="status" className="bg-amber-100 px-4 py-3 text-center text-sm font-semibold text-amber-950">Bản thử nghiệm · Dữ liệu riêng · Không chuyển tiền thật vào mã QR</p>}{children}</main>
           <MobileTabBar />
         </Providers>
       </body>

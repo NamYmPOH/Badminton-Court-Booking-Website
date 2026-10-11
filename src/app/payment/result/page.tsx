@@ -5,9 +5,10 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { formatVND } from "@/lib/utils";
 import type { Booking } from "@/types/booking";
+import { GroupPaymentCreate } from "@/components/GroupPaymentCreate";
 import { formatHour } from "@/lib/booking";
 
-type PaymentBooking = Booking & { canChoosePayment: boolean; qrUrl: string | null; bank: { name: string; accountNo: string; accountName: string } | null };
+type PaymentBooking = Booking & { groupToken?: string | null; canChoosePayment: boolean; qrUrl: string | null; bank: { name: string; accountNo: string; accountName: string } | null };
 function PaymentResultContent() {
   const params = useSearchParams();
   const code = params.get("booking");
@@ -68,6 +69,8 @@ function PaymentResultContent() {
       <p className="text-xl font-bold text-court-600">{formatVND(booking.total)}</p>
       {paid && <p role="status">Đã nhận thanh toán và xác nhận lịch sân của bạn.</p>}
       {booking.status === "CONFIRMED" && !paid && <p>{cash ? "Sân đã duyệt. Thanh toán tiền mặt khi đến chơi; nhân viên sẽ xác nhận sau khi nhận tiền." : "Lịch sân đã được xác nhận, đơn chưa thanh toán."}</p>}
+      {booking.groupToken && <Link href={`/groups/${booking.groupToken}`} className="block rounded-control bg-court-600 p-4 text-center font-bold text-white">Mở nhóm và các phần thanh toán</Link>}
+      {!booking.groupToken && pending && !paid && <GroupPaymentCreate code={booking.code} total={booking.total} />}
       {payable && <div className="grid gap-6 md:grid-cols-[1fr_260px]">
       <section className="space-y-3 rounded-control border border-border p-4">
       <h2 className="font-bold">{cash ? "Thanh toán tại sân" : "Thanh toán online qua QR"}</h2>

@@ -45,8 +45,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshUser();
+    void refreshUser();
+    const channel = new BroadcastChannel("smashbook-auth");
+    const sync = () => { void refreshUser(); };
+    channel.addEventListener("message", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      channel.close();
+      window.removeEventListener("focus", sync);
+    };
   }, [refreshUser]);
+
+  function broadcastSession() {
+    const channel = new BroadcastChannel("smashbook-auth");
+    channel.postMessage("changed");
+    channel.close();
+  }
 
   const login = async (input: LoginInput) => {
     try {
@@ -63,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
       setUser(json.data.user);
+      broadcastSession();
       return { success: true };
     } catch {
       return {
@@ -87,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
       setUser(json.data.user);
+      broadcastSession();
       return { success: true };
     } catch {
       return {
@@ -103,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Logout request failed:", err);
     } finally {
       setUser(null);
+      broadcastSession();
     }
   };
 

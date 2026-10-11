@@ -87,6 +87,7 @@ enum PaymentProvider {
 enum PaymentStatus {
   UNPAID
   PENDING
+  PARTIALLY_PAID
   PAID
   FAILED
   REFUND_PENDING
@@ -167,6 +168,7 @@ model User {
   favorites     Favorite[]
   notifications Notification[]
   pushSubs      PushSubscription[]
+  groupShares   GroupShare[]
 }
 
 // ───────────── Cơ sở / Sân / Giá ─────────────
@@ -301,6 +303,7 @@ model Booking {
   items    BookingItem[]
   payments Payment[]
   review   Review?
+  group    BookingGroup?
 
   @@index([userId, createdAt])
   @@index([venueId, status])
@@ -336,8 +339,78 @@ model Payment {
   rawPayload    Json?
   createdAt     DateTime        @default(now())
   booking       Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  groupShares   GroupShare[]
+  groupRefund   GroupRefund?
 
   @@index([bookingId])
+}
+
+// Group payments use fixed shares. A payment can settle several shares on behalf of members.
+model BookingGroup {
+  id          String   @id @default(cuid())
+  bookingId   String   @unique
+  inviteToken String   @unique
+  closedAt    DateTime?
+  createdAt   DateTime @default(now())
+  booking     Booking  @relation(fields: [bookingId], references: [id])
+  shares      GroupShare[]
+  intents     GroupPaymentIntent[]
+}
+
+model GroupShare {
+  id             String   @id @default(cuid())
+  groupId        String
+  position       Int
+  label          String
+  amount         Int
+  userId         String?
+  cashRequested  Boolean  @default(false)
+  cashApprovedAt DateTime?
+  paymentId      String?
+  currentIntentId String?
+  ticketNonce    String   @unique
+  checkedInAt    DateTime?
+  checkedInBy    String?
+  group          BookingGroup @relation(fields: [groupId], references: [id])
+  user           User?    @relation(fields: [userId], references: [id])
+  payment        Payment? @relation(fields: [paymentId], references: [id])
+  currentIntent  GroupPaymentIntent? @relation(fields: [currentIntentId], references: [id])
+
+  @@unique([groupId, position])
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@index([paymentId])
+  @@index([currentIntentId])
+}
+
+model GroupPaymentIntent {
+  id          String   @id @default(cuid())
+  groupId     String
+  code        String   @unique
+  payerId     String
+  amount      Int
+  shareIds    String[]
+  bank        Json
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+  group       BookingGroup @relation(fields: [groupId], references: [id])
+  currentShares GroupShare[]
+
+  @@index([groupId, status])
+}
+
+model GroupRefund {
+  id          String   @id @default(cuid())
+  paymentId   String   @unique
+  amount      Int
+  reason      String
+  status      String   @default("PENDING")
+  reference   String?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  payment     Payment  @relation(fields: [paymentId], references: [id])
+
+  @@index([status, createdAt])
 }
 
 // Lưu cả giao dịch không khớp đơn để chủ sân đối soát; không xóa khi xóa booking.

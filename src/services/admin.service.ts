@@ -117,10 +117,11 @@ export async function performAdminAction(
         );
       const booking = await tx.booking.findUnique({
         where: { code: input.bookingCode },
-        include: { items: true },
+        include: { items: true, group: true },
       });
       if (
         !booking ||
+        booking.group ||
         booking.status !== "PENDING_PAYMENT" ||
         !["PENDING", "UNPAID"].includes(booking.paymentStatus) ||
         !booking.expiresAt ||
@@ -172,13 +173,14 @@ export async function performAdminAction(
     } else {
       const booking = await tx.booking.findUnique({
         where: { id: input.id },
-        include: { venue: true, items: true },
+        include: { venue: true, items: true, group: true },
       });
       if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
       if (actor!.role !== "ADMIN") {
         const allowed = await tx.venue.findFirst({ where: { id: booking.venueId, ...operatorVenueScope(actor!) }, select: { id: true } });
         if (!allowed) throw new PaymentError(403, "Bạn không được phân quyền tại sân này.");
       }
+      if (booking.group && input.action !== "COMPLETE") throw new PaymentError(409, "Đơn nhóm: dùng màn hình quản lý nhóm để xử lý từng phần và vé cá nhân.");
       checkBookingAction(booking, input.action, now);
       const update: Prisma.BookingUpdateInput = {};
       if (input.action === "CONFIRM") {
