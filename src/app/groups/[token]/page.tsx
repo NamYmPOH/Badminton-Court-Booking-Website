@@ -435,13 +435,39 @@ export default function GroupPaymentPage({
                     </div>
                   ))
                 ) : (
-                  <p>
-                    {own.cashRequested
-                      ? "Bạn đã yêu cầu trả tiền mặt. Chờ sân duyệt; việc gửi yêu cầu chưa được tính là đã trả tiền."
-                      : own.coveredByLeader
-                        ? "Trưởng nhóm đang trả thay. Không chuyển thêm bằng mã cũ."
-                        : "Chưa có QR thanh toán. Bạn có thể tải mã hoặc chọn tiền mặt."}
-                  </p>
+                  <div className="space-y-3">
+                    <p className="text-muted">
+                      {own.cashRequested
+                        ? "Bạn đã yêu cầu trả tiền mặt. Chờ sân duyệt; việc gửi yêu cầu chưa được tính là đã trả tiền."
+                        : own.coveredByLeader
+                          ? "Trưởng nhóm đang trả thay. Không chuyển thêm bằng mã cũ."
+                          : "Chưa có QR thanh toán. Bạn có thể tải mã hoặc chọn tiền mặt."}
+                    </p>
+                    {own.cashRequested && (
+                      <button
+                        type="button"
+                        disabled={busy || !!error}
+                        className={button}
+                        onClick={() =>
+                          void act({ action: "METHOD", method: "BANK_TRANSFER" })
+                        }
+                      >
+                        Đổi ý: Hiện lại mã QR để chuyển khoản
+                      </button>
+                    )}
+                    {!own.cashRequested && !displayIntents.length && (
+                      <button
+                        type="button"
+                        disabled={busy || !!error}
+                        className={button}
+                        onClick={() =>
+                          void act({ action: "METHOD", method: "BANK_TRANSFER" })
+                        }
+                      >
+                        Tải mã QR thanh toán
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               <aside className="space-y-3 rounded-card border border-border bg-surface p-5">
