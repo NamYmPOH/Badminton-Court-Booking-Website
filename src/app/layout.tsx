@@ -4,6 +4,7 @@ import { BRAND } from "@/lib/config/brand";
 import { Providers } from "@/components/Providers";
 import { Navbar } from "@/components/features/layout/Navbar";
 import { MobileTabBar } from "@/components/features/layout/MobileTabBar";
+import { Analytics } from "@vercel/analytics/next";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
@@ -45,6 +46,7 @@ export default function RootLayout({
           <main className="min-h-screen pb-20 lg:pb-0">{children}</main>
           <MobileTabBar />
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
