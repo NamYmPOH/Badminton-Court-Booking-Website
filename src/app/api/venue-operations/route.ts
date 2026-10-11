@@ -13,10 +13,10 @@ export async function GET(request: Request) {
     const q = (new URL(request.url).searchParams.get("q") || "").slice(0, 80);
     const bookings = await db.booking.findMany({
       where: { venue: operatorVenueScope(actor), ...(q ? { code: { contains: q, mode: "insensitive" } } : {}),
-        OR: [{ status: "CONFIRMED" }, { status: "CHECKED_IN" }, { status: "PENDING_PAYMENT", expiresAt: { gt: new Date() } }] },
+        OR: [{ group: { isNot: null }, paymentStatus: "REFUND_PENDING" }, { status: "CONFIRMED" }, { status: "CHECKED_IN" }, { status: "PENDING_PAYMENT", expiresAt: { gt: new Date() } }] },
       take: 100, orderBy: { createdAt: "desc" },
       select: { id: true, code: true, customerName: true, customerPhone: true, total: true, status: true, paymentStatus: true, paymentMethod: true, expiresAt: true,
-        venue: { select: { name: true, paymentMode: true } }, items: { select: { date: true, startMin: true, endMin: true, court: { select: { name: true } } } } },
+        group: { select: { inviteToken: true } }, venue: { select: { name: true, paymentMode: true } }, items: { select: { date: true, startMin: true, endMin: true, court: { select: { name: true } } } } },
     });
     return Response.json({ bookings }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return paymentErrorResponse(error); }

@@ -27,7 +27,8 @@ export default function LoginPage() {
 
     if (res.success) {
       toast.success("Đăng nhập thành công!");
-      router.push("/");
+      const next = new URLSearchParams(window.location.search).get("callbackUrl");
+      router.push(next && /^\/groups\/[a-f0-9]{48}$/.test(next) ? next : "/");
       router.refresh();
     } else {
       setErrorMsg(res.error || "Đăng nhập thất bại");

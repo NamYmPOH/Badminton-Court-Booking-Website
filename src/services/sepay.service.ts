@@ -2,22 +2,18 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { eventFingerprint, extractBookingCode, PaymentError, type SepayConfig, type SepayEvent } from "../lib/sepay";
 import { canPayBooking } from "../lib/booking-payment";
 
-// Retry transaction bị tranh chấp; không gọi dịch vụ ngoài khi đang giữ transaction.
-export async function serializable<T>(db: PrismaClient, work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await db.$transaction(work, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 5000 });
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (attempt >= 2 || !["P2034", "P2002"].includes(code || "")) throw error;
-    }
-  }
-}
+import { serializable } from "../lib/transaction";
+import { extractGroupCode } from "../lib/group-payment";
+import { settleGroupTransfer } from "./group-payment.service";
+export { serializable } from "../lib/transaction";
 
 export async function receiveSepayPayment(db: PrismaClient, event: SepayEvent, config: SepayConfig) {
   const transactionId = String(event.id);
   const fingerprint = eventFingerprint(event);
-  const code = extractBookingCode(event.content);
+  const groupCode = extractGroupCode(event.content);
+  const hasGroupReference = /GP[A-F0-9]{24}/i.test(event.content);
+  const code = hasGroupReference ? null : extractBookingCode(event.content);
+  let receiptBookingCode = code;
   return serializable(db, async tx => {
     const previous = await tx.sepayReceipt.findUnique({ where: { transactionId } });
     if (previous) {
@@ -26,13 +22,19 @@ export async function receiveSepayPayment(db: PrismaClient, event: SepayEvent, c
     }
     let result = "REVIEW_BOOKING_CODE";
     if (event.transferType !== "in") result = "IGNORED_OUTGOING";
+    else if (groupCode) {
+      const outcome = await settleGroupTransfer(tx, groupCode, event);
+      result = outcome.result; receiptBookingCode = outcome.bookingCode;
+    }
+    else if (hasGroupReference) result = "REVIEW_GROUP_CODE";
     else if (event.accountNumber !== config.BANK_ACCOUNT_NO
       || event.gateway.toLowerCase() !== config.SEPAY_BANK_GATEWAY.toLowerCase()
       || (config.SEPAY_SUB_ACCOUNT && event.subAccount !== config.SEPAY_SUB_ACCOUNT)) result = "REVIEW_WRONG_ACCOUNT";
     else if (code) {
-      const booking = await tx.booking.findUnique({ where: { code }, include: { items: true } });
+      const booking = await tx.booking.findUnique({ where: { code }, include: { items: true, group: true } });
       const now = new Date();
       if (!booking) result = "REVIEW_BOOKING_NOT_FOUND";
+      else if (booking.group) result = "REVIEW_GROUP_LEGACY_QR";
       else if (!["PENDING_PAYMENT", "CONFIRMED"].includes(booking.status) || !["PENDING", "UNPAID"].includes(booking.paymentStatus)) result = "REVIEW_BOOKING_NOT_PENDING";
       else if (booking.status === "PENDING_PAYMENT" && (!booking.expiresAt || booking.expiresAt <= now)) result = "REVIEW_EXPIRED";
       else if (booking.total !== event.transferAmount) result = "REVIEW_AMOUNT_MISMATCH";
@@ -56,7 +58,7 @@ export async function receiveSepayPayment(db: PrismaClient, event: SepayEvent, c
       }
     }
     // Ghi nhận cả giao dịch cần đối soát; commit receipt và booking cùng lúc rồi mới ACK.
-    await tx.sepayReceipt.create({ data: { transactionId, fingerprint, bookingCode: code, result, payload: event as Prisma.InputJsonObject } });
+    await tx.sepayReceipt.create({ data: { transactionId, fingerprint, bookingCode: receiptBookingCode, result, payload: event as Prisma.InputJsonObject } });
     return { result };
   });
 }

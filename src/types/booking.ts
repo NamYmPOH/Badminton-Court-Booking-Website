@@ -8,7 +8,7 @@ export type BookingStatus =
   | "EXPIRED";
 
 export type PaymentStatus =
-  | "UNPAID"
+  | "PARTIALLY_PAID" | "UNPAID"
   | "PENDING"
   | "FAILED"
   | "PAID"
@@ -27,6 +27,7 @@ export interface BookingItem {
 }
 
 export interface Booking {
+  groupToken?: string | null;
   id: string;
   code: string;       // SB-YYMMDD-XXXX
   venueId: string;

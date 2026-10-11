@@ -129,14 +129,14 @@ function BookingsContent() {
                       ? "● Đã xác nhận"
                       : booking.status === "COMPLETED"
                       ? "✓ Đã hoàn tất"
-                      : "✕ Đã huỷ"}
+                      : booking.status === "PENDING_PAYMENT" ? "Đang giữ sân" : booking.status === "CHECKED_IN" ? "Đã nhận sân" : "✕ Đã huỷ"}
                   </span>
                 </div>
 
                 <span className="text-xs font-semibold text-muted">
                   {booking.paymentStatus === "PAID"
-                    ? "Đã thanh toán VNPAY"
-                    : "Trả tại sân"}
+                    ? "Đã thanh toán"
+                    : booking.paymentStatus === "PARTIALLY_PAID" ? "Đã thu một phần" : "Chưa thanh toán"}
                 </span>
               </div>
 
@@ -197,7 +197,7 @@ function BookingsContent() {
                 )}
 
                 <Link
-                  href={`/payment/result?booking=${encodeURIComponent(booking.code)}`}
+                  href={booking.groupToken ? `/groups/${booking.groupToken}` : `/payment/result?booking=${encodeURIComponent(booking.code)}`}
                   className="inline-flex items-center gap-1 rounded-control bg-court-600 px-3.5 py-1.5 font-semibold text-white hover:bg-court-700"
                 >
                   <QrCode size={13} />

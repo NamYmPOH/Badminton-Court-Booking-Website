@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/lib/utils";
 import { formatHour } from "@/lib/booking";
 
-type Order = { id: string; code: string; customerName: string; customerPhone: string; total: number; status: string; paymentStatus: string; paymentMethod: string | null; expiresAt: string | null;
+type Order = { group?: { inviteToken: string } | null; id: string; code: string; customerName: string; customerPhone: string; total: number; status: string; paymentStatus: string; paymentMethod: string | null; expiresAt: string | null;
   venue: { name: string; paymentMode: string }; items: { date: string; startMin: number; endMin: number; court: { name: string } }[] };
 export default function VenueOperationsPage() {
   const { user, isLoading } = useAuth();
@@ -75,9 +75,9 @@ export default function VenueOperationsPage() {
       return <article key={order.id} className="space-y-3 rounded-card border border-border bg-surface p-5">
         <h2 className="font-bold">{order.code} · {order.venue.name}</h2><p>{order.customerName} · {order.customerPhone}</p>
         {order.items.map((item, index) => <p key={index} className="text-sm">{item.court.name} · {item.date.slice(0, 10)} · {formatHour(item.startMin)}–{formatHour(item.endMin)}</p>)}
-        <p className="font-bold">{formatVND(order.total)}</p><p>{paid ? "Đã thanh toán" : pending && cash ? "Chờ duyệt tiền mặt" : cash ? "Tiền mặt — chưa thu tiền" : "Chuyển khoản — chưa thanh toán"}</p>
+        <p className="font-bold">{formatVND(order.total)}</p><p>{order.group && !paid ? "Nhóm — xem các phần tiền" : paid ? "Đã thanh toán" : pending && cash ? "Chờ duyệt tiền mặt" : cash ? "Tiền mặt — chưa thu tiền" : "Chuyển khoản — chưa thanh toán"}</p>
         <p className="text-sm text-muted">{pending ? `Hạn duyệt / thanh toán: ${new Date(order.expiresAt!).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}` : order.status === "CONFIRMED" ? "Đã xác nhận lịch sân" : order.status === "CHECKED_IN" ? "Đã nhận sân" : "Hết hạn giữ sân"}</p>
-        <div className="flex flex-wrap gap-2">{pending && cash && button("Duyệt trả tiền tại sân", "CONFIRM")}{order.status === "CONFIRMED" && cash && !paid && button("Đã thu đủ tiền mặt", "CASH_PAID")}{order.status === "CONFIRMED" && paid && button("Nhận sân", "CHECK_IN")}{order.status === "CHECKED_IN" && paid && button("Hoàn tất", "COMPLETE")}{(pending || order.status === "CONFIRMED") && button("Hủy đơn", "CANCEL")}</div>
+        <div className="flex flex-wrap gap-2">{order.group ? <Link href={`/groups/${order.group.inviteToken}`} className="rounded-control bg-court-600 px-3 py-2 text-white">Quản lý chia tiền / vé nhóm</Link> : <>{pending && cash && button("Duyệt trả tiền tại sân", "CONFIRM")}{order.status === "CONFIRMED" && cash && !paid && button("Đã thu đủ tiền mặt", "CASH_PAID")}{order.status === "CONFIRMED" && paid && button("Nhận sân", "CHECK_IN")}{order.status === "CHECKED_IN" && paid && button("Hoàn tất", "COMPLETE")}{(pending || order.status === "CONFIRMED") && button("Hủy đơn", "CANCEL")}</>}{order.group && order.status === "CHECKED_IN" && paid && button("Hoàn tất", "COMPLETE")}</div>
       </article>;
     })}</div>}
     <p className="text-sm text-muted">Hiển thị tối đa 100 đơn đang xử lý. Dùng mã đơn để tìm chính xác.</p>

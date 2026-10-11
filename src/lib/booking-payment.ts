@@ -4,7 +4,7 @@ type PaymentBooking = {
 };
 
 export function canPayBooking(booking: PaymentBooking, now = new Date()) {
-  if (!["UNPAID", "PENDING"].includes(booking.paymentStatus) || !booking.items.length) return false;
+  if (!["UNPAID", "PENDING", "PARTIALLY_PAID"].includes(booking.paymentStatus) || !booking.items.length) return false;
   if (booking.status === "PENDING_PAYMENT") {
     return !!booking.expiresAt && booking.expiresAt > now && booking.items.every(i => i.status === "HELD");
   }

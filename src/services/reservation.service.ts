@@ -5,18 +5,19 @@ import { createVietQrUrl, PaymentError, type SepayConfig } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { canPayBooking } from "../lib/booking-payment";
 
-export const bookingDetails = { venue: true, items: { include: { court: true } } } satisfies Prisma.BookingInclude;
+export const bookingDetails = { venue: true, group: { select: { inviteToken: true } }, items: { include: { court: true } } } satisfies Prisma.BookingInclude;
 type StoredBooking = Prisma.BookingGetPayload<{ include: typeof bookingDetails }>;
 
 export function publicBooking(booking: StoredBooking, config?: SepayConfig) {
   const expired = booking.status === "PENDING_PAYMENT" && (!booking.expiresAt || booking.expiresAt <= new Date());
-  const payable = canPayBooking(booking);
+  const payable = !booking.group && canPayBooking(booking);
   return {
     id: booking.id, code: booking.code, venueId: booking.venueId, venueName: booking.venue.name,
     venueAddress: booking.venue.address, venueSlug: booking.venue.slug,
     status: expired ? "EXPIRED" : booking.status, paymentStatus: booking.paymentStatus,
     paymentMethod: booking.paymentMethod === "CASH" ? "AT_VENUE" : "BANK_TRANSFER",
     canChoosePayment: payable,
+    groupToken: booking.group?.inviteToken || null,
     subtotal: booking.subtotal, discount: booking.discount, total: booking.total,
     contactName: booking.customerName, contactPhone: booking.customerPhone, note: booking.note,
     expiresAt: booking.expiresAt?.toISOString() || "", createdAt: booking.createdAt.toISOString(),
@@ -67,6 +68,7 @@ export async function choosePaymentMethod(db: PrismaClient, userId: string, code
   return serializable(db, async tx => {
     const booking = await tx.booking.findFirst({ where: { code, userId }, include: bookingDetails });
     if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
+    if (booking.group) throw new PaymentError(409, "Hãy chọn phương thức trong trang nhóm.");
     if (!canPayBooking(booking)) throw new PaymentError(409, "Đơn đã thanh toán, hết hạn hoặc không còn được giữ. Vui lòng kiểm tra lại.");
     // Switching methods never extends the hold or marks a booking paid.
     return tx.booking.update({ where: { id: booking.id }, data: { paymentMethod: method }, include: bookingDetails });

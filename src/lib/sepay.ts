@@ -65,8 +65,8 @@ export function eventFingerprint(event: SepayEvent) {
   ])).digest("hex");
 }
 
-export function createVietQrUrl(amount: number, code: string, config: SepayConfig) {
-  if (!Number.isSafeInteger(amount) || amount <= 0 || !/^DATSAN\d{1,10}$/.test(code)) {
+export function createVietQrUrl(amount: number, code: string, config: Pick<SepayConfig, "BANK_BIN" | "BANK_ACCOUNT_NO" | "BANK_ACCOUNT_NAME">) {
+  if (!Number.isSafeInteger(amount) || amount <= 0 || !/^(?:DATSAN\d{1,10}|GP[A-F0-9]{24})$/.test(code)) {
     throw new PaymentError(400, "Thông tin thanh toán không hợp lệ.");
   }
   const url = new URL(`https://img.vietqr.io/image/${config.BANK_BIN}-${config.BANK_ACCOUNT_NO}-compact2.png`);
