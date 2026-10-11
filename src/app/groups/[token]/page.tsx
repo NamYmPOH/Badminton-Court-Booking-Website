@@ -301,7 +301,7 @@ export default function GroupPaymentPage({
                       {s.id === own?.id ? " (Bạn)" : ""}
                     </strong>
                     <p className="text-sm text-muted">
-                      {s.paid
+                      {!group.isMember && !group.isOperator ? "Tham gia để xem trạng thái" : s.paid
                         ? "Đã thu tiền"
                         : s.cashApproved
                           ? "Đã duyệt trả tại sân — chưa thu"
