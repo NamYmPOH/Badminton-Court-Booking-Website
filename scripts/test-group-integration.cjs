@@ -49,6 +49,31 @@ async function main() {
   assert.equal(extractGroupCode('GP'+ 'A'.repeat(24)+' DATSAN123'),null);
   check('rounding conserves total; mixed references rejected');
 
+  const automatic = await fixture();
+  await Promise.all([action(automatic,'m2',{action:'JOIN'}), action(automatic,'m3',{action:'JOIN'})]);
+  await action(automatic,'m4',{action:'JOIN'});
+  await action(automatic,'m2',{action:'JOIN'});
+  const automaticView = await view(automatic,'m2');
+  assert.equal(automaticView.shares[0].isLeader,true);
+  assert.equal(automaticView.shares[0].label,'leader');
+  assert.equal(automaticView.shares.filter(s=>s.joined).length,4);
+  assert.ok(automaticView.ownShareId);
+  await assert.rejects(action(automatic,'outsider',{action:'JOIN'}),e=>e.status===409);
+  const oneShare = automaticView.shares.find(s=>s.id===automaticView.ownShareId);
+  await action(automatic,'m2',{action:'METHOD',method:'CASH'});
+  const note = await db.notification.findFirst({where:{userId:'staff'}});
+  assert.ok(note);
+  assert.ok(note.title.includes('Yêu cầu thanh toán tiền mặt'));
+  for (const actor of ['m2','wrongStaff']) await assert.rejects(action(automatic,actor,{action:'COLLECT_CASH',shareIds:[oneShare.id],reason:'Unauthorized cash receipt'}),e=>e.status===403);
+  await action(automatic,'staff',{action:'COLLECT_CASH',shareIds:[oneShare.id],reason:'Received one member cash payment'});
+  const collected = await view(automatic,'m2');
+  assert.equal(collected.shares.filter(s=>s.paid).length,1);
+  assert.equal(collected.shares.filter(s=>!s.paid).length,3);
+  assert.equal(collected.received,37500);
+  assert.equal(collected.status,'PENDING_PAYMENT');
+  await assert.rejects(action(automatic,'staff',{action:'COLLECT_CASH',shareIds:[oneShare.id],reason:'Repeated receipt'}),e=>e.status===409);
+  check('automatic concurrent join, leader identity, full group and scoped single cash receipt persist');
+
   const f = await fixture();
   await Promise.all([action(f,'m2',{action:'JOIN',position:2}),action(f,'m3',{action:'JOIN',position:3}),action(f,'m4',{action:'JOIN',position:4})]);
   let v = await view(f); assert.equal(v.intents[0].amount,37500);

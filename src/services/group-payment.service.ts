@@ -375,7 +375,7 @@ export async function groupAction(
       )
         throw new PaymentError(409, "Nhóm không còn nhận thành viên.");
       const share = g.shares.find(
-        (s) => s.position === input.position && !s.userId,
+        (s) => !s.userId && (input.position === undefined || s.position === input.position),
       );
       if (!share)
         throw new PaymentError(409, "Vị trí này đã có người tham gia.");
@@ -394,12 +394,36 @@ export async function groupAction(
           409,
           "Trưởng nhóm đang trả thay phần này. Hãy liên hệ trưởng nhóm trước khi trả thêm.",
         );
-      if (input.method === "CASH")
+      if (input.method === "CASH") {
         await tx.groupShare.update({
           where: { id: own.id },
           data: { cashRequested: true },
         });
-      else if (current)
+        const venueStaff = await tx.venueStaff.findMany({
+          where: { venueId: g.booking.venueId },
+          select: { userId: true },
+        });
+        const recipientIds = Array.from(
+          new Set([g.booking.venue.ownerId, ...venueStaff.map((s) => s.userId)]),
+        );
+        if (recipientIds.length > 0) {
+          await tx.notification.createMany({
+            data: recipientIds.map((targetId) => ({
+              id: token(),
+              userId: targetId,
+              type: "SYSTEM" as const,
+              title: `Yêu cầu thanh toán tiền mặt (${g.booking.code})`,
+              body: `Khách ${own.user?.name || own.label} yêu cầu trả tiền mặt phần ${own.position} (${own.amount.toLocaleString("vi-VN")} đ) tại sân.`,
+              data: {
+                bookingCode: g.booking.code,
+                inviteToken: g.inviteToken,
+                shareId: own.id,
+                amount: own.amount,
+              },
+            })),
+          });
+        }
+      } else if (current)
         await tx.groupShare.update({
           where: { id: own.id },
           data: { cashRequested: false },
@@ -448,14 +472,6 @@ export async function groupAction(
     } else if (input.action === "COLLECT_CASH") {
       assertLive(g, false);
       const shares = selected(g, input.shareIds);
-      if (
-        g.booking.status !== "CONFIRMED" ||
-        shares.some((s) => !s.cashApprovedAt)
-      )
-        throw new PaymentError(
-          409,
-          "Cần duyệt trả tại sân và xác nhận lịch trước khi thu.",
-        );
       const payment = await tx.payment.create({
         data: {
           bookingId: g.bookingId,
@@ -469,7 +485,7 @@ export async function groupAction(
       });
       await tx.groupShare.updateMany({
         where: { id: { in: input.shareIds }, paymentId: null },
-        data: { paymentId: payment.id },
+        data: { paymentId: payment.id, cashRequested: true, cashApprovedAt: new Date() },
       });
       // The old bank intent remains recognizable, but cannot settle shares already collected.
       await sync(tx, g.id);
@@ -672,6 +688,7 @@ export async function getGroupView(
       g.booking.paymentStatus === "PAID";
     return {
       id: g.id,
+      viewerId: userId,
       code: member ? g.booking.code : null,
       venueName: g.booking.venue.name,
       status: g.booking.status,
@@ -688,6 +705,8 @@ export async function getGroupView(
       closed: !!g.closedAt,
       canPay: live(g),
       canCollect: live(g, false),
+      canJoin: !g.closedAt && ["PENDING_PAYMENT", "CONFIRMED"].includes(g.booking.status) &&
+        (g.booking.status !== "PENDING_PAYMENT" || !!g.booking.expiresAt && g.booking.expiresAt > new Date()),
       items: g.booking.items.map((i) => ({
         courtName: i.court.name,
         date: i.date.toISOString().slice(0, 10),
@@ -697,8 +716,8 @@ export async function getGroupView(
       shares: g.shares.map((s) => ({
         id: s.id,
         position: s.position,
-        label:
-          privileged || s.userId === userId ? s.user?.name || s.label : s.label,
+        isLeader: s.userId === g.booking.userId,
+        label: member ? s.user?.name || s.label : s.label,
         amount: s.amount,
         joined: !!s.userId,
         paid: member ? !!s.paymentId : false,

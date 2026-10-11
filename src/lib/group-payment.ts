@@ -23,7 +23,7 @@ export const groupActionSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("JOIN"),
-      position: z.number().int().min(1).max(30),
+      position: z.number().int().min(1).max(30).optional(),
     })
     .strict(),
   z

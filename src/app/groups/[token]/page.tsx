@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
 import Image from "next/image";
 import { formatVND } from "@/lib/utils";
 import { formatHour } from "@/lib/booking";
@@ -16,6 +17,8 @@ export default function GroupPaymentPage({
 }: {
   params: { token: string };
 }) {
+  const { user, refreshUser } = useAuth();
+  const autoJoined = useRef("");
   const [group, setGroup] = useState<Group | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -42,10 +45,12 @@ export default function GroupPaymentPage({
       try {
         const response = await fetch(endpoint, { cache: "no-store", signal });
         const data = await response.json();
+        if (response.status === 401 || response.status === 403) setGroup(null);
         if (!response.ok)
           throw new Error(data.message || "Không đọc được nhóm.");
         if (!signal?.aborted && !mutation.current && v === version.current) {
           setGroup(data.group);
+          if (data.group.viewerId !== user?.id) void refreshUser();
           setError("");
         }
       } catch (e) {
@@ -57,9 +62,13 @@ export default function GroupPaymentPage({
           );
       }
     },
-    [endpoint],
+    [endpoint, user?.id, refreshUser],
   );
   useEffect(() => {
+    version.current++;
+    setGroup(null);
+    setSelected([]);
+    setConfirmation(null);
     const controller = new AbortController();
     void refresh(controller.signal);
     const interval = setInterval(() => {
@@ -88,11 +97,12 @@ export default function GroupPaymentPage({
       active = false;
     };
   }, [group?.isLeader, inviteUrl]);
-  async function act(input: GroupAction) {
+  const act = useCallback(async (input: GroupAction) => {
     if (mutation.current) return;
     mutation.current = true;
     version.current++;
     setBusy(true);
+    const requestVersion = version.current;
     setError("");
     setNotice("");
     try {
@@ -102,6 +112,7 @@ export default function GroupPaymentPage({
         body: JSON.stringify(input),
       });
       const data = await response.json();
+      if (requestVersion !== version.current) return;
       if (!response.ok)
         throw new Error(data.message || "Không cập nhật được nhóm.");
       setGroup(data.group);
@@ -122,7 +133,14 @@ export default function GroupPaymentPage({
       mutation.current = false;
       setBusy(false);
     }
-  }
+  }, [endpoint]);
+  useEffect(() => {
+    if (!group || group.isMember || group.isOperator || !group.canJoin || !group.shares.some((s) => !s.joined)) return;
+    const key = `${endpoint}:${group.viewerId}`;
+    if (autoJoined.current === key) return;
+    autoJoined.current = key;
+    void act({ action: "JOIN" });
+  }, [group, endpoint, act]);
   const own = group?.shares.find((s) => s.id === group.ownShareId);
   const remainingSeconds = group?.expiresAt
     ? Math.max(0, Math.ceil((Date.parse(group.expiresAt) - now) / 1000))
@@ -273,10 +291,11 @@ export default function GroupPaymentPage({
           )}
           <section className="space-y-3 rounded-card border border-border bg-surface p-5">
             <h2 className="text-lg font-bold">Các phần thanh toán</h2>
+            {(group.isMember || group.isOperator) && <p className="text-sm text-muted">{group.shares.filter((s) => s.paid).length}/{group.shares.length} phần đã thanh toán · {group.shares.filter((s) => !s.paid).length} phần chưa thanh toán</p>}
             {group.shares.map((s) => (
               <div
                 key={s.id}
-                className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 last:border-0"
+                className={`flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 last:border-0 ${s.paid ? "opacity-60" : ""}`}
               >
                 <div className="flex items-center gap-3">
                   {(group.isLeader || group.isOperator) &&
@@ -296,20 +315,35 @@ export default function GroupPaymentPage({
                       />
                     )}
                   <div>
-                    <strong>
-                      {s.label}
-                      {s.id === own?.id ? " (Bạn)" : ""}
-                    </strong>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <strong className="text-base">
+                        {s.label}
+                      </strong>
+                      {s.isLeader && s.label !== "Trưởng nhóm" && (
+                        <span className="rounded bg-court-600/15 px-2 py-0.5 text-xs font-semibold text-court-700 dark:text-court-300">
+                          Trưởng nhóm
+                        </span>
+                      )}
+                      {s.id === own?.id && (
+                        <span className="rounded bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
+                          (Bạn)
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-muted">
-                      {!group.isMember && !group.isOperator ? "Tham gia để xem trạng thái" : s.paid
-                        ? "Đã thu tiền"
-                        : s.cashApproved
-                          ? "Đã duyệt trả tại sân — chưa thu"
-                          : s.cashRequested
-                            ? "Chờ sân duyệt tiền mặt"
-                            : s.coveredByLeader
-                              ? "Đang có người trả thay"
-                              : "Chưa thanh toán"}
+                      {!group.isMember && !group.isOperator ? (
+                        "Tham gia để xem trạng thái"
+                      ) : s.paid ? (
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">Đã thanh toán</span>
+                      ) : s.cashApproved ? (
+                        "Đã duyệt trả tại sân — chưa thu"
+                      ) : s.cashRequested ? (
+                        <span className="font-semibold text-amber-600 dark:text-amber-400">Chờ sân duyệt tiền mặt</span>
+                      ) : s.coveredByLeader ? (
+                        "Đang có người trả thay"
+                      ) : (
+                        "Chưa thanh toán"
+                      )}
                       {!s.joined ? " · Chưa có người tham gia" : ""}
                       {s.checkedIn ? " · Đã nhận sân" : ""}
                     </p>
@@ -317,6 +351,12 @@ export default function GroupPaymentPage({
                 </div>
                 <div className="flex items-center gap-3">
                   <strong>{formatVND(s.amount)}</strong>
+                  {group.isOperator && group.canCollect && !timedOut && !s.paid && (
+                    <button className={button} disabled={busy || !!error} onClick={() => {
+                      setConfirmation({ action: "COLLECT_CASH", ids: [s.id], amount: s.amount });
+                      setReason(`Đã thu tiền mặt phần ${s.position}: ${s.label}`);
+                    }}>Xác nhận thu tiền mặt</button>
+                  )}
                   {!group.isMember &&
                     !group.isOperator &&
                     !s.joined &&
@@ -434,7 +474,7 @@ export default function GroupPaymentPage({
                     </button>
                   )}
                 <p className="text-sm text-muted">
-                  Sân duyệt yêu cầu và xác nhận đã thu bằng hai bước riêng.
+                  Chỉ nhân viên hoặc chủ sân mới được xác nhận đã thực thu tiền mặt.
                 </p>
               </aside>
             </section>
@@ -519,8 +559,6 @@ export default function GroupPaymentPage({
                     disabled={
                       busy ||
                       !chosen.length ||
-                      group.status !== "CONFIRMED" ||
-                      chosen.some((s) => !s.cashApproved) ||
                       !!error
                     }
                     className={button}
@@ -603,6 +641,7 @@ export default function GroupPaymentPage({
                     ? "Duyệt trả tiền tại sân — chưa ghi nhận đã thu"
                     : "Hủy đơn nhóm"}
               </h2>
+              {confirmation.ids.length > 0 && <p>Phần được xác nhận: {group.shares.filter((s) => confirmation.ids.includes(s.id)).map((s) => `${s.position}. ${s.label}`).join(", ")}</p>}
               {confirmation.action === "CANCEL" && (
                 <p className="text-sm">
                   Hủy trước giờ chơi trên 24 giờ: hoàn 100%; từ 12–24 giờ: 50%;

@@ -16,7 +16,7 @@ export async function GET(request: Request) {
         OR: [{ group: { isNot: null }, paymentStatus: "REFUND_PENDING" }, { status: "CONFIRMED" }, { status: "CHECKED_IN" }, { status: "PENDING_PAYMENT", expiresAt: { gt: new Date() } }] },
       take: 100, orderBy: { createdAt: "desc" },
       select: { id: true, code: true, customerName: true, customerPhone: true, total: true, status: true, paymentStatus: true, paymentMethod: true, expiresAt: true,
-        group: { select: { inviteToken: true } }, venue: { select: { name: true, paymentMode: true } }, items: { select: { date: true, startMin: true, endMin: true, court: { select: { name: true } } } } },
+        group: { select: { inviteToken: true, shares: { select: { id: true, position: true, amount: true, cashRequested: true, paymentId: true } } } }, venue: { select: { name: true, paymentMode: true } }, items: { select: { date: true, startMin: true, endMin: true, court: { select: { name: true } } } } },
     });
     return Response.json({ bookings }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return paymentErrorResponse(error); }

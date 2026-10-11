@@ -6,9 +6,9 @@ Ngày: 11/10/2026. Thiết kế: [group-payment-flow.vi.md](group-payment-flow.v
 
 1. Tạo đơn như bình thường. Trên màn hình QR chọn **Chia tiền với nhóm** trước khi có khoản thu.
 2. Chọn 2–30 người, chia đều hoặc nhập từng phần. Chốt bảng chia, sao chép link/QR mời.
-3. Thành viên đăng nhập, nhận vị trí còn trống, dùng QR riêng hoặc yêu cầu tiền mặt.
+3. Thành viên đăng nhập và mở link sẽ tự nhận ô trống đầu tiên sau trưởng nhóm. Tên tài khoản được hiển thị cho nhóm; “(Bạn)” chỉ đánh dấu người đang xem. Phần đã thanh toán được làm mờ và không thể chọn trả lại.
 4. Trưởng nhóm có thể chọn các phần chưa trả để tạo QR trả thay, hoặc yêu cầu trả phần còn lại tại sân.
-5. Chủ sân/nhân viên mở nhóm từ **Vận hành sân**: duyệt trả tại sân và ghi nhận đã thu là hai thao tác riêng, có nhật ký.
+5. Chủ sân/nhân viên được phân quyền tại sân mở nhóm từ **Vận hành sân**. Nút **Xác nhận thu tiền mặt** ở từng ô ghi nhận khoản thực thu và nhật ký, kể cả khi các phần khác chưa trả. Duyệt trả sau vẫn là thao tác riêng, không tính là đã thu. Thu 1/4 phần không tự duyệt 3 phần còn lại hay kéo dài hạn giữ sân.
 6. Cả đơn đủ tiền mới kích hoạt vé QR cá nhân. Nhân viên kiểm tra từng vé trong khung giờ nhận sân; mỗi vé chỉ dùng một lần.
 
 Một nhóm vẫn dùng một đơn và hạn giữ sân cũ. Tổng các phần phải bằng tổng đơn. QR tổng đơn cũ ngừng tự đối soát khi đã chia nhóm. Mã cũ, tiền sai, chuyển trễ hoặc trùng phần được giữ để đối soát, không tự cộng thêm vào đơn.
@@ -33,5 +33,7 @@ Hủy/hết hạn tạo yêu cầu hoàn từ tiền thực nhận. Hoàn tiền
 ## Preview độc lập
 
 Nhánh codex/group-payment-trial dùng schema thử riêng và ngân hàng giả. Biến GROUP_TRIAL_MODE hiển thị nhãn không chuyển tiền thật. Đăng nhập các tài khoản thử ở trên, mở /venues/group-trial/book để tạo đơn mới và chọn chia tiền. Không dùng tài khoản thật ở preview này.
+
+Các tab cùng trình duyệt dùng chung phiên đăng nhập. Dùng các hồ sơ trình duyệt khác nhau để thử nhiều tài khoản đồng thời. Thanh điều hướng đồng bộ khi đổi phiên hoặc quay lại tab; màn hình nhóm lấy danh tính và trạng thái thanh toán từ máy chủ.
 
 Lệnh node scripts/serve-group-trial.cjs --prepare-preview chuẩn bị fixture tồn tại lâu hơn phiên local và lưu cấu hình vào .env.group-preview.json đã bị Git bỏ qua. Không commit hoặc chia sẻ tệp này. Các biến Vercel phải giới hạn target preview và đúng gitBranch.
