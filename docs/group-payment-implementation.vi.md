@@ -29,3 +29,9 @@ Hủy/hết hạn tạo yêu cầu hoàn từ tiền thực nhận. Hoàn tiền
 - `npx tsc --noEmit`, `npm run lint`, `npm run build`.
 
 Đã kiểm thử xử lý thông báo SePay giả lập; chưa thực hiện chuyển khoản ngân hàng thật. Không chuyển tiền vào các QR ở môi trường thử độc lập.
+
+## Preview độc lập
+
+Nhánh codex/group-payment-trial dùng schema thử riêng và ngân hàng giả. Biến GROUP_TRIAL_MODE hiển thị nhãn không chuyển tiền thật. Đăng nhập các tài khoản thử ở trên, mở /venues/group-trial/book để tạo đơn mới và chọn chia tiền. Không dùng tài khoản thật ở preview này.
+
+Lệnh node scripts/serve-group-trial.cjs --prepare-preview chuẩn bị fixture tồn tại lâu hơn phiên local và lưu cấu hình vào .env.group-preview.json đã bị Git bỏ qua. Không commit hoặc chia sẻ tệp này. Các biến Vercel phải giới hạn target preview và đúng gitBranch.

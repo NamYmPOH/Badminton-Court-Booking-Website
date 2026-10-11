@@ -35,8 +35,17 @@ async function main() {
   const passwordHash = await bcrypt.hash('GroupTrial123!', 10);
   for (const [id,name,role] of [['leader','Trưởng nhóm thử nghiệm','CUSTOMER'],['member','Thành viên thử nghiệm','CUSTOMER'],['owner','Nhân viên sân thử nghiệm','OWNER']]) await db.user.create({ data: { id, name, role, email: `${id}@example.test`, passwordHash } });
   await db.venue.create({ data: { id:'trial-venue',slug:'group-trial',name:'Sân thử chia tiền — không chuyển tiền thật',address:'Dữ liệu thử độc lập',district:'Thử nghiệm',lat:21,lng:105,phone:'0000000000',ownerId:'owner',status:'ACTIVE',images:[],amenities:[],courts:{create:{id:'trial-court',name:'Sân 1'}} } });
+  await db.pricingRule.create({ data: { venueId: 'trial-venue', label: 'Giá thử nghiệm', daysOfWeek: [1,2,3,4,5,6,7], startMin: 300, endMin: 1320, walkInPrice: 150000, fixedPrice: 150000 } });
   const date = new Date(Date.now()+86400000); date.setUTCHours(0,0,0,0);
   await db.booking.create({ data: { code:'DATSAN9988776655',userId:'leader',venueId:'trial-venue',customerName:'Trưởng nhóm thử nghiệm',customerPhone:'0000000000',subtotal:150000,total:150000,status:'PENDING_PAYMENT',paymentStatus:'PENDING',paymentMethod:'BANK_TRANSFER',expiresAt:new Date(Date.now()+600000),items:{create:{courtId:'trial-court',date,startMin:600,endMin:660,price:150000}} } });
+  if (process.argv.includes('--prepare-preview')) {
+    const values = { DATABASE_URL: url.toString(), DIRECT_URL: url.toString(), AUTH_SECRET: crypto.randomBytes(32).toString('hex'), SEPAY_AUTH_MODE: 'hmac', SEPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'), BANK_BIN: '970415', BANK_ACCOUNT_NO: '000000000000', BANK_ACCOUNT_NAME: 'TEST ONLY DO NOT PAY', SEPAY_BANK_GATEWAY: 'VietinBank', SEPAY_SUB_ACCOUNT: '' };
+    fs.writeFileSync('.env.group-preview.json', JSON.stringify({ schema, values }), { mode: 0o600 });
+    created = false; // Persist this isolated fixture for the deployed branch trial.
+    await db.$disconnect();
+    console.log('Prepared isolated preview fixture; configuration saved in gitignored .env.group-preview.json.');
+    return;
+  }
   child = spawn(process.execPath, ['node_modules/next/dist/bin/next','start','-p','3102'], { stdio:'inherit', env:{...process.env,DATABASE_URL:url.toString(),DIRECT_URL:url.toString(),AUTH_SECRET:crypto.randomBytes(32).toString('hex'),SEPAY_AUTH_MODE:'hmac',SEPAY_WEBHOOK_SECRET:'isolated-trial-secret-not-production',BANK_BIN:'970415',BANK_ACCOUNT_NO:'000000000000',BANK_ACCOUNT_NAME:'TEST ONLY DO NOT PAY',SEPAY_BANK_GATEWAY:'VietinBank',SEPAY_SUB_ACCOUNT:''} });
   child.on('exit',()=>void stop());
   console.log('Trial: http://localhost:3102/login');
