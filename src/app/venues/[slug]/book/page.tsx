@@ -47,10 +47,13 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
   }, []);
 
   const dates = useMemo(() => bookingDates(now), [now]);
-  const timeSlots = venue ? Array.from({ length: Math.floor((venue.closeMin - venue.openMin) / 30) }, (_, i) => {
-    const startMin = venue.openMin + i * 30;
-    return { startMin, endMin: startMin + 30, label: formatHour(startMin) };
-  }) : [];
+  const timeSlots = useMemo(() => {
+    if (!venue) return [];
+    return Array.from({ length: Math.floor((venue.closeMin - venue.openMin) / 30) }, (_, i) => {
+      const startMin = venue.openMin + i * 30;
+      return { startMin, endMin: startMin + 30, label: formatHour(startMin) };
+    });
+  }, [venue]);
 
   // Tự động cuộn đến khung giờ hiện tại hoặc khung giờ trống đầu tiên khi xem ngày "Hôm nay"
   useEffect(() => {
@@ -67,7 +70,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
     } else {
       gridContainerRef.current.scrollTo({ left: 0, behavior: "smooth" });
     }
-  }, [selectedDate, venue?.id, timeSlots.length, dates]);
+  }, [selectedDate, venue, timeSlots, dates, now]);
 
   const toggleSlot = (courtId: string, courtName: string, startMin: number, endMin: number) => {
     if (!venue) return;

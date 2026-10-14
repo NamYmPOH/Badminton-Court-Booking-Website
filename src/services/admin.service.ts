@@ -90,6 +90,76 @@ export async function performAdminAction(
         ownerId: venue.ownerId,
         ownerRoleBefore: venue.owner.role,
       };
+    } else if (input.action === "COACH_STATUS") {
+      const coach = await tx.coachProfile.findUnique({
+        where: { id: input.id },
+        include: { user: true },
+      });
+      if (!coach) throw new PaymentError(404, "Không tìm thấy hồ sơ huấn luyện viên.");
+      if (input.status === "ACTIVE" && coach.user.status !== "ACTIVE") {
+        throw new PaymentError(409, "Tài khoản của huấn luyện viên đang bị khóa.");
+      }
+      await tx.coachProfile.update({
+        where: { id: coach.id },
+        data: {
+          status: input.status,
+          reviewReason: input.reason,
+          reviewedAt: now,
+          reviewedById: actorId,
+        },
+      });
+      details = {
+        coachName: coach.user.name,
+        before: coach.status,
+        after: input.status,
+        reason: input.reason,
+      };
+    } else if (input.action === "PARTNER_STATUS") {
+      const partner = await tx.partner.findUnique({
+        where: { id: input.id },
+      });
+      if (!partner) throw new PaymentError(404, "Không tìm thấy đối tác.");
+      await tx.partner.update({
+        where: { id: partner.id },
+        data: {
+          status: input.status,
+        },
+      });
+      details = {
+        partnerName: partner.name,
+        before: partner.status,
+        after: input.status,
+        reason: input.reason,
+      };
+    } else if (input.action === "OFFER_STATUS") {
+      const offer = await tx.partnerOffer.findUnique({
+        where: { id: input.id },
+        include: { partner: true, voucher: true },
+      });
+      if (!offer) throw new PaymentError(404, "Không tìm thấy chương trình ưu đãi.");
+      if (input.status === "ACTIVE" && offer.partner.status !== "ACTIVE") {
+        throw new PaymentError(409, "Thương hiệu đối tác chưa được kích hoạt.");
+      }
+      await tx.partnerOffer.update({
+        where: { id: offer.id },
+        data: {
+          status: input.status,
+        },
+      });
+      await tx.voucher.update({
+        where: { id: offer.voucherId },
+        data: {
+          isActive: input.status === "ACTIVE",
+        },
+      });
+      details = {
+        offerTitle: offer.title,
+        partnerName: offer.partner.name,
+        voucherCode: offer.voucher.code,
+        before: offer.status,
+        after: input.status,
+        reason: input.reason,
+      };
     } else if (input.action === "MATCH_RECEIPT") {
       const receipt = await tx.sepayReceipt.findUnique({
         where: { transactionId: input.id },
@@ -195,9 +265,32 @@ export async function performAdminAction(
           where: { bookingId: booking.id, status: "HELD" },
           data: { status: "CONFIRMED" },
         });
+        if (tx.coachBooking) {
+          await tx.coachBooking.updateMany({
+            where: { bookingItem: { bookingId: booking.id }, status: "HELD" },
+            data: { status: "CONFIRMED", expiresAt: null },
+          });
+        }
+        if (tx.offerUsage) {
+          await tx.offerUsage.updateMany({
+            where: { bookingId: booking.id, state: "RESERVED" },
+            data: { expiresAt: null },
+          });
+        }
       }
       if (input.action === "CHECK_IN") update.status = "CHECKED_IN";
-      if (input.action === "COMPLETE") update.status = "COMPLETED";
+      if (input.action === "COMPLETE") {
+        update.status = "COMPLETED";
+        if (tx.coachBooking) {
+          await tx.coachBooking.updateMany({
+            where: {
+              bookingItem: { bookingId: booking.id },
+              status: "CONFIRMED",
+            },
+            data: { status: "COMPLETED" },
+          });
+        }
+      }
       if (input.action === "CANCEL") {
         update.status = "CANCELLED";
         update.cancelledAt = now;
@@ -217,6 +310,21 @@ export async function performAdminAction(
           },
           data: { status: "CANCELLED" },
         });
+        if (tx.coachBooking) {
+          await tx.coachBooking.updateMany({
+            where: {
+              bookingItem: { bookingId: booking.id },
+              status: { in: ["HELD", "CONFIRMED"] },
+            },
+            data: { status: "CANCELLED", cancelledAt: now, cancelReason: input.reason },
+          });
+        }
+        if (tx.offerUsage) {
+          await tx.offerUsage.updateMany({
+            where: { bookingId: booking.id, state: "RESERVED" },
+            data: { state: "RELEASED" },
+          });
+        }
       }
       if (input.action === "CASH_PAID") {
         await tx.payment.create({
@@ -231,6 +339,16 @@ export async function performAdminAction(
         });
         update.paymentStatus = "PAID";
         update.paymentMethod = "CASH";
+        if (tx.offerUsage) {
+          const usages = await tx.offerUsage.findMany({ where: { bookingId: booking.id, state: "RESERVED" } });
+          for (const usage of usages) {
+            await tx.offerUsage.update({ where: { id: usage.id }, data: { state: "CONSUMED", expiresAt: null } });
+            await tx.partnerOffer.update({ where: { id: usage.offerId }, data: { usedBudget: { increment: usage.discountAmount }, currentUsage: { increment: 1 } } });
+          }
+        }
+        if (tx.voucher && booking.voucherId) {
+          await tx.voucher.update({ where: { id: booking.voucherId }, data: { usedCount: { increment: 1 } } });
+        }
       }
       await tx.booking.update({ where: { id: booking.id }, data: update });
       details = {

@@ -68,6 +68,7 @@ export function Navbar({ className }: NavbarProps) {
               <MapPin size={16} />
               Bản đồ
             </NavLink>
+            <NavLink href="/offers">Ưu đãi</NavLink>
           </div>
         </div>
 
@@ -131,6 +132,20 @@ export function Navbar({ className }: NavbarProps) {
                     >
                       <Calendar size={15} />
                       Lịch đặt của tôi
+                    </Link>
+                    <Link
+                      href="/coach"
+                      onClick={() => setDropdownOpen(false)}
+                      className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink"
+                    >
+                      Cổng Huấn luyện viên
+                    </Link>
+                    <Link
+                      href="/partner"
+                      onClick={() => setDropdownOpen(false)}
+                      className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink"
+                    >
+                      Cổng Đối tác & Tài trợ
                     </Link>
                     {["ADMIN", "OWNER", "STAFF"].includes(user.role) && <Link href="/venue-operations" onClick={() => setDropdownOpen(false)} className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink">Quản lý đơn tại sân</Link>}
                   </div>

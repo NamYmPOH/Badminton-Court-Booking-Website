@@ -12,6 +12,8 @@ import {
   RefreshCw,
   ArrowRightLeft,
   LayoutDashboard,
+  UserCheck,
+  Tag,
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -19,6 +21,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 const tabs = [
   ["overview", "Tổng quan", LayoutDashboard],
   ["venues", "Duyệt cơ sở", Building2],
+  ["coaches", "Huấn luyện viên", UserCheck],
+  ["partners", "Đối tác & Ưu đãi", Tag],
   ["bookings", "Đặt sân", CalendarDays],
   ["payments", "Thanh toán", Wallet],
   ["receipts", "Đối soát SePay", ArrowRightLeft],
@@ -475,6 +479,98 @@ export default function AdminDashboard() {
                           Mở đặt sân ↗
                         </Link>
                       )}
+                    </div>
+                  </>
+                )}
+                {tab === "coaches" && (
+                  <>
+                    <div className="flex flex-wrap justify-between gap-3">
+                      <div>
+                        <h2 className="font-bold">{r.name}</h2>
+                        <p className="mt-1 text-sm text-muted">
+                          SĐT: {r.phone || "Chưa có"} · Email: {r.email || "Chưa có"}
+                        </p>
+                        <p className="mt-2 text-sm text-muted">
+                          Học phí: <strong className="text-court-600">{money(r.amount)}/giờ</strong> ·{" "}
+                          {(r.details as { experienceYears?: number })?.experienceYears || 0} năm kinh nghiệm
+                        </p>
+                        <p className="text-xs text-muted">
+                          Chuyên môn: {((r.details as { specialties?: string[] })?.specialties || []).join(", ") || "Tổng hợp"}
+                        </p>
+                      </div>
+                      <Badge value={r.status} />
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {r.status === "PENDING" && (
+                        <>
+                          {actionButton("Duyệt HLV", {
+                            action: "COACH_STATUS",
+                            id: r.id,
+                            status: "ACTIVE",
+                          })}
+                          {actionButton("Từ chối", {
+                            action: "COACH_STATUS",
+                            id: r.id,
+                            status: "REJECTED",
+                          })}
+                        </>
+                      )}
+                      {r.status === "ACTIVE" &&
+                        actionButton("Tạm ngưng", {
+                          action: "COACH_STATUS",
+                          id: r.id,
+                          status: "SUSPENDED",
+                        })}
+                      {r.status === "SUSPENDED" &&
+                        actionButton("Kích hoạt lại", {
+                          action: "COACH_STATUS",
+                          id: r.id,
+                          status: "ACTIVE",
+                        })}
+                    </div>
+                  </>
+                )}
+                {tab === "partners" && (
+                  <>
+                    <div className="flex flex-wrap justify-between gap-3">
+                      <div>
+                        <h2 className="font-bold">{r.name}</h2>
+                        <p className="mt-1 text-sm text-muted">
+                          Mã định danh: <code className="font-mono">{r.slug}</code> · SĐT: {r.phone || "Chưa có"} · Email: {r.email || "Chưa có"}
+                        </p>
+                        <p className="mt-2 text-xs text-muted">
+                          Chiến dịch ưu đãi: {(r.details as { offersCount?: number })?.offersCount || 0} · Thành viên đại diện: {(r.details as { membersCount?: number })?.membersCount || 0}
+                        </p>
+                      </div>
+                      <Badge value={r.status} />
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {r.status === "PENDING" && (
+                        <>
+                          {actionButton("Duyệt thương hiệu", {
+                            action: "PARTNER_STATUS",
+                            id: r.id,
+                            status: "ACTIVE",
+                          })}
+                          {actionButton("Từ chối", {
+                            action: "PARTNER_STATUS",
+                            id: r.id,
+                            status: "REJECTED",
+                          })}
+                        </>
+                      )}
+                      {r.status === "ACTIVE" &&
+                        actionButton("Tạm ngưng", {
+                          action: "PARTNER_STATUS",
+                          id: r.id,
+                          status: "SUSPENDED",
+                        })}
+                      {r.status === "SUSPENDED" &&
+                        actionButton("Kích hoạt lại", {
+                          action: "PARTNER_STATUS",
+                          id: r.id,
+                          status: "ACTIVE",
+                        })}
                     </div>
                   </>
                 )}

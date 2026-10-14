@@ -48,6 +48,19 @@ export async function receiveSepayPayment(db: PrismaClient, event: SepayEvent, c
         if (updated.count !== 1) result = "REVIEW_BOOKING_NOT_PENDING";
         else {
           await tx.bookingItem.updateMany({ where: { bookingId: booking.id, status: "HELD" }, data: { status: "CONFIRMED" } });
+          if (tx.coachBooking) {
+            await tx.coachBooking.updateMany({ where: { bookingItem: { bookingId: booking.id }, status: "HELD" }, data: { status: "CONFIRMED", expiresAt: null } });
+          }
+          if (tx.offerUsage) {
+            const usages = await tx.offerUsage.findMany({ where: { bookingId: booking.id, state: "RESERVED" } });
+            for (const usage of usages) {
+              await tx.offerUsage.update({ where: { id: usage.id }, data: { state: "CONSUMED", expiresAt: null } });
+              await tx.partnerOffer.update({ where: { id: usage.offerId }, data: { usedBudget: { increment: usage.discountAmount }, currentUsage: { increment: 1 } } });
+            }
+          }
+          if (tx.voucher && booking.voucherId) {
+            await tx.voucher.update({ where: { id: booking.voucherId }, data: { usedCount: { increment: 1 } } });
+          }
           await tx.payment.create({ data: {
             bookingId: booking.id, provider: "BANK_TRANSFER", amount: booking.total,
             status: "PAID", txnRef: `SEPAY-${transactionId}`, providerTxnNo: transactionId,

@@ -13,6 +13,8 @@ const beVietnamPro = Be_Vietnam_Pro({
   weight: ["400", "500", "600", "700"],
   variable: "--font-bvp",
   display: "swap",
+  fallback: ["system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {

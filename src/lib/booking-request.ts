@@ -3,12 +3,15 @@ import { isPastSlot, selectionError, slotPrice, vietnamDate } from "./booking";
 import { PaymentError } from "./sepay";
 
 export const bookingRequestSchema = z.object({
-  requestId: z.string().uuid(), venueId: z.string().min(1).max(100),
+  requestId: z.string().uuid(),
+  venueId: z.string().min(1).max(100),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   slots: z.array(z.object({ courtId: z.string().min(1).max(100), startMin: z.number().int(), endMin: z.number().int() })).min(1).max(8),
   customerName: z.string().trim().min(2).max(100),
   customerPhone: z.string().regex(/^(0[35789]\d{8}|\+84[35789]\d{8})$/),
   note: z.string().trim().max(1000).default(""),
+  coachId: z.string().min(1).max(100).optional().nullable(),
+  voucherCode: z.string().trim().min(3).max(30).optional().nullable(),
 }).strict();
 export type BookingRequest = z.infer<typeof bookingRequestSchema>;
 
