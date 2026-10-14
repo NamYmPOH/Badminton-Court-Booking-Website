@@ -108,6 +108,74 @@ enum NotificationType {
   SYSTEM
 }
 
+enum CoachStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+enum CoachVenueStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+}
+
+enum CoachBookingStatus {
+  HELD
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PartnerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+enum PartnerMemberRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum OfferStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  REJECTED
+  EXPIRED
+}
+
+enum OfferSponsor {
+  PARTNER
+  VENUE
+  SYSTEM
+}
+
+enum OfferUsageState {
+  RESERVED
+  CONSUMED
+  RELEASED
+}
+
+enum PriceLineType {
+  COURT
+  COACH
+  DISCOUNT
+}
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  DISPUTED
+}
+
 // ───────────── Auth.js (Prisma adapter) ─────────────
 model Account {
   id                String  @id @default(cuid())
@@ -164,11 +232,13 @@ model User {
   ownedVenues   Venue[]            @relation("VenueOwner")
   staffOf       VenueStaff[]
   bookings      Booking[]
-  reviews       Review[]
-  favorites     Favorite[]
-  notifications Notification[]
-  pushSubs      PushSubscription[]
-  groupShares   GroupShare[]
+  reviews        Review[]
+  favorites      Favorite[]
+  notifications  Notification[]
+  pushSubs       PushSubscription[]
+  groupShares    GroupShare[]
+  coachProfile   CoachProfile?
+  partnerMembers PartnerMember[]
 }
 
 // ───────────── Cơ sở / Sân / Giá ─────────────
@@ -208,11 +278,13 @@ model Venue {
   owner     User          @relation("VenueOwner", fields: [ownerId], references: [id])
   staff     VenueStaff[]
   courts    Court[]
-  pricing   PricingRule[]
-  bookings  Booking[]
-  reviews   Review[]
-  favorites Favorite[]
-  vouchers  Voucher[]
+  pricing             PricingRule[]
+  bookings            Booking[]
+  reviews             Review[]
+  favorites           Favorite[]
+  vouchers            Voucher[]
+  coachVenues         CoachVenue[]
+  coachAvailabilities CoachAvailability[]
 
   @@index([status, district])
   @@index([lat, lng])
@@ -300,10 +372,12 @@ model Booking {
   user     User?         @relation(fields: [userId], references: [id])
   venue    Venue         @relation(fields: [venueId], references: [id])
   voucher  Voucher?      @relation(fields: [voucherId], references: [id])
-  items    BookingItem[]
-  payments Payment[]
-  review   Review?
-  group    BookingGroup?
+  items       BookingItem[]
+  payments    Payment[]
+  review      Review?
+  group       BookingGroup?
+  priceLines  BookingPriceLine[]
+  offerUsages OfferUsage[]
 
   @@index([userId, createdAt])
   @@index([venueId, status])
@@ -320,8 +394,9 @@ model BookingItem {
   price     Int
   status    ItemStatus @default(HELD)
 
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  court   Court   @relation(fields: [courtId], references: [id])
+  booking      Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  court        Court         @relation(fields: [courtId], references: [id])
+  coachBooking CoachBooking?
 
   @@index([courtId, date])
   @@index([bookingId])
@@ -454,8 +529,9 @@ model Voucher {
   usageLimit  Int?
   usedCount   Int         @default(0)
   isActive    Boolean     @default(true)
-  venue       Venue?      @relation(fields: [venueId], references: [id])
-  bookings    Booking[]
+  venue        Venue?        @relation(fields: [venueId], references: [id])
+  bookings     Booking[]
+  partnerOffer PartnerOffer?
 }
 
 model Review {
@@ -505,3 +581,211 @@ model PushSubscription {
   auth     String
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// ───────────── Huấn luyện viên (Coach) ─────────────
+model CoachProfile {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  bio             String?
+  specialties     String[]     // Ví dụ: ["Cơ bản", "Nâng cao", "Đơn nam", "Đôi nam nữ"]
+  experienceYears Int          @default(0)
+  hourlyRate      Int          // VND / giờ, tối thiểu >= 0
+  status          CoachStatus  @default(PENDING)
+  reviewReason    String?      // Lý do từ chối hoặc tạm ngưng của Admin
+  reviewedAt      DateTime?
+  reviewedById    String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  certificates   CoachCertificate[]
+  venues         CoachVenue[]
+  availabilities CoachAvailability[]
+  bookings       CoachBooking[]
+  settlements    CoachSettlement[]
+
+  @@index([status, hourlyRate])
+}
+
+model CoachCertificate {
+  id         String    @id @default(cuid())
+  coachId    String
+  title      String    // Tên bằng cấp / chứng chỉ
+  fileKey    String    // Khóa tệp lưu trữ riêng tư (S3 / R2)
+  verifiedAt DateTime?
+  verifiedBy String?
+  createdAt  DateTime  @default(now())
+
+  coach CoachProfile @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  @@index([coachId])
+}
+
+model CoachVenue {
+  id        String           @id @default(cuid())
+  coachId   String
+  venueId   String
+  status    CoachVenueStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+
+  coach CoachProfile @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  venue Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@unique([coachId, venueId])
+  @@index([venueId, status])
+}
+
+model CoachAvailability {
+  id        String   @id @default(cuid())
+  coachId   String
+  venueId   String
+  startsAt  DateTime
+  endsAt    DateTime
+  createdAt DateTime @default(now())
+
+  coach CoachProfile @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  venue Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([coachId, startsAt, endsAt])
+  @@index([venueId, startsAt, endsAt])
+}
+
+model CoachBooking {
+  id                     String             @id @default(cuid())
+  coachId                String
+  bookingItemId          String             @unique
+  startsAt               DateTime
+  endsAt                 DateTime
+  fee                    Int                // Phí HLV thực tế đã chốt (VND)
+  hourlyRateSnapshot     Int                // Giá giờ HLV tại thời điểm đặt
+  commissionRateSnapshot Float              // Tỷ lệ hoa hồng sàn (ví dụ 0.10 cho 10%)
+  commissionAmount       Int                // Số tiền hoa hồng sàn thu (VND)
+  status                 CoachBookingStatus @default(HELD)
+  expiresAt              DateTime?          // Đồng bộ với Booking.expiresAt
+  cancelledAt            DateTime?
+  cancelReason           String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  coach       CoachProfile @relation(fields: [coachId], references: [id])
+  bookingItem BookingItem  @relation(fields: [bookingItemId], references: [id], onDelete: Cascade)
+
+  @@index([coachId, startsAt, endsAt])
+  @@index([status, expiresAt])
+}
+
+// ───────────── Đối tác & Ưu đãi (Partner & Offer) ─────────────
+model Partner {
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  logoUrl      String?
+  description  String?
+  contactPhone String?
+  contactEmail String?
+  status       PartnerStatus @default(PENDING)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  members PartnerMember[]
+  offers  PartnerOffer[]
+
+  @@index([status])
+}
+
+model PartnerMember {
+  id        String            @id @default(cuid())
+  partnerId String
+  userId    String
+  role      PartnerMemberRole @default(STAFF)
+  createdAt DateTime          @default(now())
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, userId])
+  @@index([userId])
+}
+
+model PartnerOffer {
+  id            String       @id @default(cuid())
+  partnerId     String
+  voucherId     String       @unique
+  title         String
+  description   String?
+  sponsor       OfferSponsor @default(PARTNER)
+  budget        Int          // Ngân sách tài trợ tối đa (VND)
+  usedBudget    Int          @default(0)
+  maxUsage      Int?         // Số lượt tối đa nếu có giới hạn
+  currentUsage  Int          @default(0)
+  status        OfferStatus  @default(DRAFT)
+  version       Int          @default(1)
+  termsSnapshot Json?        // Điều kiện áp dụng có cấu trúc (ví dụ minTotal, venueIds...)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  partner Partner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  voucher Voucher      @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  usages  OfferUsage[]
+
+  @@index([partnerId, status])
+}
+
+model OfferUsage {
+  id             String          @id @default(cuid())
+  offerId        String
+  bookingId      String
+  userId         String
+  discountAmount Int
+  state          OfferUsageState @default(RESERVED)
+  expiresAt      DateTime?       // Hết hạn giữ chỗ, đồng bộ Booking.expiresAt
+  termsSnapshot  Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  offer   PartnerOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  booking Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, bookingId])
+  @@index([userId])
+  @@index([state, expiresAt])
+}
+
+// ───────────── Bóc tách tài chính & Đối soát (Settlement) ─────────────
+model BookingPriceLine {
+  id              String        @id @default(cuid())
+  bookingId       String
+  type            PriceLineType
+  amount          Int           // Giá trị VND (dương cho COURT/COACH, giảm giá lưu số dương tương ứng)
+  label           String        // Tiêu đề hiển thị (vd: "Tiền thuê Sân 1", "Phí HLV Nguyễn Văn A", "Ưu đãi Đối tác Yonex")
+  beneficiaryId   String?       // ID người thụ hưởng (coachId hoặc venueId hoặc partnerId)
+  pricingSnapshot Json?
+  createdAt       DateTime      @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+model CoachSettlement {
+  id             String           @id @default(cuid())
+  coachId        String
+  periodStart    DateTime
+  periodEnd      DateTime
+  grossCollected Int              // Tổng tiền thực thu từ khách (VND)
+  refunds        Int              @default(0) // Khoản hoàn lại khách nếu có (VND)
+  commission     Int              // Tiền hoa hồng sàn khấu trừ (VND)
+  netAmount      Int              // Số tiền chi trả cho HLV = grossCollected - refunds - commission
+  status         SettlementStatus @default(PENDING)
+  reference      String?          // Mã chứng từ ngân hàng / phiếu chi
+  note           String?
+  createdById    String           // Admin tạo kỳ đối soát
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  coach CoachProfile @relation(fields: [coachId], references: [id])
+
+  @@index([coachId, status])
+  @@index([periodStart, periodEnd])
+}
+

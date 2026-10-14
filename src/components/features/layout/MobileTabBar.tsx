@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Map, CalendarDays, UserCircle } from "lucide-react";
+import { Home, Map, CalendarDays, UserCircle, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
@@ -22,6 +22,7 @@ export function MobileTabBar() {
   const mobileTabs = [
     { href: "/", label: "Trang chủ", icon: Home },
     { href: "/venues?view=map", label: "Bản đồ", icon: Map, match: "/venues" },
+    { href: "/offers", label: "Ưu đãi", icon: Tag },
     { href: user ? "/bookings" : "/login", label: "Lịch của tôi", icon: CalendarDays },
     { href: user ? "/account" : "/login", label: user ? "Tài khoản" : "Đăng nhập", icon: UserCircle },
   ];

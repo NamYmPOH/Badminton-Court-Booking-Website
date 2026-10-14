@@ -16,6 +16,8 @@ const querySchema = z.object({
   tab: z.enum([
     "overview",
     "venues",
+    "coaches",
+    "partners",
     "bookings",
     "payments",
     "receipts",
@@ -194,6 +196,68 @@ export async function GET(request: Request) {
           createdAt: true,
         },
       });
+    if (tab === "coaches") {
+      const coaches = await db.coachProfile.findMany({
+        ...window,
+        where: {
+          ...(pending === "true" ? { status: "PENDING" } : {}),
+          user: {
+            OR: [{ name: search }, { phone: search }, { email: search }],
+          },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        include: {
+          user: { select: { name: true, phone: true, email: true } },
+          _count: { select: { certificates: true, venues: true, bookings: true } },
+        },
+      });
+      rows = coaches.map((c) => ({
+        id: c.id,
+        name: c.user.name,
+        phone: c.user.phone || undefined,
+        email: c.user.email || undefined,
+        status: c.status,
+        amount: c.hourlyRate,
+        details: {
+          experienceYears: c.experienceYears,
+          specialties: c.specialties,
+          bio: c.bio,
+          certificatesCount: c._count.certificates,
+          venuesCount: c._count.venues,
+          bookingsCount: c._count.bookings,
+          reviewReason: c.reviewReason,
+        },
+        createdAt: c.createdAt.toISOString(),
+      }));
+    }
+    if (tab === "partners") {
+      const partners = await db.partner.findMany({
+        ...window,
+        where: {
+          ...(pending === "true" ? { status: "PENDING" } : {}),
+          OR: [{ name: search }, { slug: search }],
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        include: {
+          _count: { select: { offers: true, members: true } },
+        },
+      });
+      rows = partners.map((p) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        status: p.status,
+        phone: p.contactPhone || undefined,
+        email: p.contactEmail || undefined,
+        details: {
+          description: p.description,
+          logoUrl: p.logoUrl,
+          offersCount: p._count.offers,
+          membersCount: p._count.members,
+        },
+        createdAt: p.createdAt.toISOString(),
+      }));
+    }
     if (tab === "audit")
       rows = await db.adminAudit.findMany({
         ...window,
