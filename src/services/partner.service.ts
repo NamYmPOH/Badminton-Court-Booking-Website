@@ -150,6 +150,7 @@ export async function validateAndQuoteOffer(
   }
 
   let reservedBudget = 0;
+  let effectiveUsedBudget = 0;
 
   // Nếu là voucher của Đối tác
   if (voucher.partnerOffer) {
@@ -163,19 +164,37 @@ export async function validateAndQuoteOffer(
         offerId: offer.id,
         OR: [
           { state: "CONSUMED" },
-          { state: "RESERVED", expiresAt: { gt: now } },
+          {
+            state: "RESERVED",
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          },
         ],
       },
-      select: { discountAmount: true },
+      select: { state: true, discountAmount: true },
     });
-    reservedBudget = activeUsages.reduce((sum, u) => sum + u.discountAmount, 0);
-    const reservedCount = activeUsages.length;
 
-    if (offer.usedBudget >= offer.budget || reservedBudget >= offer.budget) {
+    const consumedBudgetFromLedger = activeUsages
+      .filter((u) => u.state === "CONSUMED")
+      .reduce((sum, u) => sum + u.discountAmount, 0);
+    reservedBudget = activeUsages
+      .filter((u) => u.state !== "CONSUMED")
+      .reduce((sum, u) => sum + u.discountAmount, 0);
+
+    const consumedCountFromLedger = activeUsages.filter((u) => u.state === "CONSUMED").length;
+    const reservedCount = activeUsages.filter((u) => u.state !== "CONSUMED").length;
+
+    // Chuẩn hoá nguồn dữ liệu: lấy mức cao hơn giữa recorded usedBudget và ledger CONSUMED
+    effectiveUsedBudget = Math.max(offer.usedBudget ?? 0, consumedBudgetFromLedger);
+    const totalCommittedBudget = effectiveUsedBudget + reservedBudget;
+
+    const effectiveUsageCount = Math.max(offer.currentUsage ?? 0, consumedCountFromLedger);
+    const totalCommittedUsage = effectiveUsageCount + reservedCount;
+
+    if (totalCommittedBudget >= offer.budget) {
       throw new PaymentError(409, "Chương trình ưu đãi đã sử dụng hết ngân sách tài trợ.");
     }
 
-    if (offer.maxUsage && (offer.currentUsage >= offer.maxUsage || reservedCount >= offer.maxUsage)) {
+    if (offer.maxUsage && totalCommittedUsage >= offer.maxUsage) {
       throw new PaymentError(409, "Chương trình ưu đãi đã đạt giới hạn lượt sử dụng.");
     }
 
@@ -196,7 +215,8 @@ export async function validateAndQuoteOffer(
 
   if (voucher.partnerOffer) {
     const offer = voucher.partnerOffer;
-    if (offer.usedBudget >= offer.budget || reservedBudget + discountAmount > offer.budget) {
+    const totalCommittedBudget = effectiveUsedBudget + reservedBudget;
+    if (totalCommittedBudget + discountAmount > offer.budget) {
       throw new PaymentError(409, "Chương trình ưu đãi đã đạt hạn mức ngân sách tài trợ.");
     }
   }
@@ -464,6 +484,16 @@ export async function getMyPartnerOffers(
     validFrom: o.voucher.validFrom.toISOString(),
     validTo: o.voucher.validTo.toISOString(),
     createdAt: o.createdAt.toISOString(),
+    voucher: {
+      code: o.voucher.code,
+      type: o.voucher.type,
+      value: o.voucher.value,
+      maxDiscount: o.voucher.maxDiscount,
+      minAmount: o.voucher.minAmount,
+      validFrom: o.voucher.validFrom.toISOString(),
+      validTo: o.voucher.validTo.toISOString(),
+      isActive: o.voucher.isActive,
+    },
   }));
 }
 
@@ -522,6 +552,8 @@ export async function getPartnerReport(
   const totalUsages = offers.reduce((sum, o) => sum + o.currentUsage, 0);
 
   return {
+    partnerId: partner.id,
+    partnerName: partner.name,
     partner: {
       id: partner.id,
       name: partner.name,
@@ -534,6 +566,27 @@ export async function getPartnerReport(
       totalUsages,
       activeOffersCount: offers.filter((o) => o.status === "ACTIVE").length,
     },
+    summary: {
+      totalOffers: offers.length,
+      activeOffers: offers.filter((o) => o.status === "ACTIVE").length,
+      totalBudget,
+      totalSpent: totalUsedBudget,
+      totalRemaining: Math.max(0, totalBudget - totalUsedBudget),
+      totalUsages,
+      utilizationRate: totalBudget > 0 ? Math.round((totalUsedBudget / totalBudget) * 100) : 0,
+    },
+    offers: offers.map((o) => ({
+      id: o.id,
+      title: o.title,
+      voucherCode: o.voucher.code,
+      status: o.status,
+      budget: o.budget,
+      spent: o.usedBudget,
+      remaining: Math.max(0, o.budget - o.usedBudget),
+      usageCount: o.currentUsage,
+      maxUsage: o.maxUsage,
+      utilizationRate: o.budget > 0 ? Math.round((o.usedBudget / o.budget) * 100) : 0,
+    })),
     recentUsages: usages.map((u) => ({
       id: u.id,
       bookingCode: u.booking.code,
@@ -544,5 +597,82 @@ export async function getPartnerReport(
       state: u.state,
       createdAt: u.createdAt.toISOString(),
     })),
+  };
+}
+
+export interface OfferLedgerAuditReport {
+  offerId: string;
+  offerTitle: string;
+  partnerId: string;
+  partnerName: string;
+  status: string;
+  budget: number;
+  recordedUsedBudget: number;
+  ledgerConsumedBudget: number;
+  budgetDiscrepancy: number;
+  recordedCurrentUsage: number;
+  ledgerConsumedCount: number;
+  usageDiscrepancy: number;
+  activeReservedBudget: number;
+  activeReservedCount: number;
+  availableBudget: number;
+  isConsistent: boolean;
+}
+
+/**
+ * Hàm kiểm toán đối soát chỉ đọc (Read-only), tuyệt đối không ghi/sửa dữ liệu thật.
+ */
+export async function auditOfferLedger(
+  database: PrismaClient = db,
+  offerId: string
+): Promise<OfferLedgerAuditReport> {
+  const offer = await database.partnerOffer.findUnique({
+    where: { id: offerId },
+    include: { partner: true, voucher: true },
+  });
+  if (!offer) throw new PaymentError(404, "Không tìm thấy chương trình ưu đãi.");
+
+  const now = new Date();
+  const usages = await database.offerUsage.findMany({
+    where: { offerId },
+    select: { state: true, discountAmount: true, expiresAt: true },
+  });
+
+  const consumed = usages.filter((u) => u.state === "CONSUMED");
+  const reserved = usages.filter(
+    (u) =>
+      u.state === "RESERVED" &&
+      (u.expiresAt === null || u.expiresAt > now)
+  );
+
+  const ledgerConsumedBudget = consumed.reduce((s, u) => s + u.discountAmount, 0);
+  const ledgerConsumedCount = consumed.length;
+
+  const activeReservedBudget = reserved.reduce((s, u) => s + u.discountAmount, 0);
+  const activeReservedCount = reserved.length;
+
+  const effectiveUsed = Math.max(offer.usedBudget, ledgerConsumedBudget);
+  const availableBudget = Math.max(0, offer.budget - effectiveUsed - activeReservedBudget);
+
+  const budgetDiscrepancy = offer.usedBudget - ledgerConsumedBudget;
+  const usageDiscrepancy = offer.currentUsage - ledgerConsumedCount;
+
+  return {
+    offerId: offer.id,
+    offerTitle: offer.title,
+    partnerId: offer.partnerId,
+    partnerName: offer.partner.name,
+    status: offer.status,
+    budget: offer.budget,
+    recordedUsedBudget: offer.usedBudget,
+    ledgerConsumedBudget,
+    budgetDiscrepancy,
+    recordedCurrentUsage: offer.currentUsage,
+    ledgerConsumedCount,
+    usageDiscrepancy,
+    activeReservedBudget,
+    activeReservedCount,
+    availableBudget,
+    isConsistent: budgetDiscrepancy === 0 && usageDiscrepancy === 0,
   };
 }

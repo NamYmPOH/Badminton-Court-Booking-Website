@@ -249,14 +249,30 @@ export async function createReservation(db: PrismaClient, userId: string, input:
             offerId: po.id,
             OR: [
               { state: "CONSUMED" },
-              { state: "RESERVED", expiresAt: { gt: now } },
+              {
+                state: "RESERVED",
+                OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+              },
             ],
           },
-          select: { discountAmount: true },
+          select: { state: true, discountAmount: true },
         });
 
-        const reservedBudget = activeUsages.reduce((sum, u) => sum + u.discountAmount, 0);
-        const reservedCount = activeUsages.length;
+        const consumedBudgetFromLedger = activeUsages
+          .filter((u) => u.state === "CONSUMED")
+          .reduce((sum, u) => sum + u.discountAmount, 0);
+        const reservedBudget = activeUsages
+          .filter((u) => u.state !== "CONSUMED")
+          .reduce((sum, u) => sum + u.discountAmount, 0);
+
+        const consumedCountFromLedger = activeUsages.filter((u) => u.state === "CONSUMED").length;
+        const reservedCount = activeUsages.filter((u) => u.state !== "CONSUMED").length;
+
+        const effectiveUsedBudget = Math.max(po.usedBudget ?? 0, consumedBudgetFromLedger);
+        const totalCommittedBudget = effectiveUsedBudget + reservedBudget;
+
+        const effectiveUsageCount = Math.max(po.currentUsage ?? 0, consumedCountFromLedger);
+        const totalCommittedUsage = effectiveUsageCount + reservedCount;
 
         let discount = 0;
         if (voucher.type === "PERCENT") {
@@ -269,11 +285,11 @@ export async function createReservation(db: PrismaClient, userId: string, input:
         }
         discount = Math.min(discount, courtTotal);
 
-        if (po.usedBudget >= po.budget || reservedBudget + discount > po.budget) {
+        if (totalCommittedBudget + discount > po.budget) {
           throw new PaymentError(409, "Chương trình ưu đãi đã đạt hạn mức ngân sách tài trợ.");
         }
 
-        if (po.maxUsage && (po.currentUsage >= po.maxUsage || reservedCount >= po.maxUsage)) {
+        if (po.maxUsage && totalCommittedUsage + 1 > po.maxUsage) {
           throw new PaymentError(409, "Chương trình ưu đãi đã hết lượt sử dụng.");
         }
 

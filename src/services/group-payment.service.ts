@@ -207,12 +207,45 @@ export async function sync(tx: Tx, groupId: string) {
         data: { status: "CONFIRMED", expiresAt: null },
       });
     }
+    if (tx.offerUsage) {
+      await tx.offerUsage.updateMany({
+        where: { bookingId: g.bookingId, state: "RESERVED" },
+        data: { expiresAt: null },
+      });
+    }
   }
-  if (paid)
+  if (paid) {
+    if (tx.offerUsage) {
+      const usages = await tx.offerUsage.findMany({
+        where: { bookingId: g.bookingId, state: "RESERVED" },
+      });
+      for (const usage of usages) {
+        await tx.offerUsage.update({
+          where: { id: usage.id },
+          data: { state: "CONSUMED", expiresAt: null },
+        });
+        if (tx.partnerOffer) {
+          await tx.partnerOffer.update({
+            where: { id: usage.offerId },
+            data: {
+              usedBudget: { increment: usage.discountAmount },
+              currentUsage: { increment: 1 },
+            },
+          });
+        }
+      }
+      if (usages.length > 0 && tx.voucher && g.booking.voucherId) {
+        await tx.voucher.update({
+          where: { id: g.booking.voucherId },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
+    }
     await tx.groupPaymentIntent.updateMany({
       where: { groupId, status: "OPEN" },
       data: { status: "CLOSED" },
     });
+  }
 }
 
 export async function closeGroup(
@@ -275,6 +308,12 @@ export async function closeGroup(
     await tx.coachBooking.updateMany({
       where: { bookingItem: { bookingId: g.bookingId }, status: { in: ["HELD", "CONFIRMED"] } },
       data: { status: "CANCELLED", cancelledAt: expired ? null : now, cancelReason: reason },
+    });
+  }
+  if (tx.offerUsage) {
+    await tx.offerUsage.updateMany({
+      where: { bookingId: g.bookingId, state: "RESERVED" },
+      data: { state: "RELEASED" },
     });
   }
   await tx.booking.update({
