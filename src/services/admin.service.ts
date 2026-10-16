@@ -114,6 +114,28 @@ export async function performAdminAction(
         after: input.status,
         reason: input.reason,
       };
+    } else if (input.action === "COACH_VENUE_STATUS") {
+      const coachVenue = await tx.coachVenue.findUnique({
+        where: { id: input.id },
+        include: { coach: { include: { user: true } }, venue: true },
+      });
+      if (!coachVenue) throw new PaymentError(404, "Không tìm thấy liên kết cơ sở của huấn luyện viên.");
+      await tx.coachVenue.update({
+        where: { id: coachVenue.id },
+        data: {
+          status: input.status,
+          reviewReason: input.reason,
+          reviewedAt: now,
+          reviewedById: actorId,
+        },
+      });
+      details = {
+        coachName: coachVenue.coach.user.name,
+        venueName: coachVenue.venue.name,
+        before: coachVenue.status,
+        after: input.status,
+        reason: input.reason,
+      };
     } else if (input.action === "PARTNER_STATUS") {
       const partner = await tx.partner.findUnique({
         where: { id: input.id },

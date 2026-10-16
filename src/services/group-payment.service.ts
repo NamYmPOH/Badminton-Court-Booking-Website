@@ -175,7 +175,7 @@ async function newIntent(
   return intent;
 }
 
-async function sync(tx: Tx, groupId: string) {
+export async function sync(tx: Tx, groupId: string) {
   const g = await tx.bookingGroup.findUniqueOrThrow({
     where: { id: groupId },
     include,
@@ -196,11 +196,18 @@ async function sync(tx: Tx, groupId: string) {
       ...(confirm ? { status: "CONFIRMED", expiresAt: null } : {}),
     },
   });
-  if (confirm)
+  if (confirm) {
     await tx.bookingItem.updateMany({
       where: { bookingId: g.bookingId, status: "HELD" },
       data: { status: "CONFIRMED" },
     });
+    if (tx.coachBooking) {
+      await tx.coachBooking.updateMany({
+        where: { bookingItem: { bookingId: g.bookingId }, status: "HELD" },
+        data: { status: "CONFIRMED", expiresAt: null },
+      });
+    }
+  }
   if (paid)
     await tx.groupPaymentIntent.updateMany({
       where: { groupId, status: "OPEN" },
@@ -220,7 +227,8 @@ export async function closeGroup(
   });
   if (g.closedAt) return;
   const now = new Date();
-  const start = Math.min(...g.booking.items.map((i) => slotTime(i)));
+  const items = g.booking.items ?? [];
+  const start = items.length > 0 ? Math.min(...items.map((i) => slotTime(i))) : now.getTime();
   const hours = (start - now.getTime()) / 3600000;
   const rate =
     expired || g.booking.status === "PENDING_PAYMENT" || hours > 24
@@ -263,6 +271,12 @@ export async function closeGroup(
     where: { bookingId: g.bookingId, status: { in: ["HELD", "CONFIRMED"] } },
     data: { status: expired ? "EXPIRED" : "CANCELLED" },
   });
+  if (tx.coachBooking) {
+    await tx.coachBooking.updateMany({
+      where: { bookingItem: { bookingId: g.bookingId }, status: { in: ["HELD", "CONFIRMED"] } },
+      data: { status: "CANCELLED", cancelledAt: expired ? null : now, cancelReason: reason },
+    });
+  }
   await tx.booking.update({
     where: { id: g.bookingId },
     data: {

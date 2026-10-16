@@ -257,3 +257,143 @@ test("cancelCoachBookingByCoach refunds 100% coach fee to customer and notifies"
   assert.equal(createdNotification.userId, "cust-1");
   assert.ok(createdNotification.body.includes("100% phí HLV"));
 });
+
+test("Hai khách tranh cùng giờ HLV: khách đầu tiên tạo lịch thành công, khách thứ hai bị từ chối 409 conflict", async () => {
+  let firstBookingCreated = false;
+  let activeBookings = [];
+
+  const createMockDb = (isSecondUser) => ({
+    $transaction: async (work) =>
+      work({
+        booking: {
+          findUnique: async () => null,
+          count: async () => 0,
+          create: async ({ data }) => {
+            firstBookingCreated = true;
+            activeBookings.push({
+              id: "cb-active-1",
+              coachId: "coach-1",
+              status: "HELD",
+              bookingItem: {
+                date: new Date(`${date}T00:00:00Z`),
+                startMin: 600,
+                endMin: 660,
+              },
+            });
+            return {
+              id: "b-first",
+              code: "DATSAN1111111111",
+              ...data,
+              items: [],
+              priceLines: [],
+              venue: { name: "Sân Cầu Lông Hà Nội", address: "123 Cầu Giấy", slug: "san-ha-noi" },
+            };
+          },
+        },
+        venue: { findUnique: async () => baseVenue },
+        courtBlock: { findFirst: async () => null },
+        bookingItem: { findFirst: async () => null },
+        coachProfile: { findFirst: async () => activeCoach },
+        coachVenue: { findUnique: async () => ({ id: "cv-1", status: "ACTIVE" }) },
+        coachAvailability: { findFirst: async () => ({ id: "avail-1" }) },
+        coachBooking: {
+          findFirst: async () => {
+            // Khi khách 2 vào, nếu khách 1 đã tạo thì trả về lịch đã có
+            return activeBookings.length > 0 ? activeBookings[0] : null;
+          },
+        },
+      }),
+  });
+
+  const slotInput = {
+    requestId: "req-1",
+    venueId: "venue-1",
+    coachId: "coach-1",
+    date,
+    customerName: "Khách Một",
+    customerPhone: "0900000001",
+    slots: [
+      { courtId: "c1", startMin: 600, endMin: 630 },
+      { courtId: "c1", startMin: 630, endMin: 660 },
+    ],
+  };
+
+  // Khách 1 đặt thành công
+  const b1 = await createReservation(createMockDb(false), "user-1", slotInput);
+  assert.ok(b1);
+  assert.equal(firstBookingCreated, true);
+
+  // Khách 2 đặt cùng khung giờ -> bị từ chối 409 Conflict
+  const slotInput2 = {
+    ...slotInput,
+    requestId: "req-2",
+    customerName: "Khách Hai",
+    customerPhone: "0900000002",
+  };
+  await assert.rejects(
+    createReservation(createMockDb(true), "user-2", slotInput2),
+    (e) => e.status === 409 && e.message.includes("Huấn luyện viên đã có lịch")
+  );
+});
+
+test("Đơn giá và hoa hồng HLV được chụp (snapshot) tại thời điểm đặt; HLV đổi giá mới không ảnh hưởng đơn cũ", async () => {
+  // Ban đầu HLV có hourlyRate = 200,000 VND
+  const coachAtBookingTime = { ...activeCoach, hourlyRate: 200000 };
+  let capturedSnapshot = null;
+  let capturedFee = null;
+
+  const mockDb = {
+    $transaction: async (work) =>
+      work({
+        booking: {
+          findUnique: async () => null,
+          count: async () => 0,
+          create: async ({ data }) => {
+            const cb = data.items.create[0].coachBooking.create;
+            capturedSnapshot = cb.hourlyRateSnapshot;
+            capturedFee = cb.fee;
+            return {
+              id: "b-snap",
+              code: "DATSAN-SNAP",
+              ...data,
+              items: [],
+              priceLines: [],
+              venue: { name: "Sân Cầu Lông Hà Nội", address: "123 Cầu Giấy", slug: "san-ha-noi" },
+            };
+          },
+        },
+        venue: { findUnique: async () => baseVenue },
+        courtBlock: { findFirst: async () => null },
+        bookingItem: { findFirst: async () => null },
+        coachProfile: { findFirst: async () => coachAtBookingTime },
+        coachVenue: { findUnique: async () => ({ id: "cv-1", status: "ACTIVE" }) },
+        coachAvailability: { findFirst: async () => ({ id: "avail-1" }) },
+        coachBooking: { findFirst: async () => null },
+      }),
+  };
+
+  const input = {
+    requestId: "req-snap-1",
+    venueId: "venue-1",
+    coachId: "coach-1",
+    date,
+    customerName: "Nguyễn Văn Khách",
+    customerPhone: "0912345678",
+    slots: [
+      { courtId: "c1", startMin: 600, endMin: 630 },
+      { courtId: "c1", startMin: 630, endMin: 660 },
+    ], // 60 mins
+  };
+
+  await createReservation(mockDb, "user-cust", input);
+  assert.equal(capturedSnapshot, 200000);
+  assert.equal(capturedFee, 200000);
+
+  // Sau đó HLV tăng giá lên 500,000 VND
+  coachAtBookingTime.hourlyRate = 500000;
+
+  // Đơn cũ vẫn giữ nguyên snapshot 200,000 và fee 200,000
+  assert.equal(capturedSnapshot, 200000, "Đơn giá đã chụp không bị ảnh hưởng khi HLV tăng giá");
+  assert.equal(capturedFee, 200000, "Phí HLV của đơn cũ không bị thay đổi");
+});
+

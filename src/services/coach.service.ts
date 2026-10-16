@@ -5,12 +5,16 @@ import {
   coachProfileInputSchema,
   coachCertificateInputSchema,
   coachAvailabilityInputSchema,
+  coachVenueApprovalSchema,
   assertCoachActive,
   assertCoachOwner,
   type CoachProfileInput,
   type CoachCertificateInput,
   type CoachAvailabilityInput,
+  type CoachVenueApproval,
 } from "../lib/coach-policy";
+import { operatorVenueScope } from "../lib/venue-operations";
+import { splitAmounts } from "../lib/group-payment";
 import { serializable } from "./sepay.service";
 
 export interface CoachFilterParams {
@@ -371,6 +375,9 @@ export async function getMyCoachProfile(database: PrismaClient = db, userId: str
       id: v.id,
       venueId: v.venueId,
       status: v.status,
+      reviewReason: v.reviewReason,
+      reviewedAt: v.reviewedAt ? v.reviewedAt.toISOString() : null,
+      reviewedById: v.reviewedById,
       name: v.venue.name,
       address: v.venue.address,
       district: v.venue.district,
@@ -485,21 +492,114 @@ export async function registerCoachVenue(
     throw new PaymentError(404, "Cơ sở không tồn tại hoặc chưa hoạt động.");
   }
 
-  return database.coachVenue.upsert({
+  const existing = await database.coachVenue.findUnique({
     where: {
       coachId_venueId: {
         coachId: profile.id,
         venueId,
       },
     },
-    create: {
-      coachId: profile.id,
-      venueId,
-      status: "ACTIVE", // Mặc định chấp thuận liên kết cơ sở cho HLV
+  });
+
+  if (!existing) {
+    return database.coachVenue.create({
+      data: {
+        coachId: profile.id,
+        venueId,
+        status: "PENDING", // Đăng ký mới mặc định chờ cơ sở duyệt
+      },
+    });
+  }
+
+  if (existing.status === "ACTIVE") {
+    return existing;
+  }
+
+  // Nếu trước đó bị REJECTED hoặc SUSPENDED, gửi lại yêu cầu chuyển thành PENDING để duyệt lại
+  return database.coachVenue.update({
+    where: { id: existing.id },
+    data: {
+      status: "PENDING",
+      reviewReason: null,
+      reviewedAt: null,
+      reviewedById: null,
     },
-    update: {
-      status: "ACTIVE",
-    },
+  });
+}
+
+export async function reviewCoachVenue(
+  database: PrismaClient = db,
+  actorId: string,
+  rawInput: CoachVenueApproval
+) {
+  const input = coachVenueApprovalSchema.parse(rawInput);
+
+  return serializable(database, async (tx) => {
+    const actor = await tx.user.findUnique({
+      where: { id: actorId },
+      select: { id: true, name: true, role: true, status: true },
+    });
+    if (!actor || actor.status !== "ACTIVE") {
+      throw new PaymentError(403, "Tài khoản không hoạt động.");
+    }
+
+    // Kiểm tra quyền hạn tại cơ sở (Admin toàn quyền; Owner/Staff phải thuộc venueId này)
+    if (actor.role !== "ADMIN") {
+      const allowed = await tx.venue.findFirst({
+        where: { id: input.venueId, ...operatorVenueScope(actor) },
+        select: { id: true },
+      });
+      if (!allowed) {
+        throw new PaymentError(403, "Bạn không có quyền quản lý cơ sở này.");
+      }
+    }
+
+    const coachVenue = await tx.coachVenue.findUnique({
+      where: {
+        coachId_venueId: {
+          coachId: input.coachId,
+          venueId: input.venueId,
+        },
+      },
+      include: {
+        coach: { include: { user: { select: { name: true } } } },
+        venue: { select: { name: true } },
+      },
+    });
+    if (!coachVenue) {
+      throw new PaymentError(404, "Không tìm thấy liên kết giữa huấn luyện viên và cơ sở.");
+    }
+
+    const now = new Date();
+    const updated = await tx.coachVenue.update({
+      where: { id: coachVenue.id },
+      data: {
+        status: input.status,
+        reviewReason: input.reason,
+        reviewedAt: now,
+        reviewedById: actorId,
+      },
+    });
+
+    if (tx.adminAudit) {
+      await tx.adminAudit.create({
+        data: {
+          actorId,
+          actorName: actor.name || "Quản trị viên",
+          action: "COACH_VENUE_STATUS",
+          entityId: `${input.coachId}:${input.venueId}`,
+          reason: input.reason,
+          details: {
+            coachName: coachVenue.coach.user.name,
+            venueName: coachVenue.venue.name,
+            before: coachVenue.status,
+            after: input.status,
+          },
+        },
+      });
+    }
+
+    return updated;
   });
 }
 
@@ -734,12 +834,20 @@ export async function cancelCoachBookingByCoach(
       throw new PaymentError(404, "Không tìm thấy buổi dạy hoặc bạn không có quyền thao tác.");
     }
 
-    if (["CANCELLED", "COMPLETED"].includes(coachBooking.status)) {
-      throw new PaymentError(409, "Buổi dạy đã hoàn thành hoặc đã bị hủy trước đó.");
+    // Đảm bảo tính lũy thừa (Idempotency): nếu đã hủy trước đó, không lặp lại tạo refund
+    if (coachBooking.status === "CANCELLED") {
+      return { success: true, refundedFee: coachBooking.fee, alreadyCancelled: true };
+    }
+
+    if (coachBooking.status === "COMPLETED") {
+      throw new PaymentError(409, "Buổi dạy đã hoàn thành, không thể hủy.");
     }
 
     const now = new Date();
     const cleanReason = reason?.trim() || "Huấn luyện viên bận việc đột xuất";
+    const booking = coachBooking.bookingItem.booking;
+    const refundedFee = coachBooking.fee;
+    const refundTxnRef = `REFUND-COACH-${coachBooking.id}`;
 
     // 1. Cập nhật CoachBooking thành CANCELLED
     await tx.coachBooking.update({
@@ -751,51 +859,61 @@ export async function cancelCoachBookingByCoach(
       },
     });
 
-    // 2. Xử lý hoàn tiền 100% phí HLV cho khách hàng (theo quyết định chốt mục 11.8)
-    const booking = coachBooking.bookingItem.booking;
-    const refundedFee = coachBooking.fee;
-
+    // 2. Xử lý nghĩa vụ hoàn tiền 100% học phí mà không chặn quyền check-in sân
     if (booking.paymentStatus === "PAID") {
-      // 1. Tạo bản ghi hoàn tiền (REFUND_PENDING) để Kế toán / Admin xử lý hoàn tiền 100%
+      // Đơn đã thanh toán: GIỮ NGUYÊN paymentStatus là "PAID" để khách vẫn check-in sân đấu bình thường
+      // Tạo bản ghi hoàn tiền riêng cho phí HLV (REFUND_PENDING)
       if (tx.payment) {
-        await tx.payment.create({
-          data: {
-            bookingId: booking.id,
-            provider: "BANK_TRANSFER",
-            amount: refundedFee,
-            status: "REFUND_PENDING",
-            txnRef: `REFUND-COACH-${coachBooking.id}`,
-            paidAt: null,
-            rawPayload: {
-              type: "COACH_CANCEL_REFUND",
-              coachBookingId: coachBooking.id,
-              refundedFee,
-              reason: cleanReason,
+        const existingRefund = typeof tx.payment.findUnique === "function"
+          ? await tx.payment.findUnique({
+              where: { txnRef: refundTxnRef },
+            })
+          : null;
+        if (!existingRefund) {
+          await tx.payment.create({
+            data: {
+              bookingId: booking.id,
+              provider: "BANK_TRANSFER",
+              amount: refundedFee,
+              status: "REFUND_PENDING",
+              txnRef: refundTxnRef,
+              paidAt: null, // Chưa hoàn tiền, ghi nhận nghĩa vụ hoàn
+              rawPayload: {
+                type: "COACH_CANCEL_REFUND",
+                coachBookingId: coachBooking.id,
+                refundedFee,
+                reason: cleanReason,
+              },
             },
-          },
-        });
+          });
+        }
       }
 
-      // 2. Đặt trạng thái thanh toán của đơn thành REFUND_PENDING
-      await tx.booking.update({
-        where: { id: booking.id },
-        data: {
-          paymentStatus: "REFUND_PENDING",
-        },
-      });
+      // Ghi nhận dòng giá hoàn tiền 100% phí HLV
+      if (tx.bookingPriceLine) {
+        const existingLine = typeof tx.bookingPriceLine.findFirst === "function"
+          ? await tx.bookingPriceLine.findFirst({
+              where: {
+                bookingId: booking.id,
+                type: "DISCOUNT",
+                label: { contains: refundTxnRef },
+              },
+            })
+          : null;
+        if (!existingLine) {
+          await tx.bookingPriceLine.create({
+            data: {
+              bookingId: booking.id,
+              type: "DISCOUNT",
+              amount: refundedFee,
+              label: `Hoàn 100% phí HLV (${refundTxnRef}): ${cleanReason}`,
+            },
+          });
+        }
+      }
 
-      // 3. Ghi nhận dòng giá chiết khấu/hoàn tiền 100% phí HLV
-      await tx.bookingPriceLine.create({
-        data: {
-          bookingId: booking.id,
-          type: "DISCOUNT",
-          amount: refundedFee,
-          label: `Hoàn 100% phí HLV (HLV hủy: ${cleanReason})`,
-        },
-      });
-
-      // 4. Gửi thông báo cho khách hàng
-      if (booking.userId) {
+      // Gửi thông báo cho khách hàng
+      if (booking.userId && tx.notification) {
         await tx.notification.create({
           data: {
             userId: booking.userId,
@@ -806,7 +924,7 @@ export async function cancelCoachBookingByCoach(
         });
       }
     } else {
-      // Đơn chưa thanh toán: khấu trừ phí HLV ra khỏi tổng tiền cần thanh toán
+      // Đơn chưa thanh toán hoặc đang trả một phần: khấu trừ phí HLV ra khỏi tổng tiền
       const nextSubtotal = Math.max(0, booking.subtotal - refundedFee);
       const nextTotal = Math.max(0, booking.total - refundedFee);
 
@@ -819,12 +937,110 @@ export async function cancelCoachBookingByCoach(
       });
 
       // Xóa dòng giá HLV khỏi BookingPriceLine
-      await tx.bookingPriceLine.deleteMany({
-        where: {
-          bookingId: booking.id,
-          type: "COACH",
-        },
-      });
+      if (tx.bookingPriceLine) {
+        await tx.bookingPriceLine.deleteMany({
+          where: {
+            bookingId: booking.id,
+            type: "COACH",
+          },
+        });
+      }
+
+      // Xử lý đơn nhóm: bảo toàn tính nhất quán giữa booking.total, GroupShare và tiền thực trả
+      if (typeof tx.bookingGroup?.findUnique === "function") {
+        const group = await tx.bookingGroup.findUnique({
+          where: { bookingId: booking.id },
+          include: { shares: { orderBy: { position: "asc" } } },
+        });
+
+        if (group && group.shares.length > 0) {
+          const paidShares = group.shares.filter((s) => s.paymentId);
+          const unpaidShares = group.shares.filter((s) => !s.paymentId);
+          const totalPaid = paidShares.reduce((sum, s) => sum + s.amount, 0);
+
+          if (totalPaid <= nextTotal) {
+            // Tiền đã thu chưa vượt tổng tiền sân mới
+            const remainingForCourt = nextTotal - totalPaid;
+            if (unpaidShares.length > 0 && remainingForCourt > 0) {
+              const newUnpaidAmounts = splitAmounts(remainingForCourt, unpaidShares.length);
+              for (let i = 0; i < unpaidShares.length; i++) {
+                await tx.groupShare.update({
+                  where: { id: unpaidShares[i].id },
+                  data: {
+                    amount: newUnpaidAmounts[i],
+                    currentIntentId: null,
+                    cashRequested: false,
+                  },
+                });
+              }
+            }
+            if (tx.groupPaymentIntent) {
+              await tx.groupPaymentIntent.updateMany({
+                where: { groupId: group.id, status: "OPEN" },
+                data: { status: "CLOSED" },
+              });
+            }
+          } else {
+            // Tiền đã thu vượt tổng tiền sân mới (cần hoàn lại phần vượt cho các thành viên đã trả)
+            const excess = totalPaid - nextTotal;
+            if (tx.payment) {
+              const existingRefund = typeof tx.payment.findUnique === "function"
+                ? await tx.payment.findUnique({ where: { txnRef: refundTxnRef } })
+                : null;
+              if (!existingRefund) {
+                await tx.payment.create({
+                  data: {
+                    bookingId: booking.id,
+                    provider: "BANK_TRANSFER",
+                    amount: excess,
+                    status: "REFUND_PENDING",
+                    txnRef: refundTxnRef,
+                    paidAt: null,
+                    rawPayload: {
+                      type: "COACH_CANCEL_PARTIAL_GROUP_REFUND",
+                      excess,
+                      refundedFee,
+                      reason: cleanReason,
+                    },
+                  },
+                });
+              }
+            }
+
+            if (paidShares.length > 0) {
+              const newPaidAmounts = splitAmounts(nextTotal, paidShares.length);
+              for (let i = 0; i < paidShares.length; i++) {
+                await tx.groupShare.update({
+                  where: { id: paidShares[i].id },
+                  data: { amount: newPaidAmounts[i] },
+                });
+              }
+            }
+
+            // Đơn sân đã được trả đủ bởi các thành viên
+            await tx.booking.update({
+              where: { id: booking.id },
+              data: {
+                paymentStatus: "PAID",
+                status: "CONFIRMED",
+                expiresAt: null,
+              },
+            });
+          }
+        }
+      }
+
+      // Thông báo cho khách hàng
+      if (booking.userId && tx.notification) {
+        await tx.notification.create({
+          data: {
+            userId: booking.userId,
+            type: "BOOKING_CANCELLED",
+            title: "Huấn luyện viên đã hủy buổi dạy",
+            body: `HLV đã hủy buổi dạy cho đơn ${booking.code} (${cleanReason}). Phí HLV (${refundedFee.toLocaleString("vi-VN")}đ) đã được khấu trừ khỏi đơn. Sân của bạn vẫn được giữ nguyên.`,
+          },
+        });
+      }
     }
 
     return { success: true, refundedFee };

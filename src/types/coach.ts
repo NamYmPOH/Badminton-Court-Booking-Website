@@ -1,6 +1,6 @@
 export type CoachStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
 
-export type CoachVenueStatus = "PENDING" | "ACTIVE" | "REJECTED";
+export type CoachVenueStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
 
 export type CoachBookingStatus = "HELD" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 
@@ -21,6 +21,9 @@ export interface CoachVenueInfo {
   venueName: string;
   venueAddress: string;
   status: CoachVenueStatus;
+  reviewReason?: string | null;
+  reviewedAt?: string | null;
+  reviewedById?: string | null;
   createdAt: string;
 }
 

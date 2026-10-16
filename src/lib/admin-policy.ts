@@ -40,6 +40,13 @@ export const adminActionSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...base,
+      action: z.literal("COACH_VENUE_STATUS"),
+      status: z.enum(["ACTIVE", "SUSPENDED", "REJECTED"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
       action: z.literal("PARTNER_STATUS"),
       status: z.enum(["ACTIVE", "SUSPENDED", "REJECTED"]),
     })

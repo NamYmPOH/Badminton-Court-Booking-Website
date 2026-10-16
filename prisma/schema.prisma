@@ -118,6 +118,7 @@ enum CoachStatus {
 enum CoachVenueStatus {
   PENDING
   ACTIVE
+  SUSPENDED
   REJECTED
 }
 
@@ -622,11 +623,15 @@ model CoachCertificate {
 }
 
 model CoachVenue {
-  id        String           @id @default(cuid())
-  coachId   String
-  venueId   String
-  status    CoachVenueStatus @default(PENDING)
-  createdAt DateTime         @default(now())
+  id           String           @id @default(cuid())
+  coachId      String
+  venueId      String
+  status       CoachVenueStatus @default(PENDING)
+  reviewReason String?
+  reviewedAt   DateTime?
+  reviewedById String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   coach CoachProfile @relation(fields: [coachId], references: [id], onDelete: Cascade)
   venue Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
