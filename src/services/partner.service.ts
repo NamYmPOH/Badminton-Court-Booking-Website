@@ -289,8 +289,19 @@ export async function getMyPartners(database: PrismaClient = db, userId: string)
   });
 
   return memberships.map((m) => ({
+    id: m.partner.id,
+    partnerId: m.partner.id,
     memberId: m.id,
+    name: m.partner.name,
+    slug: m.partner.slug,
+    logoUrl: m.partner.logoUrl,
+    description: m.partner.description,
+    contactEmail: m.partner.contactEmail,
+    contactPhone: m.partner.contactPhone,
+    status: m.partner.status,
     role: m.role,
+    myRole: m.role,
+    createdAt: m.partner.createdAt ? m.partner.createdAt.toISOString() : new Date().toISOString(),
     partner: m.partner,
   }));
 }

@@ -961,15 +961,39 @@ export async function cancelCoachBookingByCoach(
           if (totalPaid <= nextTotal) {
             // Tiền đã thu chưa vượt tổng tiền sân mới
             const remainingForCourt = nextTotal - totalPaid;
-            if (unpaidShares.length > 0 && remainingForCourt > 0) {
-              const newUnpaidAmounts = splitAmounts(remainingForCourt, unpaidShares.length);
-              for (let i = 0; i < unpaidShares.length; i++) {
-                await tx.groupShare.update({
-                  where: { id: unpaidShares[i].id },
+            if (unpaidShares.length > 0) {
+              if (remainingForCourt > 0) {
+                // Chia remainingForCourt cho các unpaidShares
+                const newUnpaidAmounts = splitAmounts(remainingForCourt, unpaidShares.length);
+                for (let i = 0; i < unpaidShares.length; i++) {
+                  await tx.groupShare.update({
+                    where: { id: unpaidShares[i].id },
+                    data: {
+                      amount: newUnpaidAmounts[i],
+                      currentIntentId: null,
+                      cashRequested: false,
+                    },
+                  });
+                }
+              } else {
+                // Tiền đã thu vừa đủ (remainingForCourt === 0): các phần chưa trả phải về 0đ
+                for (let i = 0; i < unpaidShares.length; i++) {
+                  await tx.groupShare.update({
+                    where: { id: unpaidShares[i].id },
+                    data: {
+                      amount: 0,
+                      currentIntentId: null,
+                      cashRequested: false,
+                    },
+                  });
+                }
+                // Đơn đã đủ tiền
+                await tx.booking.update({
+                  where: { id: booking.id },
                   data: {
-                    amount: newUnpaidAmounts[i],
-                    currentIntentId: null,
-                    cashRequested: false,
+                    paymentStatus: "PAID",
+                    status: "CONFIRMED",
+                    expiresAt: null,
                   },
                 });
               }
@@ -981,12 +1005,76 @@ export async function cancelCoachBookingByCoach(
               });
             }
           } else {
-            // Tiền đã thu vượt tổng tiền sân mới (cần hoàn lại phần vượt cho các thành viên đã trả)
+            // Tiền đã thu vượt tổng tiền sân mới (totalPaid > nextTotal)
             const excess = totalPaid - nextTotal;
-            if (tx.payment) {
-              const existingRefund = typeof tx.payment.findUnique === "function"
-                ? await tx.payment.findUnique({ where: { txnRef: refundTxnRef } })
-                : null;
+
+            // 1. Toàn bộ unpaidShares không còn nghĩa vụ thanh toán -> đưa về 0đ
+            for (let i = 0; i < unpaidShares.length; i++) {
+              await tx.groupShare.update({
+                where: { id: unpaidShares[i].id },
+                data: {
+                  amount: 0,
+                  currentIntentId: null,
+                  cashRequested: false,
+                },
+              });
+            }
+
+            // 2. Tái phân bổ nghĩa vụ trên paidShares để tổng bằng nextTotal
+            if (paidShares.length > 0) {
+              const newPaidAmounts = splitAmounts(nextTotal, paidShares.length);
+              for (let i = 0; i < paidShares.length; i++) {
+                await tx.groupShare.update({
+                  where: { id: paidShares[i].id },
+                  data: { amount: newPaidAmounts[i] },
+                });
+              }
+            }
+
+            // 3. Phân bổ khoản hoàn tiền excess gắn với các Payment đã thu
+            let distributedRefund = false;
+            if (typeof tx.payment?.findMany === "function") {
+              const payments = await tx.payment.findMany({
+                where: { bookingId: booking.id, status: "PAID" },
+                orderBy: { id: "asc" },
+              });
+              if (payments && payments.length > 0) {
+                distributedRefund = true;
+                let remainingRefund = excess;
+                for (let i = 0; i < payments.length; i++) {
+                  const p = payments[i];
+                  const pRefund =
+                    i === payments.length - 1
+                      ? remainingRefund
+                      : Math.floor(excess * (p.amount / totalPaid));
+                  remainingRefund -= pRefund;
+                  if (pRefund > 0) {
+                    if (typeof tx.groupRefund?.create === "function") {
+                      await tx.groupRefund.create({
+                        data: {
+                          paymentId: p.id,
+                          amount: pRefund,
+                          reason: `Hoàn tiền phần vượt khi HLV hủy ca: ${cleanReason}`,
+                        },
+                      });
+                    }
+                    if (typeof tx.payment?.update === "function") {
+                      await tx.payment.update({
+                        where: { id: p.id },
+                        data: { status: "REFUND_PENDING" },
+                      });
+                    }
+                  }
+                }
+              }
+            }
+
+            // Fallback tạo payment REFUND_PENDING nếu chưa phân bổ qua danh sách payments
+            if (!distributedRefund && typeof tx.payment?.create === "function") {
+              const existingRefund =
+                typeof tx.payment.findUnique === "function"
+                  ? await tx.payment.findUnique({ where: { txnRef: refundTxnRef } })
+                  : null;
               if (!existingRefund) {
                 await tx.payment.create({
                   data: {
@@ -1007,14 +1095,12 @@ export async function cancelCoachBookingByCoach(
               }
             }
 
-            if (paidShares.length > 0) {
-              const newPaidAmounts = splitAmounts(nextTotal, paidShares.length);
-              for (let i = 0; i < paidShares.length; i++) {
-                await tx.groupShare.update({
-                  where: { id: paidShares[i].id },
-                  data: { amount: newPaidAmounts[i] },
-                });
-              }
+            // Đóng các intent OPEN
+            if (tx.groupPaymentIntent) {
+              await tx.groupPaymentIntent.updateMany({
+                where: { groupId: group.id, status: "OPEN" },
+                data: { status: "CLOSED" },
+              });
             }
 
             // Đơn sân đã được trả đủ bởi các thành viên

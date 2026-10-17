@@ -185,6 +185,7 @@ export async function sync(tx: Tx, groupId: string) {
     throw new PaymentError(409, "Bảng chia không khớp tổng đơn.");
   const paid = totals.remaining === 0;
   const confirm = paid || totals.canConfirm;
+  const wasAlreadyPaid = g.booking.paymentStatus === "PAID";
   await tx.booking.update({
     where: { id: g.bookingId },
     data: {
@@ -215,8 +216,9 @@ export async function sync(tx: Tx, groupId: string) {
     }
   }
   if (paid) {
+    let usages: Array<{ id: string; offerId: string; discountAmount: number }> = [];
     if (tx.offerUsage) {
-      const usages = await tx.offerUsage.findMany({
+      usages = await tx.offerUsage.findMany({
         where: { bookingId: g.bookingId, state: "RESERVED" },
       });
       for (const usage of usages) {
@@ -234,11 +236,43 @@ export async function sync(tx: Tx, groupId: string) {
           });
         }
       }
-      if (usages.length > 0 && tx.voucher && g.booking.voucherId) {
+    }
+
+    if (tx.voucher && g.booking.voucherId) {
+      if (usages.length > 0) {
+        // Đã tiêu thụ ưu đãi đối tác (OfferUsage) -> tăng voucher.usedCount đồng bộ
         await tx.voucher.update({
           where: { id: g.booking.voucherId },
           data: { usedCount: { increment: 1 } },
         });
+      } else if (!wasAlreadyPaid) {
+        // Voucher thường (không qua OfferUsage): chỉ tăng khi chuyển sang PAID lần đầu
+        const auditMarker = `VOUCHER_CONSUMED:${g.bookingId}:${g.booking.voucherId}`;
+        let alreadyRecorded = false;
+        if (typeof tx.adminAudit?.findFirst === "function") {
+          const existingAudit = await tx.adminAudit.findFirst({
+            where: { action: "VOUCHER_CONSUMED", entityId: auditMarker },
+          });
+          if (existingAudit) alreadyRecorded = true;
+        }
+        if (!alreadyRecorded) {
+          if (typeof tx.adminAudit?.create === "function") {
+            await tx.adminAudit.create({
+              data: {
+                actorId: g.booking.userId || "system",
+                actorName: "Hệ thống Thanh toán Nhóm",
+                action: "VOUCHER_CONSUMED",
+                entityId: auditMarker,
+                reason: `Xác nhận sử dụng voucher thường cho đơn nhóm ${g.booking.code}`,
+                details: { bookingId: g.bookingId, voucherId: g.booking.voucherId },
+              },
+            });
+          }
+          await tx.voucher.update({
+            where: { id: g.booking.voucherId },
+            data: { usedCount: { increment: 1 } },
+          });
+        }
       }
     }
     await tx.groupPaymentIntent.updateMany({

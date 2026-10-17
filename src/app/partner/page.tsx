@@ -23,9 +23,9 @@ export interface PartnerProfile {
   description: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
-  status: "PENDING" | "ACTIVE" | "SUSPENDED";
+  status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
   myRole: "OWNER" | "MANAGER" | "STAFF";
-  offersCount: number;
+  offersCount?: number;
 }
 
 export interface PartnerOfferItem {

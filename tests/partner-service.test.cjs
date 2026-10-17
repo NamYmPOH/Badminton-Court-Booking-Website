@@ -582,3 +582,58 @@ test("Hợp đồng dữ liệu getMyPartnerOffers và getPartnerReport: cấu t
   assert.equal(report.offers[0].voucherCode, "YONEX100");
 });
 
+test("getMyPartners chuẩn hóa hợp đồng dữ liệu cho tài khoản có 0, 1 hoặc nhiều đối tác", async () => {
+  const { getMyPartners } = require("../src/services/partner.service.ts");
+
+  const mockDbMulti = {
+    partnerMember: {
+      findMany: async ({ where }) => {
+        if (where.userId === "user-multi") {
+          return [
+            {
+              id: "pm-1",
+              role: "OWNER",
+              partner: {
+                id: "p-1",
+                name: "Yonex VN",
+                slug: "yonex-vn",
+                status: "ACTIVE",
+                logoUrl: "https://example.com/yonex.png",
+                createdAt: new Date(),
+              },
+            },
+            {
+              id: "pm-2",
+              role: "STAFF",
+              partner: {
+                id: "p-2",
+                name: "Victor Sport",
+                slug: "victor-sport",
+                status: "PENDING",
+                logoUrl: null,
+                createdAt: new Date(),
+              },
+            },
+          ];
+        }
+        return [];
+      },
+    },
+  };
+
+  // 1. Tài khoản có 2 đối tác
+  const partners = await getMyPartners(mockDbMulti, "user-multi");
+  assert.equal(partners.length, 2);
+  assert.equal(partners[0].id, "p-1");
+  assert.equal(partners[0].name, "Yonex VN");
+  assert.equal(partners[0].status, "ACTIVE");
+  assert.equal(partners[0].myRole, "OWNER");
+  assert.equal(partners[1].id, "p-2");
+  assert.equal(partners[1].status, "PENDING");
+  assert.equal(partners[1].myRole, "STAFF");
+
+  // 2. Tài khoản không có đối tác nào
+  const emptyPartners = await getMyPartners(mockDbMulti, "user-none");
+  assert.equal(emptyPartners.length, 0);
+});
+
