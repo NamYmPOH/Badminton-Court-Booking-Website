@@ -18,6 +18,7 @@ import {
   type GroupAction,
 } from "../lib/group-payment";
 import { operatorVenueScope } from "../lib/venue-operations";
+import { recordVoucherConsumption } from "./settlement.service";
 
 const include = {
   booking: { include: { items: { include: { court: true } }, venue: true } },
@@ -175,7 +176,7 @@ async function newIntent(
   return intent;
 }
 
-async function sync(tx: Tx, groupId: string) {
+export async function sync(tx: Tx, groupId: string) {
   const g = await tx.bookingGroup.findUniqueOrThrow({
     where: { id: groupId },
     include,
@@ -185,6 +186,7 @@ async function sync(tx: Tx, groupId: string) {
     throw new PaymentError(409, "Bảng chia không khớp tổng đơn.");
   const paid = totals.remaining === 0;
   const confirm = paid || totals.canConfirm;
+  const wasAlreadyPaid = g.booking.paymentStatus === "PAID";
   await tx.booking.update({
     where: { id: g.bookingId },
     data: {
@@ -196,16 +198,37 @@ async function sync(tx: Tx, groupId: string) {
       ...(confirm ? { status: "CONFIRMED", expiresAt: null } : {}),
     },
   });
-  if (confirm)
+  if (confirm) {
     await tx.bookingItem.updateMany({
       where: { bookingId: g.bookingId, status: "HELD" },
       data: { status: "CONFIRMED" },
     });
-  if (paid)
+    if (tx.coachBooking) {
+      await tx.coachBooking.updateMany({
+        where: { bookingItem: { bookingId: g.bookingId }, status: "HELD" },
+        data: { status: "CONFIRMED", expiresAt: null },
+      });
+    }
+    if (tx.offerUsage) {
+      await tx.offerUsage.updateMany({
+        where: { bookingId: g.bookingId, state: "RESERVED" },
+        data: { expiresAt: null },
+      });
+    }
+  }
+  if (paid) {
+    await recordVoucherConsumption(
+      tx,
+      g.bookingId,
+      g.booking.voucherId,
+      g.booking.userId || undefined,
+      "Hệ thống Thanh toán Nhóm"
+    );
     await tx.groupPaymentIntent.updateMany({
       where: { groupId, status: "OPEN" },
       data: { status: "CLOSED" },
     });
+  }
 }
 
 export async function closeGroup(
@@ -220,7 +243,8 @@ export async function closeGroup(
   });
   if (g.closedAt) return;
   const now = new Date();
-  const start = Math.min(...g.booking.items.map((i) => slotTime(i)));
+  const items = g.booking.items ?? [];
+  const start = items.length > 0 ? Math.min(...items.map((i) => slotTime(i))) : now.getTime();
   const hours = (start - now.getTime()) / 3600000;
   const rate =
     expired || g.booking.status === "PENDING_PAYMENT" || hours > 24
@@ -229,26 +253,40 @@ export async function closeGroup(
         ? 0.5
         : 0;
   const payments = await tx.payment.findMany({
-    where: { bookingId: g.bookingId, status: "PAID" },
+    where: { bookingId: g.bookingId, status: { in: ["PAID", "REFUND_PENDING"] } },
     orderBy: { id: "asc" },
   });
-  const refundTotal = Math.floor(
-    payments.reduce((n, p) => n + p.amount, 0) * rate,
-  );
-  let remaining = refundTotal;
+  let hasPendingRefund = false;
   for (let i = 0; i < payments.length; i++) {
     const p = payments[i];
-    const amount =
-      i === payments.length - 1 ? remaining : Math.floor(p.amount * rate);
-    remaining -= amount;
-    if (amount > 0) {
-      await tx.groupRefund.create({
-        data: { paymentId: p.id, amount, reason },
-      });
-      await tx.payment.update({
-        where: { id: p.id },
-        data: { status: "REFUND_PENDING" },
-      });
+    const targetRefund = Math.floor(p.amount * rate);
+    if (targetRefund > 0) {
+      hasPendingRefund = true;
+      const existingRefund = typeof tx.groupRefund?.findUnique === "function"
+        ? await tx.groupRefund.findUnique({ where: { paymentId: p.id } })
+        : null;
+
+      if (existingRefund) {
+        if (targetRefund > existingRefund.amount) {
+          await tx.groupRefund.update({
+            where: { id: existingRefund.id },
+            data: {
+              amount: targetRefund,
+              reason: `${existingRefund.reason}; ${reason}`,
+            },
+          });
+        }
+      } else {
+        await tx.groupRefund.create({
+          data: { paymentId: p.id, amount: targetRefund, reason },
+        });
+      }
+      if (p.status !== "REFUND_PENDING") {
+        await tx.payment.update({
+          where: { id: p.id },
+          data: { status: "REFUND_PENDING" },
+        });
+      }
     }
   }
   await tx.groupPaymentIntent.updateMany({
@@ -263,6 +301,18 @@ export async function closeGroup(
     where: { bookingId: g.bookingId, status: { in: ["HELD", "CONFIRMED"] } },
     data: { status: expired ? "EXPIRED" : "CANCELLED" },
   });
+  if (tx.coachBooking) {
+    await tx.coachBooking.updateMany({
+      where: { bookingItem: { bookingId: g.bookingId }, status: { in: ["HELD", "CONFIRMED"] } },
+      data: { status: "CANCELLED", cancelledAt: expired ? null : now, cancelReason: reason },
+    });
+  }
+  if (tx.offerUsage) {
+    await tx.offerUsage.updateMany({
+      where: { bookingId: g.bookingId, state: "RESERVED" },
+      data: { state: "RELEASED" },
+    });
+  }
   await tx.booking.update({
     where: { id: g.bookingId },
     data: {
@@ -271,7 +321,7 @@ export async function closeGroup(
       cancelledAt: expired ? null : now,
       cancelReason: reason,
       paymentStatus:
-        refundTotal > 0 ? "REFUND_PENDING" : g.booking.paymentStatus,
+        hasPendingRefund ? "REFUND_PENDING" : g.booking.paymentStatus,
     },
   });
 }

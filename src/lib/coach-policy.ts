@@ -60,7 +60,8 @@ export type CoachStatusUpdate = z.infer<typeof coachStatusUpdateSchema>;
 export const coachVenueApprovalSchema = z.object({
   coachId: z.string().min(1),
   venueId: z.string().min(1),
-  status: z.enum(["ACTIVE", "REJECTED"]),
+  status: z.enum(["ACTIVE", "SUSPENDED", "REJECTED"]),
+  reason: z.string().trim().min(5, "Lý do phê duyệt/từ chối/tạm ngừng tối thiểu 5 ký tự.").max(500),
 }).strict();
 
 export type CoachVenueApproval = z.infer<typeof coachVenueApprovalSchema>;

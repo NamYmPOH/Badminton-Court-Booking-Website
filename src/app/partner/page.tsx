@@ -8,28 +8,27 @@ import {
   BarChart3,
   Plus,
   Send,
-  AlertCircle,
   Clock,
-  Sparkles,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/lib/utils";
 import { toast } from "sonner";
 
-interface PartnerProfile {
+export interface PartnerProfile {
   id: string;
   name: string;
   slug: string;
   logoUrl: string | null;
-  website: string | null;
+  description: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
-  status: "PENDING" | "ACTIVE" | "SUSPENDED";
-  myRole: "OWNER" | "MANAGER" | "ANALYST";
-  offersCount: number;
+  status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
+  myRole: "OWNER" | "MANAGER" | "STAFF";
+  offersCount?: number;
 }
 
-interface PartnerOfferItem {
+export interface PartnerOfferItem {
   id: string;
   title: string;
   description: string | null;
@@ -40,6 +39,9 @@ interface PartnerOfferItem {
   currentUsage: number;
   sponsor: string;
   reviewReason?: string | null;
+  voucherCode?: string;
+  voucherType?: "PERCENT" | "FIXED";
+  voucherValue?: number;
   voucher: {
     code: string;
     type: "PERCENT" | "FIXED";
@@ -52,7 +54,7 @@ interface PartnerOfferItem {
   };
 }
 
-interface PartnerReport {
+export interface PartnerReport {
   partnerId: string;
   partnerName: string;
   summary: {
@@ -76,20 +78,32 @@ interface PartnerReport {
     maxUsage: number | null;
     utilizationRate: number;
   }[];
+  recentUsages?: {
+    id: string;
+    bookingCode: string;
+    bookingStatus: string;
+    voucherCode: string;
+    offerTitle: string;
+    discountAmount: number;
+    state: string;
+    createdAt: string;
+  }[];
 }
 
 export default function PartnerPortalPage() {
   const { user, isLoading: authLoading } = useAuth();
-  const [profile, setProfile] = useState<PartnerProfile | null>(null);
+  const [partners, setPartners] = useState<PartnerProfile[]>([]);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"offers" | "reports" | "profile">("offers");
+  const [activeTab, setActiveTab] = useState<"offers" | "reports">("offers");
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
 
   // Đăng ký hồ sơ mới
   const [registerForm, setRegisterForm] = useState({
     name: "",
     slug: "",
     logoUrl: "",
-    website: "",
+    description: "",
     contactEmail: "",
     contactPhone: "",
   });
@@ -118,17 +132,30 @@ export default function PartnerPortalPage() {
   const [report, setReport] = useState<PartnerReport | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
+  const currentPartner = partners.find((p) => p.id === selectedPartnerId) || partners[0] || null;
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/partner/profile", { cache: "no-store" });
       if (res.status === 404) {
-        setProfile(null);
+        setPartners([]);
+        setSelectedPartnerId(null);
         return;
       }
       if (!res.ok) throw new Error("Không thể tải hồ sơ đối tác.");
       const data = await res.json();
-      setProfile(data.partner);
+      const list: PartnerProfile[] = Array.isArray(data.partners)
+        ? data.partners
+        : data.partner
+        ? [data.partner]
+        : [];
+      setPartners(list);
+      if (list.length > 0) {
+        setSelectedPartnerId((prev) => (list.some((p) => p.id === prev) ? prev : list[0].id));
+      } else {
+        setSelectedPartnerId(null);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Lỗi tải hồ sơ.");
     } finally {
@@ -136,11 +163,16 @@ export default function PartnerPortalPage() {
     }
   };
 
-  const fetchOffers = async () => {
+  const fetchOffers = async (partnerId: string) => {
     try {
       setLoadingOffers(true);
-      const res = await fetch("/api/partner/offers", { cache: "no-store" });
-      if (!res.ok) throw new Error("Không thể tải danh sách ưu đãi.");
+      const res = await fetch(`/api/partner/offers?partnerId=${encodeURIComponent(partnerId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Không thể tải danh sách ưu đãi.");
+      }
       const data = await res.json();
       setOffers(data.offers || []);
     } catch (err) {
@@ -150,11 +182,16 @@ export default function PartnerPortalPage() {
     }
   };
 
-  const fetchReport = async () => {
+  const fetchReport = async (partnerId: string) => {
     try {
       setLoadingReport(true);
-      const res = await fetch("/api/partner/reports", { cache: "no-store" });
-      if (!res.ok) throw new Error("Không thể tải báo cáo hiệu quả.");
+      const res = await fetch(`/api/partner/reports?partnerId=${encodeURIComponent(partnerId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Không thể tải báo cáo hiệu quả.");
+      }
       const data = await res.json();
       setReport(data);
     } catch (err) {
@@ -173,25 +210,43 @@ export default function PartnerPortalPage() {
   }, [user]);
 
   useEffect(() => {
-    if (profile && profile.status === "ACTIVE") {
-      if (activeTab === "offers") fetchOffers();
-      if (activeTab === "reports") fetchReport();
+    if (currentPartner && currentPartner.status === "ACTIVE") {
+      if (activeTab === "offers") fetchOffers(currentPartner.id);
+      if (activeTab === "reports") fetchReport(currentPartner.id);
     }
-  }, [profile, activeTab]);
+  }, [currentPartner, activeTab]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegistering(true);
     try {
+      const payload = {
+        name: registerForm.name.trim(),
+        slug: registerForm.slug.trim().toLowerCase(),
+        logoUrl: registerForm.logoUrl.trim() || undefined,
+        description: registerForm.description.trim() || undefined,
+        contactEmail: registerForm.contactEmail.trim() || undefined,
+        contactPhone: registerForm.contactPhone.trim() || undefined,
+      };
+
       const res = await fetch("/api/partner/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(registerForm),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Đăng ký thất bại.");
       toast.success("Đăng ký đối tác thành công! Hồ sơ đang chờ Quản trị viên duyệt.");
-      fetchProfile();
+      setShowRegisterForm(false);
+      setRegisterForm({
+        name: "",
+        slug: "",
+        logoUrl: "",
+        description: "",
+        contactEmail: "",
+        contactPhone: "",
+      });
+      await fetchProfile();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Lỗi đăng ký");
     } finally {
@@ -201,21 +256,30 @@ export default function PartnerPortalPage() {
 
   const handleCreateOffer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentPartner) return;
+    if (currentPartner.myRole === "STAFF") {
+      toast.error("Chỉ Chủ sở hữu hoặc Quản lý thương hiệu mới có quyền tạo ưu đãi.");
+      return;
+    }
+
     setCreatingOffer(true);
     try {
       const payload = {
-        title: offerForm.title,
-        description: offerForm.description || undefined,
-        voucherCode: offerForm.voucherCode.trim().toUpperCase(),
-        voucherType: offerForm.type,
-        voucherValue: Number(offerForm.value),
-        maxDiscount: offerForm.maxDiscount ? Number(offerForm.maxDiscount) : undefined,
-        minAmount: Number(offerForm.minAmount),
-        validFrom: new Date(offerForm.validFrom).toISOString(),
-        validTo: new Date(offerForm.validTo).toISOString(),
+        partnerId: currentPartner.id,
+        title: offerForm.title.trim(),
+        description: offerForm.description.trim() || undefined,
+        sponsor: "PARTNER" as const,
         budget: Number(offerForm.budget),
         maxUsage: offerForm.maxUsage ? Number(offerForm.maxUsage) : undefined,
-        sponsor: profile?.name || "Đối tác",
+        voucher: {
+          code: offerForm.voucherCode.trim().toUpperCase(),
+          type: offerForm.type,
+          value: Number(offerForm.value),
+          maxDiscount: offerForm.maxDiscount ? Number(offerForm.maxDiscount) : undefined,
+          minAmount: Number(offerForm.minAmount) || 0,
+          validFrom: new Date(offerForm.validFrom).toISOString(),
+          validTo: new Date(offerForm.validTo).toISOString(),
+        },
       };
 
       const res = await fetch("/api/partner/offers", {
@@ -225,9 +289,22 @@ export default function PartnerPortalPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Tạo ưu đãi thất bại.");
-      toast.success("Đã tạo ưu đãi (DRAFT). Bạn có thể gửi duyệt khi sẵn sàng!");
+      toast.success("Đã tạo ưu đãi (Bản nháp). Bạn có thể gửi duyệt khi sẵn sàng!");
       setShowCreateOffer(false);
-      fetchOffers();
+      setOfferForm({
+        title: "",
+        description: "",
+        voucherCode: "",
+        type: "PERCENT",
+        value: 20,
+        maxDiscount: 50000,
+        minAmount: 100000,
+        validFrom: new Date().toISOString().slice(0, 10),
+        validTo: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+        budget: 1000000,
+        maxUsage: 100,
+      });
+      fetchOffers(currentPartner.id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Lỗi tạo ưu đãi");
     } finally {
@@ -236,6 +313,12 @@ export default function PartnerPortalPage() {
   };
 
   const handleSubmitOffer = async (offerId: string) => {
+    if (!currentPartner) return;
+    if (currentPartner.myRole === "STAFF") {
+      toast.error("Chỉ Chủ sở hữu hoặc Quản lý thương hiệu mới có quyền gửi duyệt.");
+      return;
+    }
+
     try {
       const res = await fetch(`/api/partner/offers/${offerId}/submit`, {
         method: "POST",
@@ -243,16 +326,28 @@ export default function PartnerPortalPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Gửi duyệt thất bại.");
       toast.success("Đã gửi yêu cầu phê duyệt đến Ban Quản trị!");
-      fetchOffers();
+      fetchOffers(currentPartner.id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Lỗi gửi duyệt");
+    }
+  };
+
+  const getRoleBadge = (role: string) => {
+    switch (role) {
+      case "OWNER":
+        return "Chủ sở hữu";
+      case "MANAGER":
+        return "Quản lý";
+      case "STAFF":
+      default:
+        return "Nhân viên";
     }
   };
 
   if (authLoading || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center p-8">
-        <p className="text-muted">Đang tải Cổng đối tác...</p>
+        <p className="text-muted text-sm">Đang tải Cổng đối tác SmashBook...</p>
       </div>
     );
   }
@@ -275,27 +370,40 @@ export default function PartnerPortalPage() {
     );
   }
 
-  // Chưa đăng ký hồ sơ đối tác
-  if (!profile) {
+  // Chưa đăng ký hồ sơ đối tác nào, hoặc người dùng muốn đăng ký thêm đối tác mới
+  if (!currentPartner || showRegisterForm) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
         <div className="rounded-card border border-border bg-surface p-6 sm:p-8 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-control bg-court-50 text-court-600 dark:bg-court-950">
-              <Building2 size={24} />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-control bg-court-50 text-court-600 dark:bg-court-950">
+                <Building2 size={24} />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-ink">
+                  {showRegisterForm ? "Đăng Ký Thêm Thương Hiệu Mới" : "Đăng Ký Thương Hiệu Đối Tác"}
+                </h1>
+                <p className="text-xs text-muted">
+                  Đồng hành cùng SmashBook mang ưu đãi thể thao tới hàng nghìn vận động viên cầu lông.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-ink">Đăng Ký Thương Hiệu Đối Tác</h1>
-              <p className="text-xs text-muted">
-                Đồng hành cùng SmashBook mang ưu đãi thể thao tới hàng nghìn vận động viên cầu lông.
-              </p>
-            </div>
+            {showRegisterForm && currentPartner && (
+              <button
+                type="button"
+                onClick={() => setShowRegisterForm(false)}
+                className="text-xs text-muted hover:text-ink font-semibold"
+              >
+                Quay lại
+              </button>
+            )}
           </div>
 
           <form onSubmit={handleRegister} className="mt-6 space-y-4">
             <div>
               <label className="block text-xs font-semibold text-muted uppercase">
-                Tên thương hiệu / Công ty *
+                Tên thương hiệu / Doanh nghiệp *
               </label>
               <input
                 required
@@ -326,38 +434,37 @@ export default function PartnerPortalPage() {
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-xs font-semibold text-muted uppercase">
-                  Logo URL
-                </label>
-                <input
-                  value={registerForm.logoUrl}
-                  onChange={(e) => setRegisterForm({ ...registerForm, logoUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="mt-1 w-full rounded-control border border-border bg-bg p-3 text-sm text-ink outline-none focus:border-court-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-muted uppercase">
-                  Website chính thức
-                </label>
-                <input
-                  value={registerForm.website}
-                  onChange={(e) => setRegisterForm({ ...registerForm, website: e.target.value })}
-                  placeholder="https://yonex.com"
-                  className="mt-1 w-full rounded-control border border-border bg-bg p-3 text-sm text-ink outline-none focus:border-court-500"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted uppercase">
+                Logo URL (Tùy chọn)
+              </label>
+              <input
+                value={registerForm.logoUrl}
+                onChange={(e) => setRegisterForm({ ...registerForm, logoUrl: e.target.value })}
+                placeholder="https://example.com/logo.png"
+                className="mt-1 w-full rounded-control border border-border bg-bg p-3 text-sm text-ink outline-none focus:border-court-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted uppercase">
+                Mô tả giới thiệu thương hiệu (Tùy chọn)
+              </label>
+              <textarea
+                value={registerForm.description}
+                onChange={(e) => setRegisterForm({ ...registerForm, description: e.target.value })}
+                placeholder="Nhà phân phối dụng cụ cầu lông hàng đầu..."
+                rows={2}
+                className="mt-1 w-full rounded-control border border-border bg-bg p-3 text-sm text-ink outline-none focus:border-court-500"
+              />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-xs font-semibold text-muted uppercase">
-                  Email liên hệ đại diện *
+                  Email liên hệ đại diện (Tùy chọn)
                 </label>
                 <input
-                  required
                   type="email"
                   value={registerForm.contactEmail}
                   onChange={(e) => setRegisterForm({ ...registerForm, contactEmail: e.target.value })}
@@ -367,10 +474,9 @@ export default function PartnerPortalPage() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted uppercase">
-                  Số điện thoại đại diện *
+                  Số điện thoại đại diện (Tùy chọn)
                 </label>
                 <input
-                  required
                   type="tel"
                   value={registerForm.contactPhone}
                   onChange={(e) => setRegisterForm({ ...registerForm, contactPhone: e.target.value })}
@@ -392,7 +498,7 @@ export default function PartnerPortalPage() {
     );
   }
 
-  // Đã có hồ sơ đối tác
+  // Đã có hồ sơ đối tác đang hoạt động / chờ duyệt
   return (
     <div className="min-h-screen bg-bg pb-20">
       {/* Banner thương hiệu */}
@@ -400,11 +506,11 @@ export default function PartnerPortalPage() {
         <div className="mx-auto flex max-w-content flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-card bg-court-50 font-bold text-court-700 dark:bg-court-950 dark:text-court-300">
-              {profile.logoUrl ? (
+              {currentPartner.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={profile.logoUrl}
-                  alt={profile.name}
+                  src={currentPartner.logoUrl}
+                  alt={currentPartner.name}
                   className="h-full w-full rounded-card object-cover"
                 />
               ) : (
@@ -412,59 +518,91 @@ export default function PartnerPortalPage() {
               )}
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-ink sm:text-2xl">{profile.name}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                {partners.length > 1 ? (
+                  <div className="relative inline-block">
+                    <select
+                      value={selectedPartnerId || currentPartner.id}
+                      onChange={(e) => setSelectedPartnerId(e.target.value)}
+                      className="cursor-pointer appearance-none rounded-control border border-border bg-bg py-1 pl-3 pr-8 text-lg font-bold text-ink outline-none focus:border-court-500"
+                    >
+                      {partners.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted" />
+                  </div>
+                ) : (
+                  <h1 className="text-xl font-bold text-ink sm:text-2xl">{currentPartner.name}</h1>
+                )}
+
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                    profile.status === "ACTIVE"
+                    currentPartner.status === "ACTIVE"
                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                      : profile.status === "PENDING"
+                      : currentPartner.status === "PENDING"
                       ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
                       : "bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
                   }`}
                 >
-                  {profile.status === "ACTIVE"
+                  {currentPartner.status === "ACTIVE"
                     ? "Đang hoạt động"
-                    : profile.status === "PENDING"
+                    : currentPartner.status === "PENDING"
                     ? "Chờ duyệt hồ sơ"
-                    : "Tạm khóa"}
+                    : "Tạm ngưng"}
                 </span>
               </div>
-              <p className="text-xs text-muted">
-                Mã slug: <code className="font-mono">{profile.slug}</code> · Vai trò của bạn:{" "}
-                <strong className="text-ink">{profile.myRole}</strong>
+              <p className="mt-1 text-xs text-muted">
+                Slug: <code className="font-mono">{currentPartner.slug}</code> · Vai trò:{" "}
+                <strong className="text-ink">{getRoleBadge(currentPartner.myRole)}</strong>
+                {" · "}
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterForm(true)}
+                  className="text-court-600 hover:underline"
+                >
+                  + Đăng ký thêm thương hiệu
+                </button>
               </p>
             </div>
           </div>
 
-          {profile.status === "ACTIVE" && (
-            <button
-              onClick={() => setShowCreateOffer(true)}
-              className="inline-flex items-center gap-1.5 rounded-control bg-court-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-court-700"
-            >
-              <Plus size={16} />
-              Tạo chiến dịch ưu đãi
-            </button>
+          {currentPartner.status === "ACTIVE" && (
+            <div>
+              {currentPartner.myRole !== "STAFF" ? (
+                <button
+                  onClick={() => setShowCreateOffer(true)}
+                  className="inline-flex items-center gap-1.5 rounded-control bg-court-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-court-700"
+                >
+                  <Plus size={16} />
+                  Tạo chiến dịch ưu đãi
+                </button>
+              ) : (
+                <span className="text-xs text-muted italic">Vai trò Nhân viên: Chế độ chỉ xem</span>
+              )}
+            </div>
           )}
         </div>
 
         {/* Thông báo trạng thái nếu PENDING */}
-        {profile.status === "PENDING" && (
+        {currentPartner.status === "PENDING" && (
           <div className="mx-auto mt-6 max-w-content rounded-control bg-amber-50 p-4 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
             <p className="flex items-center gap-1.5 font-bold">
               <Clock size={16} />
-              Hồ sơ đang chờ Quản trị viên duyệt
+              Hồ sơ thương hiệu đang chờ Ban Quản trị xét duyệt
             </p>
             <p className="mt-1 text-muted">
-              Ban Quản trị SmashBook sẽ thẩm định hồ sơ thương hiệu trong vòng 24h. Sau khi được duyệt,
-              bạn sẽ có thể phát hành các chiến dịch voucher tài trợ.
+              Ban Quản trị SmashBook sẽ thẩm định hồ sơ thương hiệu trong vòng 24h làm việc. Sau khi được kích hoạt,
+              bạn có thể phát hành các chiến dịch tài trợ voucher trực tiếp cho người chơi cầu lông.
             </p>
           </div>
         )}
       </section>
 
       {/* Tabs điều hướng */}
-      {profile.status === "ACTIVE" && (
+      {currentPartner.status === "ACTIVE" && (
         <div className="border-b border-border bg-surface">
           <div className="mx-auto flex max-w-content gap-6 px-4 sm:px-6">
             <button
@@ -496,7 +634,7 @@ export default function PartnerPortalPage() {
       {/* Nội dung chính */}
       <div className="mx-auto max-w-content px-4 py-8 sm:px-6">
         {/* Tab 1: Quản lý ưu đãi */}
-        {activeTab === "offers" && profile.status === "ACTIVE" && (
+        {activeTab === "offers" && currentPartner.status === "ACTIVE" && (
           <div className="space-y-6">
             {/* Modal / Form tạo ưu đãi */}
             {showCreateOffer && (
@@ -625,7 +763,7 @@ export default function PartnerPortalPage() {
 
                     <div>
                       <label className="block text-xs font-semibold text-muted uppercase">
-                        Giới hạn lượt dùng
+                        Giới hạn lượt dùng (Tùy chọn)
                       </label>
                       <input
                         type="number"
@@ -730,67 +868,75 @@ export default function PartnerPortalPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {offers.map((o) => (
-                      <tr key={o.id} className="hover:bg-bg/50">
-                        <td className="p-3.5">
-                          <p className="font-mono font-bold text-court-600">{o.voucher.code}</p>
-                          <p className="text-ink font-medium">{o.title}</p>
-                        </td>
-                        <td className="p-3.5 font-semibold text-ink">
-                          {o.voucher.type === "PERCENT"
-                            ? `${o.voucher.value}% (Max ${formatVND(o.voucher.maxDiscount || 0)})`
-                            : formatVND(o.voucher.value)}
-                        </td>
-                        <td className="p-3.5">
-                          <p className="font-semibold text-ink">
-                            {formatVND(o.usedBudget)} / {formatVND(o.budget)}
-                          </p>
-                          <div className="mt-1 h-1 w-24 overflow-hidden rounded-full bg-border">
-                            <div
-                              className="h-full bg-court-500"
-                              style={{
-                                width: `${Math.min(100, Math.round((o.usedBudget / o.budget) * 100))}%`,
-                              }}
-                            />
-                          </div>
-                        </td>
-                        <td className="p-3.5 text-ink">
-                          {o.currentUsage} {o.maxUsage ? `/ ${o.maxUsage}` : "lượt"}
-                        </td>
-                        <td className="p-3.5">
-                          <span
-                            className={`rounded-full px-2 py-0.5 font-bold ${
-                              o.status === "ACTIVE"
-                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                                : o.status === "PENDING_REVIEW"
-                                ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-                                : o.status === "DRAFT"
-                                ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                                : "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
-                            }`}
-                          >
-                            {o.status === "ACTIVE"
-                              ? "Hoạt động"
-                              : o.status === "PENDING_REVIEW"
-                              ? "Chờ duyệt"
-                              : o.status === "DRAFT"
-                              ? "Bản nháp"
-                              : o.status}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-right">
-                          {(o.status === "DRAFT" || o.status === "REJECTED") && (
-                            <button
-                              onClick={() => handleSubmitOffer(o.id)}
-                              className="inline-flex items-center gap-1 rounded-control bg-court-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-court-700"
+                    {offers.map((o) => {
+                      const vCode = o.voucher?.code || o.voucherCode || "N/A";
+                      const vType = o.voucher?.type || o.voucherType || "PERCENT";
+                      const vVal = o.voucher?.value ?? o.voucherValue ?? 0;
+                      const maxD = o.voucher?.maxDiscount;
+
+                      return (
+                        <tr key={o.id} className="hover:bg-bg/50">
+                          <td className="p-3.5">
+                            <p className="font-mono font-bold text-court-600">{vCode}</p>
+                            <p className="text-ink font-medium">{o.title}</p>
+                          </td>
+                          <td className="p-3.5 font-semibold text-ink">
+                            {vType === "PERCENT"
+                              ? `${vVal}% (Tối đa ${formatVND(maxD || 0)})`
+                              : formatVND(vVal)}
+                          </td>
+                          <td className="p-3.5">
+                            <p className="font-semibold text-ink">
+                              {formatVND(o.usedBudget)} / {formatVND(o.budget)}
+                            </p>
+                            <div className="mt-1 h-1 w-24 overflow-hidden rounded-full bg-border">
+                              <div
+                                className="h-full bg-court-500"
+                                style={{
+                                  width: `${Math.min(100, Math.round((o.usedBudget / o.budget) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </td>
+                          <td className="p-3.5 text-ink">
+                            {o.currentUsage} {o.maxUsage ? `/ ${o.maxUsage}` : "lượt"}
+                          </td>
+                          <td className="p-3.5">
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-bold ${
+                                o.status === "ACTIVE"
+                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                                  : o.status === "PENDING_REVIEW"
+                                  ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                                  : o.status === "DRAFT"
+                                  ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                  : "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                              }`}
                             >
-                              <Send size={12} />
-                              Gửi duyệt
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                              {o.status === "ACTIVE"
+                                ? "Hoạt động"
+                                : o.status === "PENDING_REVIEW"
+                                ? "Chờ duyệt"
+                                : o.status === "DRAFT"
+                                ? "Bản nháp"
+                                : o.status}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-right">
+                            {(o.status === "DRAFT" || o.status === "REJECTED") &&
+                              currentPartner.myRole !== "STAFF" && (
+                                <button
+                                  onClick={() => handleSubmitOffer(o.id)}
+                                  className="inline-flex items-center gap-1 rounded-control bg-court-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-court-700"
+                                >
+                                  <Send size={12} />
+                                  Gửi duyệt
+                                </button>
+                              )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -799,7 +945,7 @@ export default function PartnerPortalPage() {
         )}
 
         {/* Tab 2: Báo cáo hiệu quả tài trợ */}
-        {activeTab === "reports" && profile.status === "ACTIVE" && (
+        {activeTab === "reports" && currentPartner.status === "ACTIVE" && (
           <div className="space-y-6">
             {loadingReport ? (
               <p className="text-xs text-muted">Đang tính toán dữ liệu báo cáo...</p>
@@ -814,16 +960,16 @@ export default function PartnerPortalPage() {
                       Tổng ngân sách cam kết
                     </p>
                     <p className="mt-2 text-xl font-bold text-ink">
-                      {formatVND(report.summary.totalBudget)}
+                      {formatVND(report.summary?.totalBudget ?? 0)}
                     </p>
                   </div>
 
                   <div className="rounded-card border border-border bg-surface p-5 shadow-sm">
                     <p className="text-xs text-muted uppercase font-semibold">
-                      Đã tài trợ cho người chơi
+                      Ngân sách tài trợ đã dùng
                     </p>
                     <p className="mt-2 text-xl font-bold text-court-600">
-                      {formatVND(report.summary.totalSpent)}
+                      {formatVND(report.summary?.totalSpent ?? 0)}
                     </p>
                   </div>
 
@@ -832,7 +978,7 @@ export default function PartnerPortalPage() {
                       Ngân sách còn lại
                     </p>
                     <p className="mt-2 text-xl font-bold text-ink">
-                      {formatVND(report.summary.totalRemaining)}
+                      {formatVND(report.summary?.totalRemaining ?? 0)}
                     </p>
                   </div>
 
@@ -841,7 +987,7 @@ export default function PartnerPortalPage() {
                       Lượt khách hưởng ưu đãi
                     </p>
                     <p className="mt-2 text-xl font-bold text-ink">
-                      {report.summary.totalUsages} lượt
+                      {report.summary?.totalUsages ?? 0} lượt
                     </p>
                   </div>
                 </div>
@@ -853,14 +999,14 @@ export default function PartnerPortalPage() {
                       <tr>
                         <th className="p-3.5">Chiến dịch</th>
                         <th className="p-3.5">Mã Voucher</th>
-                        <th className="p-3.5">Cam kết</th>
-                        <th className="p-3.5">Đã tài trợ</th>
+                        <th className="p-3.5">Ngân sách cam kết</th>
+                        <th className="p-3.5">Ngân sách đã dùng</th>
                         <th className="p-3.5">Tỷ lệ sử dụng</th>
                         <th className="p-3.5">Lượt dùng</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {report.offers.map((o) => (
+                      {(report.offers || []).map((o) => (
                         <tr key={o.id}>
                           <td className="p-3.5 font-bold text-ink">{o.title}</td>
                           <td className="p-3.5 font-mono font-semibold text-court-600">

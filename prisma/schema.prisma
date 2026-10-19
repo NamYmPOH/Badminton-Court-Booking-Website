@@ -118,6 +118,7 @@ enum CoachStatus {
 enum CoachVenueStatus {
   PENDING
   ACTIVE
+  SUSPENDED
   REJECTED
 }
 
@@ -378,6 +379,7 @@ model Booking {
   group       BookingGroup?
   priceLines  BookingPriceLine[]
   offerUsages OfferUsage[]
+  voucherUsages VoucherUsage[]
 
   @@index([userId, createdAt])
   @@index([venueId, status])
@@ -532,6 +534,21 @@ model Voucher {
   venue        Venue?        @relation(fields: [venueId], references: [id])
   bookings     Booking[]
   partnerOffer PartnerOffer?
+  usages       VoucherUsage[]
+}
+
+model VoucherUsage {
+  id        String   @id @default(cuid())
+  voucherId String
+  bookingId String
+  createdAt DateTime @default(now())
+
+  voucher Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([voucherId, bookingId])
+  @@index([bookingId])
+  @@index([voucherId])
 }
 
 model Review {
@@ -622,11 +639,15 @@ model CoachCertificate {
 }
 
 model CoachVenue {
-  id        String           @id @default(cuid())
-  coachId   String
-  venueId   String
-  status    CoachVenueStatus @default(PENDING)
-  createdAt DateTime         @default(now())
+  id           String           @id @default(cuid())
+  coachId      String
+  venueId      String
+  status       CoachVenueStatus @default(PENDING)
+  reviewReason String?
+  reviewedAt   DateTime?
+  reviewedById String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   coach CoachProfile @relation(fields: [coachId], references: [id], onDelete: Cascade)
   venue Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)

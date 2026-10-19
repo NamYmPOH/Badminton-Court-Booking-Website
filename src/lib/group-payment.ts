@@ -60,8 +60,14 @@ export const groupActionSchema = z.discriminatedUnion("action", [
 export type GroupAction = z.infer<typeof groupActionSchema>;
 
 export function splitAmounts(total: number, count: number, custom?: number[]) {
-  if (!Number.isSafeInteger(total) || total < count || count < 2 || count > 30)
+  if (!Number.isSafeInteger(total) || total < count || count < 1 || count > 30)
     throw new PaymentError(400, "Số người hoặc tổng tiền không hợp lệ.");
+  if (count === 1) {
+    if (custom && (custom.length !== 1 || custom[0] !== total)) {
+      throw new PaymentError(400, "Tổng các phần phải bằng tiền đơn và mỗi phần lớn hơn 0đ.");
+    }
+    return [total];
+  }
   const amounts =
     custom ||
     Array.from(

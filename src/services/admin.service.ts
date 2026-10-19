@@ -7,6 +7,7 @@ import {
 import { getSepayConfig, parseSepayEvent, PaymentError } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { operatorVenueScope } from "../lib/venue-operations";
+import { recordVoucherConsumption } from "./settlement.service";
 
 export async function performAdminAction(
   db: PrismaClient,
@@ -111,6 +112,28 @@ export async function performAdminAction(
       details = {
         coachName: coach.user.name,
         before: coach.status,
+        after: input.status,
+        reason: input.reason,
+      };
+    } else if (input.action === "COACH_VENUE_STATUS") {
+      const coachVenue = await tx.coachVenue.findUnique({
+        where: { id: input.id },
+        include: { coach: { include: { user: true } }, venue: true },
+      });
+      if (!coachVenue) throw new PaymentError(404, "Không tìm thấy liên kết cơ sở của huấn luyện viên.");
+      await tx.coachVenue.update({
+        where: { id: coachVenue.id },
+        data: {
+          status: input.status,
+          reviewReason: input.reason,
+          reviewedAt: now,
+          reviewedById: actorId,
+        },
+      });
+      details = {
+        coachName: coachVenue.coach.user.name,
+        venueName: coachVenue.venue.name,
+        before: coachVenue.status,
         after: input.status,
         reason: input.reason,
       };
@@ -339,16 +362,13 @@ export async function performAdminAction(
         });
         update.paymentStatus = "PAID";
         update.paymentMethod = "CASH";
-        if (tx.offerUsage) {
-          const usages = await tx.offerUsage.findMany({ where: { bookingId: booking.id, state: "RESERVED" } });
-          for (const usage of usages) {
-            await tx.offerUsage.update({ where: { id: usage.id }, data: { state: "CONSUMED", expiresAt: null } });
-            await tx.partnerOffer.update({ where: { id: usage.offerId }, data: { usedBudget: { increment: usage.discountAmount }, currentUsage: { increment: 1 } } });
-          }
-        }
-        if (tx.voucher && booking.voucherId) {
-          await tx.voucher.update({ where: { id: booking.voucherId }, data: { usedCount: { increment: 1 } } });
-        }
+        await recordVoucherConsumption(
+          tx,
+          booking.id,
+          booking.voucherId,
+          actorId,
+          actor?.name || "Quản trị viên"
+        );
       }
       await tx.booking.update({ where: { id: booking.id }, data: update });
       details = {

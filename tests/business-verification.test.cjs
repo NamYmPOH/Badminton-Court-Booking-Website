@@ -344,7 +344,7 @@ test('6. Hủy HLV cho đơn đã thanh toán tạo quy trình hoàn tiền (REF
   assert.equal(res.success, true);
   assert.equal(res.refundedFee, 150000);
   assert.equal(coachBooking.status, 'CANCELLED');
-  assert.equal(booking.paymentStatus, 'REFUND_PENDING');
+  assert.equal(booking.paymentStatus, 'PAID', 'Đơn giữ nguyên trạng thái PAID để khách nhận sân hợp lệ');
   assert.ok(refundPaymentCreated, 'Payment record with REFUND_PENDING status must be created');
 });
 

@@ -372,3 +372,268 @@ test("createReservation rejects voucher when offer budget is exhausted", async (
     (e) => e.status === 409 && e.message.includes("ngân sách")
   );
 });
+
+test("Form đăng ký: chấp nhận bỏ trống các trường tùy chọn và từ chối sai định dạng email/phone", async () => {
+  const { partnerProfileInputSchema } = require("../src/lib/partner-policy.ts");
+
+  // 1. Hợp lệ với các trường tùy chọn bỏ trống (undefined / null)
+  const validMinimal = partnerProfileInputSchema.parse({
+    name: "Victor Badminton",
+    slug: "victor-badminton",
+  });
+  assert.equal(validMinimal.name, "Victor Badminton");
+
+  // 2. Từ chối email không hợp lệ
+  assert.throws(
+    () =>
+      partnerProfileInputSchema.parse({
+        name: "Victor Badminton",
+        slug: "victor-badminton",
+        contactEmail: "invalid-email-format",
+      }),
+    (e) => e.name === "ZodError"
+  );
+
+  // 3. Từ chối số điện thoại không đúng chuẩn Việt Nam
+  assert.throws(
+    () =>
+      partnerProfileInputSchema.parse({
+        name: "Victor Badminton",
+        slug: "victor-badminton",
+        contactPhone: "123456",
+      }),
+    (e) => e.name === "ZodError"
+  );
+
+  // 4. Từ chối trường lạ không nằm trong schema (strict mode)
+  assert.throws(
+    () =>
+      partnerProfileInputSchema.parse({
+        name: "Victor Badminton",
+        slug: "victor-badminton",
+        website: "https://victor.com", // website không có trong schema strict
+      }),
+    (e) => e.name === "ZodError"
+  );
+});
+
+test("Phân quyền: thành viên STAFF hoặc người không thuộc đối tác bị từ chối tạo ưu đãi (403)", async () => {
+  const mockDbStaff = {
+    $transaction: async (work) =>
+      work({
+        partnerMember: {
+          findUnique: async () => ({ id: "pm-1", role: "STAFF" }), // Vai trò STAFF
+        },
+        partner: { findUnique: async () => ({ id: "p-1", status: "ACTIVE" }) },
+      }),
+  };
+
+  const offerInput = {
+    partnerId: "p-1",
+    title: "Ưu đãi STAFF thử nghiệm",
+    sponsor: "PARTNER",
+    budget: 500000,
+    voucher: {
+      code: "STAFF50K",
+      type: "FIXED",
+      value: 50000,
+      minAmount: 100000,
+      validFrom: new Date().toISOString(),
+      validTo: new Date(Date.now() + 86400000).toISOString(),
+    },
+  };
+
+  // STAFF không được phép tạo ưu đãi
+  await assert.rejects(
+    createPartnerOffer(mockDbStaff, "user-staff", offerInput),
+    (e) => e.status === 403 && e.message.includes("quyền")
+  );
+
+  // Người ngoài không thuộc đối tác
+  const mockDbStranger = {
+    $transaction: async (work) =>
+      work({
+        partnerMember: { findUnique: async () => null },
+      }),
+  };
+  await assert.rejects(
+    createPartnerOffer(mockDbStranger, "stranger-user", offerInput),
+    (e) => e.status === 403
+  );
+});
+
+test("Vòng đời ưu đãi: Đối tác chưa ACTIVE không được tạo ưu đãi, gửi duyệt lặp bị từ chối 409", async () => {
+  // 1. Đối tác PENDING không được tạo ưu đãi
+  const mockDbPendingPartner = {
+    $transaction: async (work) =>
+      work({
+        partnerMember: { findUnique: async () => ({ id: "pm-1", role: "OWNER" }) },
+        partner: { findUnique: async () => ({ id: "p-pending", status: "PENDING" }) },
+      }),
+  };
+
+  const offerInput = {
+    partnerId: "p-pending",
+    title: "Ưu đãi đối tác PENDING",
+    sponsor: "PARTNER",
+    budget: 500000,
+    voucher: {
+      code: "PENDING50K",
+      type: "FIXED",
+      value: 50000,
+      minAmount: 100000,
+      validFrom: new Date().toISOString(),
+      validTo: new Date(Date.now() + 86400000).toISOString(),
+    },
+  };
+
+  await assert.rejects(
+    createPartnerOffer(mockDbPendingPartner, "user-owner", offerInput),
+    (e) => e.status === 403 && e.message.includes("tạm ngưng")
+  );
+
+  // 2. Gửi duyệt lặp khi offer đang PENDING_REVIEW -> 409
+  const mockDbAlreadySubmitted = {
+    $transaction: async (work) =>
+      work({
+        partnerOffer: {
+          findUnique: async () => ({ id: "offer-1", partnerId: "p-1", status: "PENDING_REVIEW" }),
+        },
+        partnerMember: { findUnique: async () => ({ id: "pm-1", role: "OWNER" }) },
+      }),
+  };
+
+  await assert.rejects(
+    submitPartnerOfferForReview(mockDbAlreadySubmitted, "user-owner", "offer-1"),
+    (e) => e.status === 409 && e.message.includes("Bản nháp")
+  );
+});
+
+test("Hợp đồng dữ liệu getMyPartnerOffers và getPartnerReport: cấu trúc chuẩn có voucher object, phân tách theo partnerId", async () => {
+  const { getMyPartnerOffers, getPartnerReport } = require("../src/services/partner.service.ts");
+
+  const mockDb = {
+    partnerMember: {
+      findUnique: async ({ where }) => {
+        if (where.partnerId_userId.partnerId === "part-1") {
+          return { partnerId: "part-1", userId: "user-1", role: "OWNER" };
+        }
+        return null; // Không thuộc part-2
+      },
+    },
+    partner: {
+      findUnique: async () => ({ id: "part-1", name: "Yonex VN", status: "ACTIVE" }),
+    },
+    partnerOffer: {
+      findMany: async ({ where }) => {
+        if (where.partnerId === "part-1") {
+          return [
+            {
+              id: "po-1",
+              partnerId: "part-1",
+              title: "Chiến dịch 1",
+              status: "ACTIVE",
+              budget: 1000000,
+              usedBudget: 200000,
+              currentUsage: 4,
+              maxUsage: 20,
+              voucher: {
+                code: "YONEX100",
+                type: "PERCENT",
+                value: 20,
+                maxDiscount: 50000,
+                minAmount: 100000,
+                validFrom: new Date(),
+                validTo: new Date(Date.now() + 86400000),
+                isActive: true,
+              },
+              createdAt: new Date(),
+            },
+          ];
+        }
+        return [];
+      },
+    },
+    offerUsage: {
+      findMany: async () => [],
+    },
+  };
+
+  // 1. Đọc offers của part-1 thành công, chứa voucher object khớp giao diện
+  const offers = await getMyPartnerOffers(mockDb, "user-1", "part-1");
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].voucher.code, "YONEX100");
+  assert.equal(offers[0].voucher.type, "PERCENT");
+  assert.equal(offers[0].voucher.value, 20);
+
+  // 2. Đọc offers của đối tác part-2 mà mình không thuộc quyền -> bị từ chối 403
+  await assert.rejects(
+    getMyPartnerOffers(mockDb, "user-1", "part-2"),
+    (e) => e.status === 403
+  );
+
+  // 3. Đọc báo cáo của part-1: chứa cả summary, metrics và offers
+  const report = await getPartnerReport(mockDb, "user-1", "part-1");
+  assert.equal(report.partnerName, "Yonex VN");
+  assert.equal(report.summary.totalBudget, 1000000);
+  assert.equal(report.summary.totalSpent, 200000);
+  assert.equal(report.summary.totalRemaining, 800000);
+  assert.equal(report.offers.length, 1);
+  assert.equal(report.offers[0].voucherCode, "YONEX100");
+});
+
+test("getMyPartners chuẩn hóa hợp đồng dữ liệu cho tài khoản có 0, 1 hoặc nhiều đối tác", async () => {
+  const { getMyPartners } = require("../src/services/partner.service.ts");
+
+  const mockDbMulti = {
+    partnerMember: {
+      findMany: async ({ where }) => {
+        if (where.userId === "user-multi") {
+          return [
+            {
+              id: "pm-1",
+              role: "OWNER",
+              partner: {
+                id: "p-1",
+                name: "Yonex VN",
+                slug: "yonex-vn",
+                status: "ACTIVE",
+                logoUrl: "https://example.com/yonex.png",
+                createdAt: new Date(),
+              },
+            },
+            {
+              id: "pm-2",
+              role: "STAFF",
+              partner: {
+                id: "p-2",
+                name: "Victor Sport",
+                slug: "victor-sport",
+                status: "PENDING",
+                logoUrl: null,
+                createdAt: new Date(),
+              },
+            },
+          ];
+        }
+        return [];
+      },
+    },
+  };
+
+  // 1. Tài khoản có 2 đối tác
+  const partners = await getMyPartners(mockDbMulti, "user-multi");
+  assert.equal(partners.length, 2);
+  assert.equal(partners[0].id, "p-1");
+  assert.equal(partners[0].name, "Yonex VN");
+  assert.equal(partners[0].status, "ACTIVE");
+  assert.equal(partners[0].myRole, "OWNER");
+  assert.equal(partners[1].id, "p-2");
+  assert.equal(partners[1].status, "PENDING");
+  assert.equal(partners[1].myRole, "STAFF");
+
+  // 2. Tài khoản không có đối tác nào
+  const emptyPartners = await getMyPartners(mockDbMulti, "user-none");
+  assert.equal(emptyPartners.length, 0);
+});
+

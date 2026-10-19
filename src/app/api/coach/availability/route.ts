@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const toDate = url.searchParams.get("toDate") || undefined;
 
     const slots = await getMyCoachAvailabilities(undefined, userId, fromDate, toDate);
-    return NextResponse.json({ success: true, slots }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ success: true, slots, availabilities: slots }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return paymentErrorResponse(error);
   }

@@ -18,6 +18,18 @@ import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/lib/utils";
 import { toast } from "sonner";
 
+interface CoachVenueItem {
+  id: string; // CoachVenue.id
+  venueId: string; // Venue.id
+  status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
+  name: string;
+  address: string;
+  district?: string;
+  province?: string;
+  reviewReason?: string | null;
+  reviewedAt?: string | null;
+}
+
 interface CoachProfile {
   id: string;
   userId: string;
@@ -25,10 +37,10 @@ interface CoachProfile {
   specialties: string[];
   experienceYears: number;
   hourlyRate: number;
-  status: "PENDING" | "ACTIVE" | "SUSPENDED";
+  status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
   reviewReason?: string | null;
   certificates: { id: string; title: string; verifiedAt: string | null }[];
-  venues: { id: string; name: string; address: string; openMin: number; closeMin: number }[];
+  venues: CoachVenueItem[];
 }
 
 interface CoachBookingItem {
@@ -151,7 +163,7 @@ export default function CoachPortalPage() {
       const res = await fetch("/api/coach/availability", { cache: "no-store" });
       if (!res.ok) throw new Error("Không thể tải ca rảnh.");
       const data = await res.json();
-      setAvailabilities(data.availabilities || []);
+      setAvailabilities(data.availabilities || data.slots || []);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Lỗi tải ca rảnh.");
     } finally {
@@ -284,7 +296,7 @@ export default function CoachPortalPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Đăng ký cơ sở thất bại.");
-      toast.success("Đã liên kết cơ sở hoạt động thành công!");
+      toast.success("Đã gửi yêu cầu liên kết cơ sở! Vui lòng chờ quản lý cơ sở duyệt.");
       fetchProfile();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Lỗi liên kết cơ sở");
@@ -661,13 +673,20 @@ export default function CoachPortalPage() {
                       onChange={(e) => setAvailForm({ ...availForm, venueId: e.target.value })}
                       className="mt-1 w-full rounded-control border border-border bg-bg p-2.5 text-sm text-ink outline-none focus:border-court-500"
                     >
-                      <option value="">-- Chọn cơ sở --</option>
-                      {profile.venues.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name} ({v.address})
-                        </option>
-                      ))}
+                      <option value="">-- Chọn cơ sở đã được duyệt --</option>
+                      {profile.venues
+                        .filter((v) => v.status === "ACTIVE")
+                        .map((v) => (
+                          <option key={v.venueId} value={v.venueId}>
+                            {v.name} ({v.address})
+                          </option>
+                        ))}
                     </select>
+                    {profile.venues.filter((v) => v.status === "ACTIVE").length === 0 && (
+                      <p className="mt-1 text-[11px] text-amber-600">
+                        Bạn chưa có cơ sở nào ở trạng thái &quot;Đã duyệt&quot;. Hãy liên kết cơ sở tại tab Cơ sở hoạt động và chờ quản lý duyệt.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-3">
@@ -793,13 +812,54 @@ export default function CoachPortalPage() {
                 {profile.venues.map((v) => (
                   <div
                     key={v.id}
-                    className="flex items-center gap-3 rounded-control border border-border bg-bg p-3.5"
+                    className="flex flex-col justify-between rounded-control border border-border bg-bg p-3.5 gap-2"
                   >
-                    <Building2 size={20} className="text-court-600 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-ink text-xs sm:text-sm">{v.name}</p>
-                      <p className="text-[11px] text-muted">{v.address}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5">
+                        <Building2 size={20} className="text-court-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-ink text-xs sm:text-sm">{v.name}</p>
+                          <p className="text-[11px] text-muted">{v.address}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0 ${
+                          v.status === "ACTIVE"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                            : v.status === "PENDING"
+                            ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                            : v.status === "SUSPENDED"
+                            ? "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
+                            : "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                        }`}
+                      >
+                        {v.status === "ACTIVE"
+                          ? "Đã duyệt"
+                          : v.status === "PENDING"
+                          ? "Chờ duyệt"
+                          : v.status === "SUSPENDED"
+                          ? "Tạm ngừng"
+                          : "Từ chối"}
+                      </span>
                     </div>
+
+                    {v.reviewReason && (
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400 pl-7">
+                        Lý do: {v.reviewReason}
+                      </p>
+                    )}
+
+                    {(v.status === "REJECTED" || v.status === "SUSPENDED") && (
+                      <div className="flex justify-end pt-1 border-t border-border/50">
+                        <button
+                          type="button"
+                          onClick={() => handleRegisterVenue(v.venueId)}
+                          className="rounded-control bg-court-50 px-2.5 py-1 text-[11px] font-semibold text-court-700 hover:bg-court-100 dark:bg-court-950 dark:text-court-300"
+                        >
+                          Gửi lại yêu cầu duyệt
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -816,7 +876,7 @@ export default function CoachPortalPage() {
                   >
                     <option value="">-- Chọn cụm sân muốn dạy --</option>
                     {allVenues
-                      .filter((v) => !profile.venues.some((pv) => pv.id === v.id))
+                      .filter((v) => !profile.venues.some((pv) => pv.venueId === v.id))
                       .map((v) => (
                         <option key={v.id} value={v.id}>
                           {v.name}
