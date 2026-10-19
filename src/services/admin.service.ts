@@ -7,6 +7,7 @@ import {
 import { getSepayConfig, parseSepayEvent, PaymentError } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { operatorVenueScope } from "../lib/venue-operations";
+import { recordVoucherConsumption } from "./settlement.service";
 
 export async function performAdminAction(
   db: PrismaClient,
@@ -361,16 +362,13 @@ export async function performAdminAction(
         });
         update.paymentStatus = "PAID";
         update.paymentMethod = "CASH";
-        if (tx.offerUsage) {
-          const usages = await tx.offerUsage.findMany({ where: { bookingId: booking.id, state: "RESERVED" } });
-          for (const usage of usages) {
-            await tx.offerUsage.update({ where: { id: usage.id }, data: { state: "CONSUMED", expiresAt: null } });
-            await tx.partnerOffer.update({ where: { id: usage.offerId }, data: { usedBudget: { increment: usage.discountAmount }, currentUsage: { increment: 1 } } });
-          }
-        }
-        if (tx.voucher && booking.voucherId) {
-          await tx.voucher.update({ where: { id: booking.voucherId }, data: { usedCount: { increment: 1 } } });
-        }
+        await recordVoucherConsumption(
+          tx,
+          booking.id,
+          booking.voucherId,
+          actorId,
+          actor?.name || "Quản trị viên"
+        );
       }
       await tx.booking.update({ where: { id: booking.id }, data: update });
       details = {

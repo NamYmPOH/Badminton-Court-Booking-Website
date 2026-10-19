@@ -379,6 +379,7 @@ model Booking {
   group       BookingGroup?
   priceLines  BookingPriceLine[]
   offerUsages OfferUsage[]
+  voucherUsages VoucherUsage[]
 
   @@index([userId, createdAt])
   @@index([venueId, status])
@@ -533,6 +534,21 @@ model Voucher {
   venue        Venue?        @relation(fields: [venueId], references: [id])
   bookings     Booking[]
   partnerOffer PartnerOffer?
+  usages       VoucherUsage[]
+}
+
+model VoucherUsage {
+  id        String   @id @default(cuid())
+  voucherId String
+  bookingId String
+  createdAt DateTime @default(now())
+
+  voucher Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([voucherId, bookingId])
+  @@index([bookingId])
+  @@index([voucherId])
 }
 
 model Review {

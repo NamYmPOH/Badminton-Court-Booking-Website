@@ -18,6 +18,7 @@ import {
   type GroupAction,
 } from "../lib/group-payment";
 import { operatorVenueScope } from "../lib/venue-operations";
+import { recordVoucherConsumption } from "./settlement.service";
 
 const include = {
   booking: { include: { items: { include: { court: true } }, venue: true } },
@@ -216,65 +217,13 @@ export async function sync(tx: Tx, groupId: string) {
     }
   }
   if (paid) {
-    let usages: Array<{ id: string; offerId: string; discountAmount: number }> = [];
-    if (tx.offerUsage) {
-      usages = await tx.offerUsage.findMany({
-        where: { bookingId: g.bookingId, state: "RESERVED" },
-      });
-      for (const usage of usages) {
-        await tx.offerUsage.update({
-          where: { id: usage.id },
-          data: { state: "CONSUMED", expiresAt: null },
-        });
-        if (tx.partnerOffer) {
-          await tx.partnerOffer.update({
-            where: { id: usage.offerId },
-            data: {
-              usedBudget: { increment: usage.discountAmount },
-              currentUsage: { increment: 1 },
-            },
-          });
-        }
-      }
-    }
-
-    if (tx.voucher && g.booking.voucherId) {
-      if (usages.length > 0) {
-        // Đã tiêu thụ ưu đãi đối tác (OfferUsage) -> tăng voucher.usedCount đồng bộ
-        await tx.voucher.update({
-          where: { id: g.booking.voucherId },
-          data: { usedCount: { increment: 1 } },
-        });
-      } else if (!wasAlreadyPaid) {
-        // Voucher thường (không qua OfferUsage): chỉ tăng khi chuyển sang PAID lần đầu
-        const auditMarker = `VOUCHER_CONSUMED:${g.bookingId}:${g.booking.voucherId}`;
-        let alreadyRecorded = false;
-        if (typeof tx.adminAudit?.findFirst === "function") {
-          const existingAudit = await tx.adminAudit.findFirst({
-            where: { action: "VOUCHER_CONSUMED", entityId: auditMarker },
-          });
-          if (existingAudit) alreadyRecorded = true;
-        }
-        if (!alreadyRecorded) {
-          if (typeof tx.adminAudit?.create === "function") {
-            await tx.adminAudit.create({
-              data: {
-                actorId: g.booking.userId || "system",
-                actorName: "Hệ thống Thanh toán Nhóm",
-                action: "VOUCHER_CONSUMED",
-                entityId: auditMarker,
-                reason: `Xác nhận sử dụng voucher thường cho đơn nhóm ${g.booking.code}`,
-                details: { bookingId: g.bookingId, voucherId: g.booking.voucherId },
-              },
-            });
-          }
-          await tx.voucher.update({
-            where: { id: g.booking.voucherId },
-            data: { usedCount: { increment: 1 } },
-          });
-        }
-      }
-    }
+    await recordVoucherConsumption(
+      tx,
+      g.bookingId,
+      g.booking.voucherId,
+      g.booking.userId || undefined,
+      "Hệ thống Thanh toán Nhóm"
+    );
     await tx.groupPaymentIntent.updateMany({
       where: { groupId, status: "OPEN" },
       data: { status: "CLOSED" },
@@ -304,26 +253,40 @@ export async function closeGroup(
         ? 0.5
         : 0;
   const payments = await tx.payment.findMany({
-    where: { bookingId: g.bookingId, status: "PAID" },
+    where: { bookingId: g.bookingId, status: { in: ["PAID", "REFUND_PENDING"] } },
     orderBy: { id: "asc" },
   });
-  const refundTotal = Math.floor(
-    payments.reduce((n, p) => n + p.amount, 0) * rate,
-  );
-  let remaining = refundTotal;
+  let hasPendingRefund = false;
   for (let i = 0; i < payments.length; i++) {
     const p = payments[i];
-    const amount =
-      i === payments.length - 1 ? remaining : Math.floor(p.amount * rate);
-    remaining -= amount;
-    if (amount > 0) {
-      await tx.groupRefund.create({
-        data: { paymentId: p.id, amount, reason },
-      });
-      await tx.payment.update({
-        where: { id: p.id },
-        data: { status: "REFUND_PENDING" },
-      });
+    const targetRefund = Math.floor(p.amount * rate);
+    if (targetRefund > 0) {
+      hasPendingRefund = true;
+      const existingRefund = typeof tx.groupRefund?.findUnique === "function"
+        ? await tx.groupRefund.findUnique({ where: { paymentId: p.id } })
+        : null;
+
+      if (existingRefund) {
+        if (targetRefund > existingRefund.amount) {
+          await tx.groupRefund.update({
+            where: { id: existingRefund.id },
+            data: {
+              amount: targetRefund,
+              reason: `${existingRefund.reason}; ${reason}`,
+            },
+          });
+        }
+      } else {
+        await tx.groupRefund.create({
+          data: { paymentId: p.id, amount: targetRefund, reason },
+        });
+      }
+      if (p.status !== "REFUND_PENDING") {
+        await tx.payment.update({
+          where: { id: p.id },
+          data: { status: "REFUND_PENDING" },
+        });
+      }
     }
   }
   await tx.groupPaymentIntent.updateMany({
@@ -358,7 +321,7 @@ export async function closeGroup(
       cancelledAt: expired ? null : now,
       cancelReason: reason,
       paymentStatus:
-        refundTotal > 0 ? "REFUND_PENDING" : g.booking.paymentStatus,
+        hasPendingRefund ? "REFUND_PENDING" : g.booking.paymentStatus,
     },
   });
 }

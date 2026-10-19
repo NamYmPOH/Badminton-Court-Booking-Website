@@ -16,6 +16,7 @@ import {
 import { operatorVenueScope } from "../lib/venue-operations";
 import { splitAmounts } from "../lib/group-payment";
 import { serializable } from "./sepay.service";
+import { completeBookingSettlement } from "./settlement.service";
 
 export interface CoachFilterParams {
   page?: number;
@@ -961,8 +962,8 @@ export async function cancelCoachBookingByCoach(
           if (totalPaid <= nextTotal) {
             // Tiền đã thu chưa vượt tổng tiền sân mới
             const remainingForCourt = nextTotal - totalPaid;
-            if (unpaidShares.length > 0) {
-              if (remainingForCourt > 0) {
+            if (remainingForCourt > 0) {
+              if (unpaidShares.length > 0) {
                 // Chia remainingForCourt cho các unpaidShares
                 const newUnpaidAmounts = splitAmounts(remainingForCourt, unpaidShares.length);
                 for (let i = 0; i < unpaidShares.length; i++) {
@@ -975,28 +976,28 @@ export async function cancelCoachBookingByCoach(
                     },
                   });
                 }
-              } else {
-                // Tiền đã thu vừa đủ (remainingForCourt === 0): các phần chưa trả phải về 0đ
-                for (let i = 0; i < unpaidShares.length; i++) {
-                  await tx.groupShare.update({
-                    where: { id: unpaidShares[i].id },
-                    data: {
-                      amount: 0,
-                      currentIntentId: null,
-                      cashRequested: false,
-                    },
-                  });
-                }
-                // Đơn đã đủ tiền
-                await tx.booking.update({
-                  where: { id: booking.id },
+              }
+            } else {
+              // Tiền đã thu vừa đủ (remainingForCourt === 0): các phần chưa trả (nếu có) phải về 0đ
+              for (let i = 0; i < unpaidShares.length; i++) {
+                await tx.groupShare.update({
+                  where: { id: unpaidShares[i].id },
                   data: {
-                    paymentStatus: "PAID",
-                    status: "CONFIRMED",
-                    expiresAt: null,
+                    amount: 0,
+                    currentIntentId: null,
+                    cashRequested: false,
                   },
                 });
               }
+              // Đơn đã đủ tiền -> Hoàn tất toàn bộ tài nguyên (Booking, BookingItem, CoachBooking khác, Voucher/Offer)
+              await completeBookingSettlement(tx, {
+                bookingId: booking.id,
+                voucherId: booking.voucherId,
+                groupId: group.id,
+                actorId: profile.userId,
+                actorName: "Huấn luyện viên",
+                excludeCoachBookingId: coachBooking.id,
+              });
             }
             if (tx.groupPaymentIntent) {
               await tx.groupPaymentIntent.updateMany({
@@ -1103,14 +1104,14 @@ export async function cancelCoachBookingByCoach(
               });
             }
 
-            // Đơn sân đã được trả đủ bởi các thành viên
-            await tx.booking.update({
-              where: { id: booking.id },
-              data: {
-                paymentStatus: "PAID",
-                status: "CONFIRMED",
-                expiresAt: null,
-              },
+            // Đơn sân đã được trả đủ bởi các thành viên -> Hoàn tất toàn bộ tài nguyên
+            await completeBookingSettlement(tx, {
+              bookingId: booking.id,
+              voucherId: booking.voucherId,
+              groupId: group.id,
+              actorId: profile.userId,
+              actorName: "Huấn luyện viên",
+              excludeCoachBookingId: coachBooking.id,
             });
           }
         }
