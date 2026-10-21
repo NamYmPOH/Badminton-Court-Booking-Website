@@ -28,7 +28,7 @@ export function priceBooking(input: BookingRequest, venue: Catalogue, now = new 
   }
   const slots = input.slots.map(item => {
     const court = venue.courts.find(c => c.id === item.courtId && c.status === "ACTIVE");
-    const price = slotPrice({ ...venue, pricingRules: venue.pricing.map(rule => ({ ...rule, id: "", fixedPrice: 0 })) }, input.date, item.startMin, item.endMin);
+    const price = slotPrice({ ...venue, pricingRules: venue.pricing.map(rule => ({ ...rule, id: "", fixedPrice: 0 })) }, input.date, item.startMin, item.endMin, item.courtId);
     if (!court || price === null || price <= 0 || isPastSlot(input.date, item.startMin, now)) throw new PaymentError(400, "Sân hoặc giờ chơi không còn hợp lệ.");
     return { ...item, courtName: court.name, price };
   }).sort((a, b) => a.startMin - b.startMin);

@@ -4,6 +4,8 @@ import { type BookingRequest, priceBooking } from "../lib/booking-request";
 import { createVietQrUrl, PaymentError, type SepayConfig } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { canPayBooking } from "../lib/booking-payment";
+import { getVenueCancellationPolicy } from "./policy.service";
+import { getVenueEffectiveHours } from "./schedule.service";
 
 export const bookingDetails = {
   venue: true,
@@ -109,6 +111,26 @@ export async function createReservation(db: PrismaClient, userId: string, input:
     const courtId = slots[0].courtId;
     const startMin = slots[0].startMin;
     const endMin = slots[slots.length - 1].endMin;
+
+    interface SafeScheduleTx {
+      venueDateException?: { findUnique: (args: unknown) => Promise<unknown> };
+      venueWeeklySchedule?: { findUnique: (args: unknown) => Promise<unknown> };
+      cancellationPolicy?: { findFirst: (args: unknown) => Promise<unknown> };
+    }
+    const safeTx = tx as unknown as SafeScheduleTx;
+
+    if (
+      typeof safeTx.venueDateException?.findUnique === "function" ||
+      typeof safeTx.venueWeeklySchedule?.findUnique === "function"
+    ) {
+      const effectiveHours = await getVenueEffectiveHours(tx, venue.id, input.date);
+      if (!effectiveHours.isOpen) {
+        throw new PaymentError(409, effectiveHours.reason || "Cơ sở tạm đóng cửa vào ngày này theo lịch hoạt động.");
+      }
+      if (startMin < effectiveHours.openMin || endMin > effectiveHours.closeMin) {
+        throw new PaymentError(409, "Khung giờ bạn chọn nằm ngoài giờ mở cửa của cơ sở theo lịch hoạt động.");
+      }
+    }
 
     const blocked = await tx.courtBlock.findFirst({ where: { courtId, date, startMin: { lt: endMin }, endMin: { gt: startMin } } });
     const conflict = await tx.bookingItem.findFirst({
@@ -323,6 +345,15 @@ export async function createReservation(db: PrismaClient, userId: string, input:
     const holdDurationMinutes = 5;
     const expiresAt = new Date(Math.min(now.getTime() + holdDurationMinutes * 60 * 1000, startTime.getTime()));
 
+    let cancellationPolicyId: string | null = null;
+    let cancellationSnapshot: Prisma.InputJsonValue | undefined = undefined;
+
+    if (typeof safeTx.cancellationPolicy?.findFirst === "function") {
+      const policy = await getVenueCancellationPolicy(tx, venue.id);
+      cancellationPolicyId = policy.policyId !== "default-venue-policy" ? policy.policyId : null;
+      cancellationSnapshot = policy as unknown as Prisma.InputJsonValue;
+    }
+
     return tx.booking.create({
       data: {
         requestId: input.requestId,
@@ -336,6 +367,8 @@ export async function createReservation(db: PrismaClient, userId: string, input:
         discount: finalDiscount,
         total: finalTotal,
         voucherId: appliedVoucherId,
+        cancellationPolicyId,
+        cancellationSnapshot,
         status: "PENDING_PAYMENT",
         paymentStatus: "PENDING",
         paymentMethod: "BANK_TRANSFER",

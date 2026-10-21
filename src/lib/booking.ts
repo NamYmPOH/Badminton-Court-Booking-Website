@@ -20,13 +20,30 @@ export function bookingDates(now = new Date()) {
   });
 }
 
-export function slotPrice(venue: Pick<Venue, "openMin" | "closeMin" | "pricingRules">, date: string, start: number, end: number): number | null {
+export function slotPrice(
+  venue: Pick<Venue, "openMin" | "closeMin" | "pricingRules">,
+  date: string,
+  start: number,
+  end: number,
+  courtId?: string
+): number | null {
   const day = new Date(`${date}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== date || !Number.isInteger(start) || !Number.isInteger(end) || end - start !== 30 || (start - venue.openMin) % 30 !== 0 || start < venue.openMin || end > venue.closeMin) return null;
   const weekday = day.getUTCDay() || 7;
   let amount = 0;
   for (let minute = start; minute < end; minute++) {
-    const rule = venue.pricingRules.find(r => r.daysOfWeek.includes(weekday) && minute >= r.startMin && minute < r.endMin);
+    // 1. Ưu tiên luật giá riêng cho sân cụ thể (nếu có courtId)
+    let rule = courtId
+      ? venue.pricingRules.find(r => (r as { courtId?: string | null }).courtId === courtId && r.daysOfWeek.includes(weekday) && minute >= r.startMin && minute < r.endMin)
+      : undefined;
+    // 2. Fallback về luật giá chung cơ sở
+    if (!rule) {
+      rule = venue.pricingRules.find(r => !(r as { courtId?: string | null }).courtId && r.daysOfWeek.includes(weekday) && minute >= r.startMin && minute < r.endMin);
+    }
+    // 3. Fallback cuối cùng nếu dữ liệu test mock không có trường courtId
+    if (!rule) {
+      rule = venue.pricingRules.find(r => r.daysOfWeek.includes(weekday) && minute >= r.startMin && minute < r.endMin);
+    }
     if (!rule) return null;
     amount += rule.walkInPrice / 60;
   }

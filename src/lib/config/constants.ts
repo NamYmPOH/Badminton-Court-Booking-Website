@@ -15,8 +15,8 @@ export const MAX_BOOKING_RANGES = 8;
 /** Đặt trước tối đa (ngày) — D-05 */
 export const MAX_ADVANCE_DAYS = 30;
 
-/** Thời gian giữ chỗ (giây) — D-06 */
-export const HOLD_TTL_SECONDS = 600;
+/** Thời gian giữ chỗ (giây) — D-06, BR-02 (5 phút = 300 giây) */
+export const HOLD_TTL_SECONDS = 300;
 
 /** Thời gian huỷ miễn phí trước giờ chơi (giờ) — BR-06 */
 export const DEFAULT_CANCEL_BEFORE_HOURS = 4;

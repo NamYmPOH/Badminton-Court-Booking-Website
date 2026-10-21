@@ -286,6 +286,10 @@ model Venue {
   vouchers            Voucher[]
   coachVenues         CoachVenue[]
   coachAvailabilities CoachAvailability[]
+  weeklySchedules     VenueWeeklySchedule[]
+  dateExceptions      VenueDateException[]
+  cancellationPolicies CancellationPolicy[]
+  invoices            InternalInvoice[]
 
   @@index([status, district])
   @@index([lat, lng])
@@ -308,9 +312,11 @@ model Court {
   surface   String?
   status    CourtStatus @default(ACTIVE)
 
-  venue  Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  items  BookingItem[]
-  blocks CourtBlock[]
+  venue        Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  items        BookingItem[]
+  blocks       CourtBlock[]
+  pricingRules PricingRule[]
+  sessions     CourtSession[]
 
   @@unique([venueId, name])
   @@index([venueId, sortOrder])
@@ -325,9 +331,12 @@ model PricingRule {
   endMin      Int
   walkInPrice Int // VND / giờ — Vãng lai
   fixedPrice  Int // VND / giờ — Cố định
+  courtId     String? // null: áp dụng toàn cơ sở; có giá trị: ưu tiên cho sân cụ thể
+  court       Court?  @relation(fields: [courtId], references: [id], onDelete: Cascade)
   venue       Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
 
   @@index([venueId])
+  @@index([courtId])
 }
 
 model CourtBlock {
@@ -380,6 +389,13 @@ model Booking {
   priceLines  BookingPriceLine[]
   offerUsages OfferUsage[]
   voucherUsages VoucherUsage[]
+  cancellationPolicyId String?
+  cancellationPolicy   CancellationPolicy? @relation(fields: [cancellationPolicyId], references: [id])
+  cancellationSnapshot Json?
+  invoices             InternalInvoice[]
+  sessions             CourtSession[]
+  refundRequests       RefundRequest[]
+  tickets              Ticket[]
 
   @@index([userId, createdAt])
   @@index([venueId, status])
@@ -399,6 +415,8 @@ model BookingItem {
   booking      Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   court        Court         @relation(fields: [courtId], references: [id])
   coachBooking CoachBooking?
+  session      CourtSession?
+  tickets      Ticket[]
 
   @@index([courtId, date])
   @@index([bookingId])
@@ -415,9 +433,11 @@ model Payment {
   paidAt        DateTime?
   rawPayload    Json?
   createdAt     DateTime        @default(now())
-  booking       Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  groupShares   GroupShare[]
-  groupRefund   GroupRefund?
+  booking            Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  groupShares        GroupShare[]
+  groupRefund        GroupRefund?
+  refundRequests     RefundRequest[]
+  refundTransactions RefundTransaction[]
 
   @@index([bookingId])
 }
@@ -809,4 +829,209 @@ model CoachSettlement {
   @@index([coachId, status])
   @@index([periodStart, periodEnd])
 }
+
+// ───────────── Lịch hoạt động chi tiết & Ngoại lệ ─────────────
+model VenueWeeklySchedule {
+  id        String   @id @default(cuid())
+  venueId   String
+  dayOfWeek Int      // 1=Thứ 2 ... 7=Chủ nhật
+  openMin   Int      // phút từ 00:00 (vd 300 = 05:00)
+  closeMin  Int      // phút từ 00:00 (vd 1320 = 22:00)
+  isClosed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@unique([venueId, dayOfWeek])
+  @@index([venueId])
+}
+
+model VenueDateException {
+  id        String   @id @default(cuid())
+  venueId   String
+  date      String   // YYYY-MM-DD
+  isClosed  Boolean  @default(false)
+  openMin   Int?     // giờ mở đặc biệt
+  closeMin  Int?     // giờ đóng đặc biệt
+  reason    String?  // Nghỉ lễ, giải đấu, sửa chữa...
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@unique([venueId, date])
+  @@index([venueId, date])
+}
+
+// ───────────── Chính sách hủy có phiên bản ─────────────
+model CancellationPolicy {
+  id                   String   @id @default(cuid())
+  venueId              String
+  name                 String   // Tên chính sách
+  version              Int      @default(1)
+  isDefault            Boolean  @default(false)
+  freeCancelHours      Int      @default(24) // Trước 24h hoàn 100%
+  lateCancelHours      Int      @default(4)  // Trước 4h hoàn partialRefundPercent%
+  partialRefundPercent Int      @default(50) // % hoàn khi hủy muộn
+  nonRefundableHours   Int      @default(4)  // Dưới 4h không hoàn
+  allowCoachRefund     Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  venue    Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@index([venueId])
+}
+
+// ───────────── Hóa đơn / Chứng từ nội bộ ─────────────
+model InternalInvoice {
+  id            String   @id @default(cuid())
+  invoiceNumber String   @unique // INV-YYYYMMDD-XXXX
+  bookingId     String
+  venueId       String
+  issuedById    String?  // ID người phát hành hoặc SYSTEM
+  issuedAt      DateTime @default(now())
+  subtotal      Int
+  discount      Int      @default(0)
+  totalAmount   Int
+  paidAmount    Int
+  customerName  String
+  customerPhone String
+  customerEmail String?
+  venueName     String
+  venueAddress  String
+  snapshot      Json     // Snapshot bất biến chi tiết sân, giờ, thanh toán, HLV, voucher
+  status        String   @default("ISSUED") // ISSUED, CANCELLED, ADJUSTED
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  venue   Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([venueId])
+  @@index([issuedAt])
+}
+
+// ───────────── Phiên sử dụng sân & Phụ thu ─────────────
+model CourtSession {
+  id            String          @id @default(cuid())
+  bookingItemId String          @unique
+  bookingId     String
+  courtId       String
+  operatorId    String?         // Nhân viên check-in
+  checkInAt     DateTime        @default(now())
+  checkOutAt    DateTime?       // Trả sân thực tế
+  status        String          @default("ACTIVE") // ACTIVE, COMPLETED, NO_SHOW
+  note          String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  bookingItem BookingItem      @relation(fields: [bookingItemId], references: [id], onDelete: Cascade)
+  booking     Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  court       Court            @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  surcharges  CourtSurcharge[]
+
+  @@index([bookingId])
+  @@index([courtId])
+  @@index([status])
+}
+
+model CourtSurcharge {
+  id            String       @id @default(cuid())
+  sessionId     String
+  bookingId     String
+  venueId       String
+  createdById   String       // Nhân viên phụ trách
+  type          String       // OVERTIME, SERVICE, DAMAGE, OTHER
+  amount        Int
+  reason        String
+  status        String       @default("UNPAID") // UNPAID, PAID, WAIVED
+  paymentMethod String?      // CASH, BANK_TRANSFER, QR
+  paidAt        DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  session CourtSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([bookingId])
+  @@index([venueId])
+}
+
+// ───────────── Quy trình hoàn tiền có kiểm soát ─────────────
+model RefundRequest {
+  id                String              @id @default(cuid())
+  bookingId         String
+  paymentId         String?
+  requestedById     String              // Người yêu cầu hoặc SYSTEM
+  approvedById      String?             // Nhân viên duyệt
+  amount            Int
+  type              String              // FULL_CANCELLATION, PARTIAL_CANCELLATION, COACH_CANCELLATION, OVERPAYMENT, DISPUTE
+  reason            String
+  status            String              @default("REQUESTED") // REQUESTED, PROCESSING, COMPLETED, REJECTED, FAILED
+  bankAccountNumber String?
+  bankAccountName   String?
+  bankName          String?
+  rejectedReason    String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  booking      Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  payment      Payment?            @relation(fields: [paymentId], references: [id])
+  transactions RefundTransaction[]
+
+  @@index([bookingId])
+  @@index([status])
+}
+
+model RefundTransaction {
+  id            String        @id @default(cuid())
+  requestId     String
+  paymentId     String?
+  amount        Int
+  method        String        @default("MANUAL_BANK_TRANSFER") // MANUAL_BANK_TRANSFER, SEPAY_MANUAL, CASH
+  bankRef       String?       // Mã tham chiếu giao dịch ngân hàng
+  proofImage    String?       // Ảnh ủy nhiệm chi hoặc biên lai
+  processedById String        // Nhân viên hoàn tất
+  processedAt   DateTime      @default(now())
+  status        String        @default("COMPLETED") // COMPLETED, FAILED
+  notes         String?
+  createdAt     DateTime      @default(now())
+
+  request RefundRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  payment Payment?      @relation(fields: [paymentId], references: [id])
+
+  @@index([requestId])
+}
+
+// ───────────── Vé điện tử cho đơn đặt sân ─────────────
+model Ticket {
+  id            String       @id @default(cuid())
+  ticketCode    String       @unique // TKT-YYYYMMDD-XXXX
+  ticketNonce   String       @unique
+  bookingId     String
+  bookingItemId String?
+  groupShareId  String?      // Nếu gắn theo suất nhóm
+  holderName    String
+  holderPhone   String
+  status        String       @default("UNUSED") // UNUSED, CHECKED_IN, EXPIRED, CANCELLED
+  validFrom     DateTime
+  validTo       DateTime
+  checkedInAt   DateTime?
+  checkedInById String?      // Nhân viên quét vé
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  booking     Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingItem BookingItem? @relation(fields: [bookingItemId], references: [id])
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([validFrom, validTo])
+}
+
 
