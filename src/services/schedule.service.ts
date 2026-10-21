@@ -18,6 +18,8 @@ export async function getVenueEffectiveHours(
   venueId: string,
   dateString: string
 ): Promise<EffectiveHoursResult> {
+  const parsedDate = new Date(dateString + "T00:00:00Z");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString) || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0,10) !== dateString) throw new PaymentError(400, "Ngày không hợp lệ.");
   const venue = await db.venue.findUnique({
     where: { id: venueId },
     select: { id: true, openMin: true, closeMin: true },
@@ -108,7 +110,7 @@ export async function checkScheduleConflictWithBookings(
     where: {
       booking: {
         venueId,
-        status: { in: ["CONFIRMED", "CHECKED_IN"] },
+        OR: [{ status: { in: ["CONFIRMED", "CHECKED_IN"] } }, { status: "PENDING_PAYMENT", expiresAt: { gt: now } }],
       },
       status: { in: ["HELD", "CONFIRMED"] },
     },
@@ -124,6 +126,8 @@ export async function checkScheduleConflictWithBookings(
     const itemDateStr =
       item.date instanceof Date ? item.date.toISOString().slice(0, 10) : String(item.date).slice(0, 10);
 
+    const endAt = new Date(itemDateStr + "T00:00:00+07:00").getTime() + item.endMin * 60000;
+    if (endAt <= now.getTime()) return false;
     // Nếu kiểm tra theo ngày cụ thể
     if (options.date && itemDateStr !== options.date) {
       return false;
@@ -163,6 +167,7 @@ export async function setWeeklySchedule(
   }[]
 ) {
   const results = [];
+  if (new Set(schedules.map(s => s.dayOfWeek)).size !== schedules.length) throw new PaymentError(400, "Lịch tuần có ngày bị trùng.");
 
   for (const s of schedules) {
     if (s.dayOfWeek < 1 || s.dayOfWeek > 7) {
@@ -234,6 +239,13 @@ export async function setDateException(
     }
   }
 
+  const date = new Date(input.date + "T00:00:00Z");
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0,10) !== input.date) throw new PaymentError(400, "Ngày ngoại lệ không tồn tại.");
+  if (!input.isClosed) {
+    const venue = await tx.venue.findUniqueOrThrow({ where: { id: venueId }, select: { openMin: true, closeMin: true } });
+    input = { ...input, openMin: input.openMin ?? venue.openMin, closeMin: input.closeMin ?? venue.closeMin };
+    if (input.openMin! >= input.closeMin!) throw new PaymentError(400, "Giờ mở cửa phải trước giờ đóng cửa.");
+  }
   // Kiểm tra xung đột với đơn đã đặt
   const conflicts = await checkScheduleConflictWithBookings(tx, venueId, {
     date: input.date,

@@ -1,3 +1,4 @@
+import { slotTime } from "../lib/group-payment";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { PaymentError } from "../lib/sepay";
 
@@ -15,6 +16,7 @@ export interface CompleteSessionInput {
 }
 
 export interface AddSurchargeInput {
+  requestId: string;
   sessionId: string;
   createdById: string;
   type: "OVERTIME" | "SERVICE" | "DAMAGE" | "OTHER";
@@ -60,6 +62,8 @@ export async function startCourtSession(
   }
 
   const now = new Date();
+  if (item.status !== "CONFIRMED" || item.booking.paymentStatus !== "PAID" || !["CONFIRMED", "CHECKED_IN"].includes(item.booking.status)) throw new PaymentError(409, "Đơn chưa đủ điều kiện nhận sân.");
+  if (now.getTime() < slotTime(item) - 15 * 60000 || now.getTime() >= slotTime(item, item.endMin)) throw new PaymentError(409, "Chưa đến hoặc đã hết thời gian nhận sân.");
 
   // 3. Cập nhật Booking sang CHECKED_IN nếu đang CONFIRMED
   if (item.booking.status === "CONFIRMED") {
@@ -148,6 +152,11 @@ export async function addCourtSurcharge(
     throw new PaymentError(400, "Số tiền phụ thu không hợp lệ.");
   }
 
+  const existing = await tx.courtSurcharge.findUnique({ where: { requestId: input.requestId } });
+  if (existing) {
+    if (existing.sessionId !== input.sessionId || existing.amount !== input.amount || existing.type !== input.type || existing.reason !== input.reason.trim()) throw new PaymentError(409, "Mã yêu cầu phụ thu đã được dùng với nội dung khác.");
+    return existing;
+  }
   const session = await tx.courtSession.findUnique({
     where: { id: input.sessionId },
     include: { booking: true },
@@ -161,6 +170,7 @@ export async function addCourtSurcharge(
 
   return tx.courtSurcharge.create({
     data: {
+      requestId: input.requestId,
       sessionId: session.id,
       bookingId: session.bookingId,
       venueId: session.booking.venueId,

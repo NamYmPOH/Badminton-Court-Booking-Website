@@ -1,3 +1,5 @@
+> **Đính chính sau review 21/10/2026:** Báo cáo dưới đây là bản của đợt sinh code, không phải biên bản nghiệm thu. 160 là số test, không phải test suite; test mock chưa chứng minh concurrency/rollback PostgreSQL. Vé đơn hiện dùng cửa sổ trước/sau 60 phút, không phải 30 phút. Xem bao-cao-sua-business-integrity.vi.md để biết thay đổi và giới hạn kiểm chứng mới nhất.
+
 # BÁO CÁO BỔ SUNG CÁC NGHIỆP VỤ CÒN THIẾU CỦA SMASHBOOK
 
 **Dự án:** SmashBook — Hệ thống Đặt Sân Cầu Lông Trực Tuyến  

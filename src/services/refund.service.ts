@@ -1,3 +1,6 @@
+import type { RefundRequest, RefundTransaction } from "@prisma/client";
+import { serializable } from "../lib/transaction";
+import { refundLedger } from "./refund-ledger";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { PaymentError } from "../lib/sepay";
 
@@ -27,7 +30,8 @@ export interface CompleteRefundInput {
 export async function createRefundRequest(
   tx: Prisma.TransactionClient | PrismaClient,
   input: CreateRefundRequestInput
-) {
+): Promise<RefundRequest> {
+  if ("$transaction" in tx) return serializable(tx, inner => createRefundRequest(inner, input));
   if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
     throw new PaymentError(400, "Số tiền yêu cầu hoàn không hợp lệ.");
   }
@@ -35,7 +39,8 @@ export async function createRefundRequest(
   const booking = await tx.booking.findUnique({
     where: { id: input.bookingId },
     include: {
-      payments: { where: { status: { in: ["PAID", "REFUND_PENDING"] } } },
+      payments: { include: { groupRefund: true } },
+      group: true,
       refundRequests: { where: { status: { in: ["REQUESTED", "PROCESSING", "COMPLETED"] } } },
     },
   });
@@ -44,13 +49,9 @@ export async function createRefundRequest(
     throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
   }
 
-  // Tổng tiền thực thu từ khách
-  const totalPaid = booking.payments.reduce((sum, p) => sum + p.amount, 0);
-
-  // Tổng tiền đã có yêu cầu hoặc đã hoàn
-  const existingRefunds = booking.refundRequests.reduce((sum, r) => sum + r.amount, 0);
-
-  const availableRefundable = totalPaid - existingRefunds;
+  if (booking.group) throw new PaymentError(409, "Đơn nhóm phải hoàn qua luồng nhóm.");
+  if (input.paymentId && !booking.payments.some(p => p.id === input.paymentId && !p.txnRef.startsWith("REFUND-COACH-"))) throw new PaymentError(400, "Giao dịch không thuộc đơn hoặc không phải khoản thu.");
+  const availableRefundable = refundLedger(booking.payments, booking.refundRequests).available;
   if (input.amount > availableRefundable) {
     throw new PaymentError(
       400,
@@ -81,7 +82,8 @@ export async function approveRefundRequest(
   tx: Prisma.TransactionClient | PrismaClient,
   requestId: string,
   approvedById: string
-) {
+): Promise<RefundRequest> {
+  if ("$transaction" in tx) return serializable(tx, inner => approveRefundRequest(inner, requestId, approvedById));
   const req = await tx.refundRequest.findUnique({
     where: { id: requestId },
   });
@@ -111,7 +113,8 @@ export async function rejectRefundRequest(
   requestId: string,
   rejectedById: string,
   reason: string
-) {
+): Promise<RefundRequest> {
+  if ("$transaction" in tx) return serializable(tx, inner => rejectRefundRequest(inner, requestId, rejectedById, reason));
   const req = await tx.refundRequest.findUnique({
     where: { id: requestId },
   });
@@ -120,7 +123,7 @@ export async function rejectRefundRequest(
     throw new PaymentError(404, "Không tìm thấy yêu cầu hoàn tiền.");
   }
 
-  if (["COMPLETED", "REJECTED"].includes(req.status)) {
+  if (req.status !== "REQUESTED") {
     throw new PaymentError(409, `Không thể từ chối yêu cầu đã ở trạng thái: ${req.status}`);
   }
 
@@ -140,7 +143,8 @@ export async function rejectRefundRequest(
 export async function completeManualRefund(
   tx: Prisma.TransactionClient | PrismaClient,
   input: CompleteRefundInput
-) {
+): Promise<{ request: RefundRequest; transaction: RefundTransaction | null }> {
+  if ("$transaction" in tx) return serializable(tx, inner => completeManualRefund(inner, input));
   if (!input.bankRef || input.bankRef.trim().length < 3) {
     throw new PaymentError(400, "Vui lòng nhập mã tham chiếu giao dịch ngân hàng để đối soát.");
   }
@@ -150,8 +154,8 @@ export async function completeManualRefund(
     include: {
       booking: {
         include: {
-          payments: { where: { status: "PAID" } },
-          refundRequests: { where: { status: "COMPLETED" } },
+          payments: { include: { groupRefund: true } },
+          refundRequests: true,
         },
       },
     },
@@ -169,6 +173,9 @@ export async function completeManualRefund(
     return { request: req, transaction: existingTxn };
   }
 
+  if (req.status !== "PROCESSING") throw new PaymentError(409, "Chỉ được hoàn tất yêu cầu đã được duyệt.");
+  const ledger = refundLedger(req.booking.payments, req.booking.refundRequests, req.id);
+  if (req.amount > ledger.available) throw new PaymentError(409, "Nghĩa vụ hoàn đã thay đổi; cần đối soát lại hạn mức.");
   const now = new Date();
 
   // 1. Tạo bản ghi giao dịch hoàn tiền thực tế
@@ -197,16 +204,11 @@ export async function completeManualRefund(
   });
 
   // 3. Đánh giá trạng thái PaymentStatus của Booking
-  const totalPaid = req.booking.payments.reduce((sum, p) => sum + p.amount, 0);
-  const totalCompletedRefunds =
-    req.booking.refundRequests.reduce((sum, r) => sum + r.amount, 0) + req.amount;
-
-  if (totalCompletedRefunds >= totalPaid && totalPaid > 0) {
-    await tx.booking.update({
-      where: { id: req.bookingId },
-      data: { paymentStatus: "REFUNDED" },
-    });
-  }
+  const remainingObligations = ledger.committed - ledger.completed;
+  await tx.booking.update({
+    where: { id: req.bookingId },
+    data: { paymentStatus: remainingObligations > 0 ? "REFUND_PENDING" : "REFUNDED" },
+  });
 
   return { request: updatedReq, transaction: txn };
 }

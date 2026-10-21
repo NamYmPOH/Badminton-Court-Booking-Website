@@ -1,3 +1,5 @@
+import type { InternalInvoice } from "@prisma/client";
+import { serializable } from "../lib/transaction";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { randomInt } from "node:crypto";
 import { PaymentError } from "../lib/sepay";
@@ -68,7 +70,8 @@ export async function issueInternalInvoice(
   tx: Prisma.TransactionClient | PrismaClient,
   bookingId: string,
   issuedById: string = "SYSTEM"
-) {
+): Promise<InternalInvoice> {
+  if ("$transaction" in tx) return serializable(tx, inner => issueInternalInvoice(inner, bookingId, issuedById));
   // 1. Kiểm tra hóa đơn đã tồn tại (Idempotency)
   const existing = await tx.internalInvoice.findFirst({
     where: { bookingId, status: "ISSUED" },
@@ -105,6 +108,7 @@ export async function issueInternalInvoice(
     throw new PaymentError(404, "Không tìm thấy đơn đặt sân để phát hành chứng từ.");
   }
 
+  if (booking.paymentStatus !== "PAID") throw new PaymentError(409, "Chỉ phát hành biên lai khi đơn đã thanh toán đủ.");
   const coachItem = booking.items.find((i) => i.coachBooking);
   const coachData = coachItem?.coachBooking
     ? {
@@ -220,7 +224,7 @@ export async function getInvoiceByBookingCode(
   });
 
   // Nếu đơn đã thanh toán hoặc xác nhận mà chưa có chứng từ -> tự động phát hành on-demand
-  if (!invoice && (booking.paymentStatus === "PAID" || booking.status === "CONFIRMED")) {
+  if (!invoice && booking.paymentStatus === "PAID") {
     invoice = await issueInternalInvoice(db, booking.id, actor.id);
   }
 

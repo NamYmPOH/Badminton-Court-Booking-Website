@@ -1,3 +1,4 @@
+import { refundLedger } from "./refund-ledger";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { PaymentError } from "../lib/sepay";
 
@@ -79,16 +80,14 @@ export function calculateCancellationRefund(
     discount: number;
     cancellationSnapshot?: unknown;
     items: { date: Date | string; startMin: number; coachBooking?: { fee: number; status: string } | null }[];
-    payments: { amount: number; status: string }[];
+    payments: { amount: number; status: string; txnRef?: string; groupRefund?: { amount: number; status: string } | null }[];
     refundRequests?: { amount: number; status: string }[];
   },
   now = new Date()
 ): RefundCalculationResult {
   // 1. Tính tổng tiền đã thực thu
-  const totalPaid = booking.payments
-    .filter((p) => p.status === "PAID")
-    .reduce((sum, p) => sum + p.amount, 0);
-
+  const ledger = refundLedger(booking.payments, booking.refundRequests || []);
+  const totalPaid = ledger.received;
   if (totalPaid <= 0) {
     return {
       refundableAmount: 0,
@@ -101,11 +100,7 @@ export function calculateCancellationRefund(
   }
 
   // 2. Tính số tiền đã hoàn trước đó
-  const alreadyRefunded = (booking.refundRequests || [])
-    .filter((r) => ["PROCESSING", "COMPLETED"].includes(r.status))
-    .reduce((sum, r) => sum + r.amount, 0);
-
-  const maxRemainingRefundable = Math.max(0, totalPaid - alreadyRefunded);
+  const maxRemainingRefundable = ledger.available;
   if (maxRemainingRefundable <= 0) {
     return {
       refundableAmount: 0,

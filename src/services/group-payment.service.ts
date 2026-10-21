@@ -1,3 +1,4 @@
+import { calculateCancellationRefund } from "./policy.service";
 import { randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import QRCode from "qrcode";
@@ -21,7 +22,7 @@ import { operatorVenueScope } from "../lib/venue-operations";
 import { recordVoucherConsumption } from "./settlement.service";
 
 const include = {
-  booking: { include: { items: { include: { court: true } }, venue: true } },
+  booking: { include: { items: { include: { court: true, coachBooking: true } }, venue: true } },
   shares: {
     orderBy: { position: "asc" as const },
     include: { user: { select: { name: true } } },
@@ -246,20 +247,29 @@ export async function closeGroup(
   const items = g.booking.items ?? [];
   const start = items.length > 0 ? Math.min(...items.map((i) => slotTime(i))) : now.getTime();
   const hours = (start - now.getTime()) / 3600000;
+  const snapshot = g.booking.cancellationSnapshot as { freeCancelHours?: number; lateCancelHours?: number; partialRefundPercent?: number } | null;
   const rate =
-    expired || g.booking.status === "PENDING_PAYMENT" || hours > 24
+    expired || g.booking.status === "PENDING_PAYMENT" || (snapshot ? hours >= (snapshot.freeCancelHours ?? 24) : hours > 24)
       ? 1
-      : hours >= 12
-        ? 0.5
+      : hours >= (snapshot?.lateCancelHours ?? 12)
+        ? (snapshot?.partialRefundPercent ?? 50) / 100
         : 0;
   const payments = await tx.payment.findMany({
     where: { bookingId: g.bookingId, status: { in: ["PAID", "REFUND_PENDING"] } },
     orderBy: { id: "asc" },
   });
+  const realPayments = payments.filter(p => !p.txnRef?.startsWith("REFUND-COACH-"));
+  const received = realPayments.reduce((sum,p) => sum+p.amount,0);
+  const snapshotRefund = snapshot && !expired && g.booking.status !== "PENDING_PAYMENT"
+    ? calculateCancellationRefund({ ...g.booking, payments: realPayments }, now).refundableAmount : null;
+  let allocated = 0;
   let hasPendingRefund = false;
-  for (let i = 0; i < payments.length; i++) {
-    const p = payments[i];
-    const targetRefund = Math.floor(p.amount * rate);
+  for (let i = 0; i < realPayments.length; i++) {
+    const p = realPayments[i];
+    // Phân bổ lũy kế tránh sai số làm tròn; đơn cũ giữ nguyên quy tắc đã cam kết.
+    allocated += p.amount;
+    const targetRefund = snapshotRefund === null ? Math.floor(p.amount * rate)
+      : received > 0 ? Math.floor(snapshotRefund * allocated / received) - Math.floor(snapshotRefund * (allocated - p.amount) / received) : 0;
     if (targetRefund > 0) {
       hasPendingRefund = true;
       const existingRefund = typeof tx.groupRefund?.findUnique === "function"

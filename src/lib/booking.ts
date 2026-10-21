@@ -40,10 +40,6 @@ export function slotPrice(
     if (!rule) {
       rule = venue.pricingRules.find(r => !(r as { courtId?: string | null }).courtId && r.daysOfWeek.includes(weekday) && minute >= r.startMin && minute < r.endMin);
     }
-    // 3. Fallback cuối cùng nếu dữ liệu test mock không có trường courtId
-    if (!rule) {
-      rule = venue.pricingRules.find(r => r.daysOfWeek.includes(weekday) && minute >= r.startMin && minute < r.endMin);
-    }
     if (!rule) return null;
     amount += rule.walkInPrice / 60;
   }

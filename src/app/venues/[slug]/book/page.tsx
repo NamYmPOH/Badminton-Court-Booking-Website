@@ -89,7 +89,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
       return;
     }
 
-    const price = slotPrice(venue, selectedDate, startMin, endMin);
+    const price = slotPrice(venue, selectedDate, startMin, endMin, courtId);
     if (price === null) {
       toast.error("Không tìm thấy bảng giá áp dụng cho khung giờ này.");
       return;
@@ -256,7 +256,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                   {timeSlots.map((ts) => {
                     const isBooked = busy.some(b => b.courtId === court.id && b.startMin < ts.endMin && b.endMin > ts.startMin);
                     const isPast = isPastSlot(selectedDate, ts.startMin, now);
-                    const price = slotPrice(venue, selectedDate, ts.startMin, ts.endMin);
+                    const price = slotPrice(venue, selectedDate, ts.startMin, ts.endMin, court.id);
                     const isUnavailable = isPast || price === null;
                     const isSelected = selectedSlots.some(
                       (s) => s.courtId === court.id && s.startMin === ts.startMin

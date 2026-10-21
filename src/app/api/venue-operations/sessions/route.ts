@@ -1,3 +1,4 @@
+import { serializable } from "@/lib/transaction";
 import { db } from "@/lib/db";
 import { requirePaymentUser } from "@/lib/payment-session";
 import { paymentErrorResponse, PaymentError, readPaymentBody } from "@/lib/sepay";
@@ -28,6 +29,7 @@ const sessionActionSchema = z.discriminatedUnion("action", [
   }).strict(),
   z.object({
     action: z.literal("ADD_SURCHARGE"),
+    requestId: z.string().uuid(),
     sessionId: z.string().min(1),
     type: z.enum(["OVERTIME", "SERVICE", "DAMAGE", "OTHER"]),
     amount: z.number().int().positive().max(100000000),
@@ -46,7 +48,9 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const userId = await requirePaymentUser();
-    const actor = await db.user.findUnique({
+    const raw = await readPaymentBody(request, 4096);
+    return await serializable(db, async (tx) => {
+    const actor = await tx.user.findUnique({
       where: { id: userId },
       select: { id: true, role: true, status: true },
     });
@@ -55,7 +59,7 @@ export async function POST(request: Request) {
       throw new PaymentError(403, "Bạn không có quyền thực hiện thao tác vận hành sân.");
     }
 
-    const raw = await readPaymentBody(request, 4096);
+
     let body: unknown;
     try {
       body = JSON.parse(raw.toString("utf8"));
@@ -69,15 +73,22 @@ export async function POST(request: Request) {
     }
 
     const input = parsed.data;
+    const scope = operatorVenueScope(actor);
+    const target = input.action === "START_SESSION"
+      ? await tx.bookingItem.findFirst({ where: { id: input.bookingItemId, booking: { venue: scope } }, select: { id: true } })
+      : input.action === "PAY_SURCHARGE"
+        ? await tx.courtSurcharge.findFirst({ where: { id: input.surchargeId, session: { booking: { venue: scope } } }, select: { id: true } })
+        : await tx.courtSession.findFirst({ where: { id: input.sessionId, booking: { venue: scope } }, select: { id: true } });
+    if (!target) throw new PaymentError(403, "Bạn không có quyền vận hành phiên sân này.");
 
     if (input.action === "START_SESSION") {
-      const session = await startCourtSession(db, {
+      const session = await startCourtSession(tx, {
         bookingItemId: input.bookingItemId,
         operatorId: actor.id,
         note: input.note,
       });
 
-      await logAuditEvent(db, {
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "START_COURT_SESSION",
         entityType: "CourtSession",
@@ -89,13 +100,13 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "COMPLETE_SESSION") {
-      const session = await completeCourtSession(db, {
+      const session = await completeCourtSession(tx, {
         sessionId: input.sessionId,
         operatorId: actor.id,
         note: input.note,
       });
 
-      await logAuditEvent(db, {
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "COMPLETE_COURT_SESSION",
         entityType: "CourtSession",
@@ -107,7 +118,8 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "ADD_SURCHARGE") {
-      const surcharge = await addCourtSurcharge(db, {
+      const surcharge = await addCourtSurcharge(tx, {
+        requestId: input.requestId,
         sessionId: input.sessionId,
         createdById: actor.id,
         type: input.type,
@@ -117,7 +129,7 @@ export async function POST(request: Request) {
         isPaid: input.isPaid,
       });
 
-      await logAuditEvent(db, {
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "ADD_COURT_SURCHARGE",
         entityType: "CourtSurcharge",
@@ -129,9 +141,9 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "PAY_SURCHARGE") {
-      const surcharge = await payCourtSurcharge(db, input.surchargeId, input.paymentMethod);
+      const surcharge = await payCourtSurcharge(tx, input.surchargeId, input.paymentMethod);
 
-      await logAuditEvent(db, {
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "PAY_COURT_SURCHARGE",
         entityType: "CourtSurcharge",
@@ -143,7 +155,25 @@ export async function POST(request: Request) {
     }
 
     throw new PaymentError(400, "Thao tác không được hỗ trợ.");
+    });
   } catch (error) {
     return paymentErrorResponse(error);
   }
+}
+
+export async function GET() {
+  try {
+    const id = await requirePaymentUser();
+    const actor = await db.user.findUniqueOrThrow({ where: { id }, select: { id: true, role: true, status: true } });
+    const scope = operatorVenueScope(actor);
+    const [venues, items] = await Promise.all([
+      db.venue.findMany({ where: scope, select: { id: true, slug: true, name: true }, orderBy: { name: "asc" } }),
+      db.bookingItem.findMany({
+        where: { booking: { venue: scope, paymentStatus: "PAID", status: { in: ["CONFIRMED", "CHECKED_IN", "COMPLETED"] } }, status: "CONFIRMED", OR: [{ session: null }, { session: { status: "ACTIVE" } }, { session: { surcharges: { some: { status: "UNPAID" } } } }] },
+        include: { session: { include: { surcharges: true } }, court: { select: { name: true } }, booking: { select: { code: true, venueId: true } } },
+        orderBy: [{ date: "asc" }, { startMin: "asc" }], take: 200,
+      }),
+    ]);
+    return Response.json({ venues, items }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return paymentErrorResponse(error); }
 }

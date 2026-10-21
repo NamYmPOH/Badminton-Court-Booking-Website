@@ -1,3 +1,4 @@
+import { serializable } from "@/lib/transaction";
 import { db } from "@/lib/db";
 import { requirePaymentUser } from "@/lib/payment-session";
 import { paymentErrorResponse, PaymentError, readPaymentBody } from "@/lib/sepay";
@@ -86,7 +87,9 @@ export async function POST(
   try {
     assertSameOrigin(request);
     const userId = await requirePaymentUser();
-    const actor = await db.user.findUnique({
+    const raw = await readPaymentBody(request, 4096);
+    return await serializable(db, async (tx) => {
+    const actor = await tx.user.findUnique({
       where: { id: userId },
       select: { id: true, role: true, status: true },
     });
@@ -95,7 +98,7 @@ export async function POST(
       throw new PaymentError(403, "Bạn không có quyền quản lý lịch của cơ sở này.");
     }
 
-    const venue = await db.venue.findFirst({
+    const venue = await tx.venue.findFirst({
       where: {
         slug: params.slug,
         ...operatorVenueScope(actor),
@@ -106,7 +109,7 @@ export async function POST(
       throw new PaymentError(403, "Bạn không được phân quyền quản lý tại cơ sở này.");
     }
 
-    const raw = await readPaymentBody(request, 4096);
+
     let body: unknown;
     try {
       body = JSON.parse(raw.toString("utf8"));
@@ -122,8 +125,8 @@ export async function POST(
     const input = parsed.data;
 
     if (input.type === "WEEKLY") {
-      const res = await setWeeklySchedule(db, venue.id, input.schedules);
-      await logAuditEvent(db, {
+      const res = await setWeeklySchedule(tx, venue.id, input.schedules);
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "UPDATE_WEEKLY_SCHEDULE",
         entityType: "Venue",
@@ -134,14 +137,14 @@ export async function POST(
     }
 
     if (input.type === "EXCEPTION") {
-      const res = await setDateException(db, venue.id, {
+      const res = await setDateException(tx, venue.id, {
         date: input.date,
         isClosed: input.isClosed,
         openMin: input.openMin,
         closeMin: input.closeMin,
         reason: input.reason,
       });
-      await logAuditEvent(db, {
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "SET_DATE_EXCEPTION",
         entityType: "VenueDateException",
@@ -152,6 +155,7 @@ export async function POST(
     }
 
     throw new PaymentError(400, "Yêu cầu không được hỗ trợ.");
+    });
   } catch (error) {
     return paymentErrorResponse(error);
   }

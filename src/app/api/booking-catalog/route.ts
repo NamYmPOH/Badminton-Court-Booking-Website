@@ -1,3 +1,4 @@
+import { getVenueEffectiveHours } from "@/services/schedule.service";
 import { db } from "@/lib/db";
 import { PaymentError, paymentErrorResponse } from "@/lib/sepay";
 
@@ -25,10 +26,11 @@ export async function GET(request: Request) {
       ]);
       busy.push(...items, ...blocks);
     }
+    const hours = dateText ? await getVenueEffectiveHours(db, venue.id, dateText) : { isOpen: true, openMin: venue.openMin, closeMin: venue.closeMin };
     return Response.json({ busy, venue: {
       id: venue.id, slug: venue.slug, name: venue.name, description: venue.description || "",
       address: venue.address, district: venue.district, city: venue.province, lat: venue.lat, lng: venue.lng,
-      openMin: venue.openMin, closeMin: venue.closeMin, priceFrom: venue.priceFrom,
+      openMin: hours.isOpen ? hours.openMin : 0, closeMin: hours.isOpen ? hours.closeMin : 0, priceFrom: venue.priceFrom,
       ratingAvg: venue.ratingAvg, ratingCount: venue.ratingCount, images: venue.images, amenities: venue.amenities,
       cancelBeforeHours: venue.cancelBeforeHours, paymentMode: venue.paymentMode, hasSlotTonight: false,
       courts: venue.courts.map(c => ({ id: c.id, name: c.name, surface: c.surface || "", isActive: c.status === "ACTIVE" })),

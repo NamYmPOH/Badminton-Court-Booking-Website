@@ -1,3 +1,5 @@
+import type { Ticket } from "@prisma/client";
+import { serializable } from "../lib/transaction";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { PaymentError } from "../lib/sepay";
@@ -15,8 +17,9 @@ export interface GenerateTicketInput {
 export function generateSingleTicketSignature(
   ticketId: string,
   ticketNonce: string,
-  secret = process.env.AUTH_SECRET || "smashbook-fallback-secret-for-testing-only-12345"
+  secret = process.env.AUTH_SECRET || ""
 ): string {
+  if (secret.length < 32) throw new PaymentError(503, "Chưa cấu hình khóa ký vé hợp lệ.");
   const digest = createHmac("sha256", secret)
     .update(`single-ticket:${ticketId}:${ticketNonce}`)
     .digest("hex");
@@ -26,7 +29,7 @@ export function generateSingleTicketSignature(
 export function verifyTicketSignature(
   qrPayload: string,
   ticket: { id: string; ticketNonce: string },
-  secret = process.env.AUTH_SECRET || "smashbook-fallback-secret-for-testing-only-12345"
+  secret = process.env.AUTH_SECRET || ""
 ): boolean {
   try {
     const expected = Buffer.from(generateSingleTicketSignature(ticket.id, ticket.ticketNonce, secret));
@@ -44,11 +47,12 @@ export function verifyTicketSignature(
 export async function issueBookingTicket(
   tx: Prisma.TransactionClient | PrismaClient,
   input: GenerateTicketInput
-) {
+): Promise<{ ticket: Ticket; qrPayload: string }> {
+  if ("$transaction" in tx) return serializable(tx, inner => issueBookingTicket(inner, input));
   // 1. Kiểm tra đơn đặt sân
   const booking = await tx.booking.findUnique({
     where: { id: input.bookingId },
-    include: { items: true },
+    include: { items: true, group: true },
   });
 
   if (!booking) {
@@ -59,9 +63,12 @@ export async function issueBookingTicket(
     throw new PaymentError(409, `Không thể phát hành vé cho đơn ở trạng thái: ${booking.status}`);
   }
 
+  if (booking.group) throw new PaymentError(409, "Đơn nhóm dùng vé riêng của từng thành viên tại trang nhóm.");
+  if (booking.paymentStatus !== "PAID" || !["CONFIRMED", "CHECKED_IN"].includes(booking.status)) throw new PaymentError(409, "Đơn chưa đủ điều kiện phát hành vé.");
+  // Mỗi đơn cá nhân chỉ có một vé, kể cả vé đã dùng; không cấp lại quyền vào sân.
   // 2. Tìm vé chưa sử dụng hiện có (Idempotency)
   const existing = await tx.ticket.findFirst({
-    where: { bookingId: booking.id, status: "UNUSED" },
+    where: { bookingId: booking.id },
   });
 
   if (existing) {
@@ -137,7 +144,8 @@ export async function checkInWithTicket(
     operator: { id: string; role: string; status: string };
     now?: Date;
   }
-) {
+): Promise<{ success: boolean; ticket: Ticket; sessions: Awaited<ReturnType<typeof startCourtSession>>[] }> {
+  if ("$transaction" in tx) return serializable(tx, inner => checkInWithTicket(inner, input));
   const now = input.now || new Date();
 
   // 1. Phân tách payload: ST.<ticketId>.<hmac>
@@ -154,6 +162,7 @@ export async function checkInWithTicket(
       booking: {
         include: {
           items: true,
+          group: true,
           venue: { select: { id: true, name: true } },
         },
       },
@@ -179,6 +188,7 @@ export async function checkInWithTicket(
     }
   }
 
+  if (ticket.booking.group) throw new PaymentError(409, "Đơn nhóm dùng vé riêng tại trang nhóm.");
   // 3. Kiểm tra chữ ký HMAC
   const isSignatureValid = verifyTicketSignature(input.qrPayload, ticket);
   if (!isSignatureValid) {
@@ -190,6 +200,7 @@ export async function checkInWithTicket(
     throw new PaymentError(409, `Đơn đặt sân đã bị ${ticket.booking.status === "CANCELLED" ? "hủy" : "hết hạn"}.`);
   }
 
+  if (ticket.booking.paymentStatus !== "PAID" || !["CONFIRMED", "CHECKED_IN"].includes(ticket.booking.status)) throw new PaymentError(409, "Đơn chưa thanh toán, đã hoàn tiền hoặc không còn được nhận sân.");
   // 5. Kiểm tra khoảng thời gian hiệu lực
   if (now < ticket.validFrom) {
     throw new PaymentError(400, "Vé chưa đến thời gian có hiệu lực nhận sân.");
@@ -230,20 +241,8 @@ export async function checkInWithTicket(
     });
   }
 
-  // 8. Tự động khởi tạo phiên sân (CourtSession) cho các sân trong booking
-  const sessions = [];
-  for (const item of ticket.booking.items) {
-    try {
-      const session = await startCourtSession(tx, {
-        bookingItemId: item.id,
-        operatorId: input.operator.id,
-        note: `Check-in qua vé điện tử ${ticket.ticketCode}`,
-      });
-      sessions.push(session);
-    } catch {
-      // Nếu session đã tạo rồi thì bỏ qua
-    }
-  }
+  // Vé xác nhận người đến; nhận sân là thao tác riêng cho đúng khung giờ.
+  const sessions: Awaited<ReturnType<typeof startCourtSession>>[] = [];
 
   return {
     success: true,

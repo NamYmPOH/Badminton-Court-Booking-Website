@@ -941,6 +941,7 @@ model CourtSession {
 }
 
 model CourtSurcharge {
+  requestId     String?      @unique // Chống gửi lại thao tác thu phụ phí
   id            String       @id @default(cuid())
   sessionId     String
   bookingId     String

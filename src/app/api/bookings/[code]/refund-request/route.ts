@@ -1,3 +1,4 @@
+import { serializable } from "@/lib/transaction";
 import { db } from "@/lib/db";
 import { requirePaymentUser } from "@/lib/payment-session";
 import { paymentErrorResponse, PaymentError, readPaymentBody } from "@/lib/sepay";
@@ -24,13 +25,16 @@ export async function POST(
   try {
     assertSameOrigin(request);
     const userId = await requirePaymentUser();
+    const raw = await readPaymentBody(request, 2048);
+    return await serializable(db, async (tx) => {
 
-    const booking = await db.booking.findUnique({
+    const booking = await tx.booking.findUnique({
       where: { code: params.code },
       include: {
         items: { include: { coachBooking: true } },
-        payments: { where: { status: "PAID" } },
+        payments: { where: { status: { in: ["PAID", "REFUND_PENDING", "REFUNDED"] } }, include: { groupRefund: true } },
         refundRequests: true,
+        group: true,
       },
     });
 
@@ -42,7 +46,7 @@ export async function POST(
       throw new PaymentError(403, "Bạn không có quyền yêu cầu hoàn tiền cho đơn này.");
     }
 
-    const raw = await readPaymentBody(request, 2048);
+
     let body: unknown;
     try {
       body = JSON.parse(raw.toString("utf8"));
@@ -55,8 +59,12 @@ export async function POST(
       throw new PaymentError(400, "Thông tin tài khoản nhận hoàn tiền không hợp lệ.");
     }
 
+    if (booking.group) throw new PaymentError(409, "Hãy hủy và hoàn tiền tại trang nhóm để đối soát từng người thanh toán.");
+    const previous = booking.refundRequests.find(r => r.type === "FULL_CANCELLATION" && ["REQUESTED", "PROCESSING", "COMPLETED"].includes(r.status));
+    if (previous) return Response.json({ success: true, refundRequest: previous });
+    if (!["CONFIRMED", "CANCELLED"].includes(booking.status)) throw new PaymentError(409, "Đơn không còn đủ điều kiện hủy hoàn tiền.");
     // Tính toán số tiền hoàn hợp lệ theo chính sách
-    const calc = calculateCancellationRefund(booking);
+    const calc = calculateCancellationRefund(booking, booking.cancelledAt || new Date());
     if (!calc.isEligible || calc.refundableAmount <= 0) {
       throw new PaymentError(
         400,
@@ -64,7 +72,7 @@ export async function POST(
       );
     }
 
-    const refundReq = await createRefundRequest(db, {
+    const refundReq = await createRefundRequest(tx, {
       bookingId: booking.id,
       requestedById: userId,
       amount: calc.refundableAmount,
@@ -75,7 +83,14 @@ export async function POST(
       bankName: parsed.data.bankName,
     });
 
-    await logAuditEvent(db, {
+    // Hủy và giải phóng tài nguyên cùng transaction với nghĩa vụ hoàn tiền.
+    const cancelledAt = new Date();
+    await tx.booking.update({ where: { id: booking.id }, data: { status: "CANCELLED", paymentStatus: "REFUND_PENDING", cancelledAt, cancelReason: parsed.data.reason, expiresAt: null } });
+    await tx.bookingItem.updateMany({ where: { bookingId: booking.id, status: { in: ["HELD", "CONFIRMED"] } }, data: { status: "CANCELLED" } });
+    await tx.coachBooking.updateMany({ where: { bookingItem: { bookingId: booking.id }, status: { in: ["HELD", "CONFIRMED"] } }, data: { status: "CANCELLED", cancelledAt, cancelReason: parsed.data.reason, expiresAt: null } });
+    await tx.offerUsage.updateMany({ where: { bookingId: booking.id, state: "RESERVED" }, data: { state: "RELEASED" } });
+    await tx.ticket.updateMany({ where: { bookingId: booking.id, status: "UNUSED" }, data: { status: "CANCELLED" } });
+    await logAuditEvent(tx, {
       actorId: userId,
       action: "CREATE_REFUND_REQUEST",
       entityType: "RefundRequest",
@@ -95,6 +110,7 @@ export async function POST(
       },
       { status: 201, headers: { "Cache-Control": "no-store" } }
     );
+    });
   } catch (error) {
     return paymentErrorResponse(error);
   }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import BusinessOperations from "@/components/BusinessOperations";
 import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/lib/utils";
 import { formatHour } from "@/lib/booking";
@@ -70,6 +71,7 @@ export default function VenueOperationsPage() {
   const [surchargeAmount, setSurchargeAmount] = useState<number>(50000);
   const [surchargeReason, setSurchargeReason] = useState("");
   const [surchargeSubmitting, setSurchargeSubmitting] = useState(false);
+  const surchargeRequestId = useRef<string | null>(null);
 
   // Refunds state
   const [refunds, setRefunds] = useState<RefundItem[]>([]);
@@ -102,11 +104,10 @@ export default function VenueOperationsPage() {
     try {
       const res = await fetch("/api/venue-operations/refunds", { cache: "no-store" });
       const data = await res.json();
-      if (res.ok) {
-        setRefunds(data.requests || []);
-      }
-    } catch {
-      // ignore
+      if (!res.ok) throw new Error(data.message || "Không tải được yêu cầu hoàn tiền.");
+      setRefunds(data.requests || []);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Không tải được yêu cầu hoàn tiền.");
     } finally {
       setLoadingRefunds(false);
     }
@@ -187,12 +188,14 @@ export default function VenueOperationsPage() {
     e.preventDefault();
     if (!surchargeModal || surchargeSubmitting) return;
     setSurchargeSubmitting(true);
+    surchargeRequestId.current ??= crypto.randomUUID();
     try {
       const res = await fetch("/api/venue-operations/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "ADD_SURCHARGE",
+          requestId: surchargeRequestId.current,
           sessionId: surchargeModal.sessionId,
           type: surchargeType,
           amount: surchargeAmount,
@@ -205,6 +208,7 @@ export default function VenueOperationsPage() {
       if (!res.ok) throw new Error(data.message || "Không thêm được phụ thu.");
       setNotice(`Đã thêm phụ thu ${formatVND(surchargeAmount)} cho đơn ${surchargeModal.bookingCode}.`);
       setSurchargeModal(null);
+      surchargeRequestId.current = null;
       setSurchargeReason("");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Lỗi thêm phụ thu.");
@@ -459,6 +463,8 @@ export default function VenueOperationsPage() {
           )}
         </section>
       )}
+
+      {activeTab === "ORDERS" && <BusinessOperations />}
 
       {/* TAB 2: QUÉT VÉ QR CHECK-IN */}
       {activeTab === "SCAN_TICKET" && (

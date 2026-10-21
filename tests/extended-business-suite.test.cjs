@@ -176,7 +176,7 @@ test("BR06: Vé điện tử QR có chữ ký HMAC, kiểm tra hiệu lực và 
         status: "UNUSED",
         validFrom: new Date(Date.now() - 10000),
         validTo: new Date(Date.now() + 60000),
-        booking: { id: "b-1", venueId: "v-1", status: "CONFIRMED", items: [] },
+        booking: { id: "b-1", venueId: "v-1", status: "CONFIRMED", paymentStatus: "PAID", items: [] },
       }),
       updateMany: async (args) => {
         if (args.where.status === "UNUSED") {
@@ -232,6 +232,7 @@ test("Mục A: Hóa đơn nội bộ phát hành idempotent và lưu snapshot b�
         subtotal: 200000,
         discount: 20000,
         total: 180000,
+        paymentStatus: "PAID",
         venue: { id: "v-1", name: "Sân Cầu Lông A", address: "Hà Nội", phone: "0900000000" },
         user: { email: "test@example.com" },
         voucher: { code: "GIAM20K" },
@@ -275,7 +276,7 @@ test("Mục B: Phiên sân (CourtSession) và phụ thu (Surcharge) tách biệt
       update: async (args) => ({ id: "sess-1", ...args.data }),
     },
     bookingItem: {
-      findUnique: async () => ({ id: "bi-1", courtId: "c-1", bookingId: "b-1", status: "CONFIRMED", booking: { id: "b-1", venueId: "v-1", status: "CONFIRMED" } }),
+      findUnique: async () => ({ id: "bi-1", courtId: "c-1", bookingId: "b-1", status: "CONFIRMED", date: new Date(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" })), startMin: 0, endMin: 1440, booking: { id: "b-1", venueId: "v-1", status: "CONFIRMED", paymentStatus: "PAID" } }),
       findMany: async () => [{ session: { status: "COMPLETED" } }],
     },
     booking: { update: async () => ({}) },
@@ -285,7 +286,7 @@ test("Mục B: Phiên sân (CourtSession) và phụ thu (Surcharge) tách biệt
         surcharges.push(row);
         return row;
       },
-      findUnique: async () => surcharges[0],
+      findUnique: async (args) => args.where.requestId ? surcharges.find(s => s.requestId === args.where.requestId) : surcharges[0],
       update: async (args) => ({ ...surcharges[0], ...args.data }),
     },
   };
@@ -301,6 +302,7 @@ test("Mục B: Phiên sân (CourtSession) và phụ thu (Surcharge) tách biệt
 
   // 3. Thêm phụ thu quá giờ 50.000đ
   const sur = await addCourtSurcharge(mockDb, {
+    requestId: "surcharge-test-request",
     sessionId: "sess-1",
     createdById: "op-1",
     type: "OVERTIME",
@@ -370,7 +372,7 @@ test("Mục C: Lịch hoạt động ưu tiên Ngoại lệ > Lịch tuần > Gi
 });
 
 test("Mục D: Quy trình hoàn tiền thủ công kiểm soát (RefundRequest -> RefundTransaction)", async () => {
-  let reqStatus = "REQUESTED";
+  let reqStatus = "PROCESSING";
   const mockDb = {
     refundRequest: {
       findUnique: async () => ({

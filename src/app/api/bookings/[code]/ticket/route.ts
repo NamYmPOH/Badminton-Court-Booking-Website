@@ -28,6 +28,7 @@ export async function GET(
     const booking = await db.booking.findUnique({
       where: { code: params.code },
       include: {
+        group: true,
         venue: { select: { id: true, name: true, address: true } },
         items: { include: { court: { select: { name: true } } } },
       },
@@ -55,6 +56,7 @@ export async function GET(
       }
     }
 
+    if (booking.group) throw new PaymentError(409, "Hãy lấy vé riêng của thành viên tại trang nhóm.");
     // Tìm vé hiện có
     let ticket = await db.ticket.findFirst({
       where: { bookingId: booking.id },

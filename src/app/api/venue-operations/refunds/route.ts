@@ -1,3 +1,4 @@
+import { serializable } from "@/lib/transaction";
 import { db } from "@/lib/db";
 import { requirePaymentUser } from "@/lib/payment-session";
 import { paymentErrorResponse, PaymentError, readPaymentBody } from "@/lib/sepay";
@@ -71,7 +72,9 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const userId = await requirePaymentUser();
-    const actor = await db.user.findUnique({
+    const raw = await readPaymentBody(request, 2048);
+    return await serializable(db, async (tx) => {
+    const actor = await tx.user.findUnique({
       where: { id: userId },
       select: { id: true, role: true, status: true },
     });
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
       throw new PaymentError(403, "Bạn không có quyền xử lý hoàn tiền.");
     }
 
-    const raw = await readPaymentBody(request, 2048);
+
     let body: unknown;
     try {
       body = JSON.parse(raw.toString("utf8"));
@@ -94,10 +97,15 @@ export async function POST(request: Request) {
     }
 
     const input = parsed.data;
+    const target = await tx.refundRequest.findFirst({
+      where: { id: input.requestId, booking: { venue: operatorVenueScope(actor) } },
+      select: { id: true },
+    });
+    if (!target) throw new PaymentError(403, "Bạn không có quyền xử lý yêu cầu hoàn tiền này.");
 
     if (input.action === "APPROVE") {
-      const res = await approveRefundRequest(db, input.requestId, actor.id);
-      await logAuditEvent(db, {
+      const res = await approveRefundRequest(tx, input.requestId, actor.id);
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "APPROVE_REFUND_REQUEST",
         entityType: "RefundRequest",
@@ -107,8 +115,8 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "REJECT") {
-      const res = await rejectRefundRequest(db, input.requestId, actor.id, input.reason);
-      await logAuditEvent(db, {
+      const res = await rejectRefundRequest(tx, input.requestId, actor.id, input.reason);
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "REJECT_REFUND_REQUEST",
         entityType: "RefundRequest",
@@ -119,7 +127,7 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "COMPLETE_MANUAL") {
-      const res = await completeManualRefund(db, {
+      const res = await completeManualRefund(tx, {
         requestId: input.requestId,
         processedById: actor.id,
         bankRef: input.bankRef,
@@ -127,7 +135,7 @@ export async function POST(request: Request) {
         notes: input.notes,
       });
 
-      await logAuditEvent(db, {
+      await logAuditEvent(tx, {
         actorId: actor.id,
         action: "COMPLETE_MANUAL_REFUND",
         entityType: "RefundRequest",
@@ -139,6 +147,7 @@ export async function POST(request: Request) {
     }
 
     throw new PaymentError(400, "Hành động không được hỗ trợ.");
+    });
   } catch (error) {
     return paymentErrorResponse(error);
   }

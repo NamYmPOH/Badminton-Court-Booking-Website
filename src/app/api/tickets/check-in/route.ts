@@ -1,3 +1,5 @@
+import { logAuditEvent } from "@/services/audit-log.service";
+import { serializable } from "@/lib/transaction";
 import { db } from "@/lib/db";
 import { requirePaymentUser } from "@/lib/payment-session";
 import { paymentErrorResponse, PaymentError, readPaymentBody } from "@/lib/sepay";
@@ -16,7 +18,9 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const userId = await requirePaymentUser();
-    const actor = await db.user.findUnique({
+    const raw = await readPaymentBody(request, 2048);
+    return await serializable(db, async (tx) => {
+    const actor = await tx.user.findUnique({
       where: { id: userId },
       select: { id: true, role: true, status: true },
     });
@@ -29,7 +33,7 @@ export async function POST(request: Request) {
       throw new PaymentError(403, "Chỉ nhân viên sân hoặc quản trị viên mới có quyền quét vé.");
     }
 
-    const raw = await readPaymentBody(request, 2048);
+
     let body: unknown;
     try {
       body = JSON.parse(raw.toString("utf8"));
@@ -42,11 +46,12 @@ export async function POST(request: Request) {
       throw new PaymentError(400, "Mã vé không hợp lệ.");
     }
 
-    const result = await checkInWithTicket(db, {
+    const result = await checkInWithTicket(tx, {
       qrPayload: parsed.data.qrPayload,
       operator: actor,
     });
 
+    await logAuditEvent(tx, { actorId: actor.id, action: "CHECK_IN_SINGLE_TICKET", entityId: result.ticket.id, entityType: "Ticket" });
     return Response.json(
       {
         success: true,
@@ -61,6 +66,7 @@ export async function POST(request: Request) {
       },
       { headers: { "Cache-Control": "no-store" } }
     );
+    });
   } catch (error) {
     return paymentErrorResponse(error);
   }
