@@ -297,18 +297,32 @@ function BookingsContent() {
                     <span>{booking.venueAddress}</span>
                   </div>
 
-                  <div className="mt-2 flex flex-wrap gap-4 text-xs font-medium text-ink">
-                    <div className="flex items-center gap-1">
-                      <Calendar size={14} className="text-court-500" />
-                      <span>{booking.items[0]?.date}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Clock size={14} className="text-court-500" />
-                      <span>
-                        {formatHour(booking.items[0]?.startMin ?? 0)} –{" "}
-                        {formatHour(booking.items[0]?.endMin ?? 0)} ({booking.items[0]?.courtName})
-                      </span>
-                    </div>
+                  <div className="mt-2 space-y-1">
+                    {Object.values(
+                      (booking.items || []).reduce((acc, item) => {
+                        const key = `${item.date}_${item.courtName}`;
+                        if (!acc[key]) {
+                          acc[key] = { date: item.date, courtName: item.courtName, startMin: item.startMin, endMin: item.endMin };
+                        } else {
+                          acc[key].startMin = Math.min(acc[key].startMin, item.startMin);
+                          acc[key].endMin = Math.max(acc[key].endMin, item.endMin);
+                        }
+                        return acc;
+                      }, {} as Record<string, { date: string; courtName: string; startMin: number; endMin: number }>)
+                    ).map((courtGroup, idx) => (
+                      <div key={idx} className="flex flex-wrap items-center gap-3 text-xs font-medium text-ink">
+                        <div className="flex items-center gap-1">
+                          <Calendar size={13} className="text-court-500" />
+                          <span>{courtGroup.date}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Clock size={13} className="text-court-500" />
+                          <span>
+                            {formatHour(courtGroup.startMin)} – {formatHour(courtGroup.endMin)} (<strong>{courtGroup.courtName}</strong>)
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

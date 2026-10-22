@@ -125,6 +125,23 @@ function CheckoutContent() {
   const durationMin = slots.reduce((acc, s) => acc + (s.endMin - s.startMin), 0);
   const durationHours = durationMin / 60;
 
+  // Gom nhóm slots theo từng sân con để hiển thị chi tiết
+  const slotsByCourt = (() => {
+    const map = new Map<string, { courtName: string; slots: typeof slots; subtotal: number }>();
+    for (const slot of slots) {
+      if (!map.has(slot.courtId)) {
+        map.set(slot.courtId, { courtName: slot.courtName, slots: [], subtotal: 0 });
+      }
+      const entry = map.get(slot.courtId)!;
+      entry.slots.push(slot);
+      entry.subtotal += slot.price;
+    }
+    return Array.from(map.values()).map((entry) => {
+      entry.slots.sort((a, b) => a.startMin - b.startMin);
+      return entry;
+    });
+  })();
+
   const selectedCoach = coaches.find((c) => c.id === selectedCoachId);
   const coachFee = selectedCoach
     ? Math.round((selectedCoach.hourlyRate * durationMin) / 60)
@@ -424,13 +441,30 @@ function CheckoutContent() {
             <p>
               <strong className="text-ink">Ngày chơi:</strong> {date}
             </p>
-            <p>
-              <strong className="text-ink">Sân:</strong> {slots[0].courtName}
-            </p>
-            <p>
-              <strong className="text-ink">Khung giờ:</strong>{" "}
-              {formatHour(slots[0].startMin)} – {formatHour(slots[slots.length - 1].endMin)} ({durationMin} phút)
-            </p>
+            <div className="space-y-1 pt-1">
+              <span className="font-bold text-ink">
+                Sân & khung giờ ({slotsByCourt.length} sân):
+              </span>
+              <div className="mt-1 space-y-1.5">
+                {slotsByCourt.map((c: { courtName: string; slots: typeof slots; subtotal: number }) => {
+                  const cDuration = c.slots.reduce((acc: number, s: (typeof slots)[0]) => acc + (s.endMin - s.startMin), 0);
+                  return (
+                    <div
+                      key={c.courtName}
+                      className="flex items-center justify-between rounded bg-bg p-2 text-xs"
+                    >
+                      <div>
+                        <span className="font-bold text-ink">{c.courtName}</span>
+                        <span className="ml-2 text-muted">
+                          {formatHour(c.slots[0].startMin)} – {formatHour(c.slots[c.slots.length - 1].endMin)} ({cDuration} phút)
+                        </span>
+                      </div>
+                      <span className="font-bold text-ink">{formatVND(c.subtotal)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="border-t border-border pt-4 space-y-2 text-sm">

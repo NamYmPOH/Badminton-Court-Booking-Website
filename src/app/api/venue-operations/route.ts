@@ -18,7 +18,12 @@ export async function GET(request: Request) {
       select: { id: true, code: true, customerName: true, customerPhone: true, total: true, status: true, paymentStatus: true, paymentMethod: true, expiresAt: true,
         group: { select: { inviteToken: true, shares: { select: { id: true, position: true, amount: true, cashRequested: true, paymentId: true } } } }, venue: { select: { name: true, paymentMode: true } }, items: { select: { date: true, startMin: true, endMin: true, court: { select: { name: true } } } } },
     });
-    return Response.json({ bookings }, { headers: { "Cache-Control": "no-store" } });
+    const venues = await db.venue.findMany({
+      where: operatorVenueScope(actor),
+      select: { id: true, name: true, slug: true, status: true, ownerId: true },
+      orderBy: { name: "asc" },
+    });
+    return Response.json({ bookings, venues }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return paymentErrorResponse(error); }
 }
 export async function POST(request: Request) {

@@ -3,6 +3,13 @@ export interface Court {
   name: string;
   surface: string;
   isActive: boolean;
+  status?: "ACTIVE" | "MAINTENANCE" | "INACTIVE";
+  description?: string | null;
+  sortOrder?: number;
+  positionRow?: number | null;
+  positionCol?: number | null;
+  orientation?: "HORIZONTAL" | "VERTICAL" | null;
+  hasCustomPricing?: boolean;
 }
 
 export interface PricingRule {

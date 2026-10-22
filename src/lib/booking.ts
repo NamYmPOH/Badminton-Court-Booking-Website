@@ -54,11 +54,41 @@ export function isDemoBooked(courtId: string, startMin: number) {
   return ["court-1-1-1080", "court-1-1-1110", "court-1-2-1140", "court-1-3-1200"].includes(`${courtId}-${startMin}`);
 }
 
-export function selectionError(slots: SelectedSlot[]) {
+export function selectionError(
+  slots: SelectedSlot[],
+  venueOrCourts?: { id: string }[] | { courts?: { id: string }[] }
+) {
   if (!slots.length) return "Vui lòng chọn giờ chơi.";
-  const sorted = [...slots].sort((a, b) => a.startMin - b.startMin);
-  if (sorted.some(s => s.courtId !== sorted[0].courtId)) return "Vui lòng chọn các ô trên cùng một sân.";
-  if (sorted.some((s, i) => i > 0 && sorted[i - 1].endMin !== s.startMin)) return "Vui lòng chọn các ô giờ liên tiếp.";
+
+  const courtsList = Array.isArray(venueOrCourts)
+    ? venueOrCourts
+    : venueOrCourts?.courts;
+
+  const byCourt = new Map<string, SelectedSlot[]>();
+  for (const s of slots) {
+    if (!byCourt.has(s.courtId)) {
+      byCourt.set(s.courtId, []);
+    }
+    byCourt.get(s.courtId)!.push(s);
+  }
+
+  for (const [courtId, courtSlots] of Array.from(byCourt.entries())) {
+    if (courtsList && !courtsList.some(c => c.id === courtId)) {
+      return "Sân được chọn không thuộc cơ sở này.";
+    }
+    const sorted = [...courtSlots].sort((a, b) => a.startMin - b.startMin);
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0) {
+        if (sorted[i].startMin < sorted[i - 1].endMin) {
+          return "Không thể chọn trùng khung giờ trên cùng một sân.";
+        }
+        if (sorted[i - 1].endMin !== sorted[i].startMin) {
+          return "Vui lòng chọn các ô giờ liên tiếp cho từng sân.";
+        }
+      }
+    }
+  }
+
   return "";
 }
 
@@ -75,12 +105,12 @@ export function parseSelection(venues: Venue[], params: Pick<URLSearchParams, "g
     for (const item of raw) {
       if (!item || typeof item !== "object") return null;
       const court = venue.courts.find(c => c.id === item.courtId && c.isActive);
-      const price = slotPrice(venue, date, item.startMin, item.endMin);
+      const price = slotPrice(venue, date, item.startMin, item.endMin, item.courtId);
       if (!court || price === null || isPastSlot(date, item.startMin, now) || (demo && isDemoBooked(court.id, item.startMin))) return null;
       slots.push({ courtId: court.id, courtName: court.name, startMin: item.startMin, endMin: item.endMin, price });
     }
-    if (selectionError(slots)) return null;
-    slots.sort((a, b) => a.startMin - b.startMin);
+    if (selectionError(slots, venue.courts)) return null;
+    slots.sort((a, b) => a.courtId.localeCompare(b.courtId) || a.startMin - b.startMin);
     return { venue, date, slots, total: slots.reduce((sum, slot) => sum + slot.price, 0) };
   } catch { return null; }
 }

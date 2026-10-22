@@ -112,35 +112,47 @@ export async function createReservation(db: PrismaClient, userId: string, input:
       : { isOpen: true, openMin: venue.openMin, closeMin: venue.closeMin };
     if (!effectiveHours.isOpen) throw new PaymentError(409, "Cơ sở tạm nghỉ vào ngày đã chọn.");
     const { slots, total, date } = priceBooking(input, { ...venue, openMin: effectiveHours.openMin, closeMin: effectiveHours.closeMin }, now);
-    const courtId = slots[0].courtId;
-    const startMin = slots[0].startMin;
-    const endMin = slots[slots.length - 1].endMin;
 
-    const blocked = await tx.courtBlock.findFirst({ where: { courtId, date, startMin: { lt: endMin }, endMin: { gt: startMin } } });
-    const conflict = await tx.bookingItem.findFirst({
-      where: {
-        courtId,
-        date,
-        startMin: { lt: endMin },
-        endMin: { gt: startMin },
-        status: { in: ["HELD", "CONFIRMED"] },
-        booking: {
-          OR: [
-            { status: { in: ["CONFIRMED", "CHECKED_IN", "COMPLETED", "NO_SHOW"] } },
-            { status: "PENDING_PAYMENT", expiresAt: { gt: now } },
-          ],
+    // Kiểm tra xung đột và khóa lịch trên toàn bộ các sân và từng khung giờ
+    for (const slot of slots) {
+      const blocked = await tx.courtBlock.findFirst({
+        where: {
+          courtId: slot.courtId,
+          date,
+          startMin: { lt: slot.endMin },
+          endMin: { gt: slot.startMin },
         },
-      },
-    });
+      });
+      const conflict = await tx.bookingItem.findFirst({
+        where: {
+          courtId: slot.courtId,
+          date,
+          startMin: { lt: slot.endMin },
+          endMin: { gt: slot.startMin },
+          status: { in: ["HELD", "CONFIRMED"] },
+          booking: {
+            OR: [
+              { status: { in: ["CONFIRMED", "CHECKED_IN", "COMPLETED", "NO_SHOW"] } },
+              { status: "PENDING_PAYMENT", expiresAt: { gt: now } },
+            ],
+          },
+        },
+      });
 
-    if (blocked || conflict) throw new PaymentError(409, "Khung giờ vừa được đặt hoặc đã khóa. Vui lòng chọn giờ khác.");
+      if (blocked || conflict) {
+        throw new PaymentError(409, "Khung giờ vừa được đặt hoặc đã khóa. Vui lòng chọn giờ khác.");
+      }
+    }
 
     const pendingCount = await tx.booking.count({ where: { userId, status: "PENDING_PAYMENT", expiresAt: { gt: now } } });
     if (pendingCount >= 3) throw new PaymentError(429, "Bạn đang có 3 đơn chờ thanh toán. Vui lòng hoàn tất đơn đang có.");
 
-    const startTime = new Date(`${input.date}T${String(Math.floor(startMin / 60)).padStart(2, "0")}:${String(startMin % 60).padStart(2, "0")}:00+07:00`);
-    const endTime = new Date(`${input.date}T${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}:00+07:00`);
-    const durationMin = endMin - startMin;
+    const earliestStartMin = Math.min(...slots.map((s) => s.startMin));
+    const latestEndMin = Math.max(...slots.map((s) => s.endMin));
+    const startTime = new Date(`${input.date}T${String(Math.floor(earliestStartMin / 60)).padStart(2, "0")}:${String(earliestStartMin % 60).padStart(2, "0")}:00+07:00`);
+    const endTime = new Date(`${input.date}T${String(Math.floor(latestEndMin / 60)).padStart(2, "0")}:${String(latestEndMin % 60).padStart(2, "0")}:00+07:00`);
+    const durationMin = slots.reduce((acc, s) => acc + (s.endMin - s.startMin), 0);
+    const coachDurationMin = latestEndMin - earliestStartMin;
 
     let coachFee = 0;
     const coachCommissionRate = 0.10;
@@ -161,7 +173,7 @@ export async function createReservation(db: PrismaClient, userId: string, input:
         throw new PaymentError(409, "Huấn luyện viên chưa đăng ký hoạt động tại cơ sở này.");
       }
 
-      coachFee = Math.round((coachProfile.hourlyRate * durationMin) / 60);
+      coachFee = Math.round((coachProfile.hourlyRate * coachDurationMin) / 60);
       coachCommissionAmount = Math.round(coachFee * coachCommissionRate);
 
       // Kiểm tra HLV có ca rảnh bao phủ khung giờ này
@@ -359,7 +371,7 @@ export async function createReservation(db: PrismaClient, userId: string, input:
         expiresAt,
         items: {
           create: slots.map((slot, index) => ({
-            courtId,
+            courtId: slot.courtId,
             date,
             startMin: slot.startMin,
             endMin: slot.endMin,
@@ -410,7 +422,7 @@ export async function createReservation(db: PrismaClient, userId: string, input:
                   {
                     type: "COACH" as const,
                     amount: coachFee,
-                    label: `Phí HLV ${coachProfile.user.name} (${durationMin} phút)`,
+                    label: `Phí HLV ${coachProfile.user.name} (${coachDurationMin} phút)`,
                     beneficiaryId: coachProfile.id,
                   },
                 ]

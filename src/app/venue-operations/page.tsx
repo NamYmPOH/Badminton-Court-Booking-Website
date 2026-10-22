@@ -6,7 +6,30 @@ import BusinessOperations from "@/components/BusinessOperations";
 import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/lib/utils";
 import { formatHour } from "@/lib/booking";
-import { QrCode, Play, CheckCircle, PlusCircle, DollarSign, RotateCcw, AlertTriangle, ShieldCheck } from "lucide-react";
+import {
+  QrCode,
+  Play,
+  CheckCircle,
+  PlusCircle,
+  DollarSign,
+  RotateCcw,
+  AlertTriangle,
+  ShieldCheck,
+  Edit3,
+  Trash2,
+  Plus,
+  Move,
+  Sparkles,
+  Layers,
+  RotateCw,
+  PauseCircle,
+  PlayCircle,
+  Archive,
+  MapPin,
+  Save,
+  Check,
+} from "lucide-react";
+import type { CourtDetail } from "@/services/court.service";
 
 type Order = {
   group?: { inviteToken: string; shares?: { id: string; position: number; amount: number; cashRequested: boolean; paymentId: string | null }[] } | null;
@@ -46,7 +69,7 @@ interface RefundItem {
 
 export default function VenueOperationsPage() {
   const { user, isLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<"ORDERS" | "SCAN_TICKET" | "SESSIONS" | "REFUNDS">("ORDERS");
+  const [activeTab, setActiveTab] = useState<"ORDERS" | "SCAN_TICKET" | "SESSIONS" | "REFUNDS" | "COURTS">("ORDERS");
 
   // Orders state
   const [orders, setOrders] = useState<Order[]>([]);
@@ -81,6 +104,24 @@ export default function VenueOperationsPage() {
   const [refundNotes, setRefundNotes] = useState("");
   const [refundProcessing, setRefundProcessing] = useState(false);
 
+  // Courts Management State (§1 & §2)
+  const [venues, setVenues] = useState<{ id: string; name: string; slug: string; status: string; ownerId: string }[]>([]);
+  const [selectedVenueId, setSelectedVenueId] = useState<string>("");
+  const [courts, setCourts] = useState<CourtDetail[]>([]);
+  const [loadingCourts, setLoadingCourts] = useState<boolean>(false);
+  const [courtModal, setCourtModal] = useState<{ mode: "CREATE" | "EDIT"; court?: CourtDetail } | null>(null);
+  const [courtFormName, setCourtFormName] = useState("");
+  const [courtFormDescription, setCourtFormDescription] = useState("");
+  const [courtFormSurface, setCourtFormSurface] = useState("");
+  const [courtFormStatus, setCourtFormStatus] = useState<"ACTIVE" | "MAINTENANCE" | "INACTIVE">("ACTIVE");
+  const [courtFormRow, setCourtFormRow] = useState(1);
+  const [courtFormCol, setCourtFormCol] = useState(1);
+  const [courtFormOrientation, setCourtFormOrientation] = useState<"HORIZONTAL" | "VERTICAL">("HORIZONTAL");
+  const [courtFormSortOrder, setCourtFormSortOrder] = useState(0);
+  const [courtSubmitting, setCourtSubmitting] = useState(false);
+  const [layoutDirty, setLayoutDirty] = useState(false);
+  const [savingLayout, setSavingLayout] = useState(false);
+
   const allowed = !!user && ["ADMIN", "OWNER", "STAFF"].includes(user.role);
 
   const refreshOrders = useCallback(async (signal?: AbortSignal) => {
@@ -89,7 +130,11 @@ export default function VenueOperationsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message);
       if (!signal?.aborted) {
-        setOrders(data.bookings);
+        setOrders(data.bookings || []);
+        if (Array.isArray(data.venues) && data.venues.length > 0) {
+          setVenues(data.venues);
+          setSelectedVenueId((prev) => prev || data.venues[0].id);
+        }
         setError("");
       }
     } catch (err) {
@@ -98,6 +143,22 @@ export default function VenueOperationsPage() {
       if (!signal?.aborted) setLoading(false);
     }
   }, [filter]);
+
+  const refreshCourts = useCallback(async (venueId: string) => {
+    if (!venueId) return;
+    setLoadingCourts(true);
+    try {
+      const res = await fetch(`/api/venue-operations/courts?venueId=${encodeURIComponent(venueId)}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Không tải được danh sách sân.");
+      setCourts(data.courts || []);
+      setLayoutDirty(false);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Không tải được danh sách sân.");
+    } finally {
+      setLoadingCourts(false);
+    }
+  }, []);
 
   const refreshRefunds = useCallback(async () => {
     setLoadingRefunds(true);
@@ -265,6 +326,219 @@ export default function VenueOperationsPage() {
     }
   }
 
+  useEffect(() => {
+    if (selectedVenueId && activeTab === "COURTS") {
+      void refreshCourts(selectedVenueId);
+    }
+  }, [selectedVenueId, activeTab, refreshCourts]);
+
+  // Mở modal thêm sân con mới
+  function handleOpenCreateCourt() {
+    setCourtFormName("");
+    setCourtFormDescription("");
+    setCourtFormSurface("Thảm PVC tiêu chuẩn");
+    setCourtFormStatus("ACTIVE");
+    setCourtFormRow(courts.length > 0 ? Math.floor(courts.length / 3) + 1 : 1);
+    setCourtFormCol(courts.length > 0 ? (courts.length % 3) + 1 : 1);
+    setCourtFormOrientation("HORIZONTAL");
+    setCourtFormSortOrder(courts.length + 1);
+    setCourtModal({ mode: "CREATE" });
+  }
+
+  // Mở modal sửa sân con
+  function handleOpenEditCourt(court: CourtDetail) {
+    setCourtFormName(court.name);
+    setCourtFormDescription(court.description || "");
+    setCourtFormSurface(court.surface || "Thảm PVC tiêu chuẩn");
+    setCourtFormStatus(court.status);
+    setCourtFormRow(court.positionRow);
+    setCourtFormCol(court.positionCol);
+    setCourtFormOrientation(court.orientation);
+    setCourtFormSortOrder(court.sortOrder);
+    setCourtModal({ mode: "EDIT", court });
+  }
+
+  // Lưu thông tin sân con (Tạo mới hoặc Sửa)
+  async function handleSaveCourt(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedVenueId || courtSubmitting) return;
+    setCourtSubmitting(true);
+    setNotice("");
+    try {
+      if (courtModal?.mode === "CREATE") {
+        const res = await fetch("/api/venue-operations/courts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            venueId: selectedVenueId,
+            name: courtFormName.trim(),
+            description: courtFormDescription.trim() || undefined,
+            surface: courtFormSurface.trim() || undefined,
+            positionRow: courtFormRow,
+            positionCol: courtFormCol,
+            orientation: courtFormOrientation,
+            sortOrder: courtFormSortOrder,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Không thêm được sân con mới.");
+        setNotice(`Đã thêm sân "${courtFormName}" thành công.`);
+      } else if (courtModal?.mode === "EDIT" && courtModal.court) {
+        const res = await fetch(`/api/venue-operations/courts/${courtModal.court.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: courtFormName.trim(),
+            description: courtFormDescription.trim() || undefined,
+            surface: courtFormSurface.trim() || undefined,
+            status: courtFormStatus,
+            positionRow: courtFormRow,
+            positionCol: courtFormCol,
+            orientation: courtFormOrientation,
+            sortOrder: courtFormSortOrder,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Không cập nhật được sân con.");
+        setNotice(`Đã cập nhật thông tin sân "${courtFormName}" thành công.`);
+      }
+      setCourtModal(null);
+      await refreshCourts(selectedVenueId);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Thao tác sân con thất bại.");
+    } finally {
+      setCourtSubmitting(false);
+    }
+  }
+
+  // Thay đổi nhanh trạng thái sân (ACTIVE / MAINTENANCE / INACTIVE)
+  async function handleChangeCourtStatus(court: CourtDetail, nextStatus: "ACTIVE" | "MAINTENANCE" | "INACTIVE") {
+    setNotice("");
+    try {
+      const res = await fetch(`/api/venue-operations/courts/${court.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Không đổi được trạng thái sân.");
+      const statusLabel =
+        nextStatus === "ACTIVE"
+          ? "Kích hoạt hoạt động"
+          : nextStatus === "MAINTENANCE"
+          ? "Tạm ngừng / Bảo trì"
+          : "Lưu trữ / Ngừng hoạt động";
+      setNotice(`Đã chuyển sân "${court.name}" sang: ${statusLabel}.`);
+      await refreshCourts(selectedVenueId);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Không đổi được trạng thái sân.");
+    }
+  }
+
+  // Xóa sân con
+  async function handleDeleteCourt(court: CourtDetail) {
+    if (court.totalBookingsCount > 0) {
+      alert(
+        `Sân "${court.name}" đã có ${court.totalBookingsCount} lượt đặt trong lịch sử. Theo quy định toàn vẹn dữ liệu, không được xóa vĩnh viễn dữ liệu này. Hãy chọn "Lưu trữ / Ngừng hoạt động" để ẩn sân.`
+      );
+      return;
+    }
+    if (!confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn sân "${court.name}"? Thao tác này không thể hoàn tác.`)) {
+      return;
+    }
+    setNotice("");
+    try {
+      const res = await fetch(`/api/venue-operations/courts/${court.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Xóa sân thất bại.");
+      setNotice(`Đã xóa sân "${court.name}" thành công.`);
+      await refreshCourts(selectedVenueId);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Xóa sân thất bại.");
+    }
+  }
+
+  // Di chuyển sân trên sơ đồ (hàng, cột)
+  function moveCourt(courtId: string, dRow: number, dCol: number) {
+    setCourts((prevCourts) => {
+      const target = prevCourts.find((c) => c.id === courtId);
+      if (!target) return prevCourts;
+
+      const nextRow = Math.max(1, target.positionRow + dRow);
+      const nextCol = Math.max(1, target.positionCol + dCol);
+
+      const collision = prevCourts.find(
+        (c) => c.id !== courtId && c.positionRow === nextRow && c.positionCol === nextCol
+      );
+      if (collision) {
+        setNotice(`Vị trí Hàng ${nextRow}, Cột ${nextCol} đã có ${collision.name}. Không thể xếp đè.`);
+        return prevCourts;
+      }
+
+      setLayoutDirty(true);
+      return prevCourts.map((c) => (c.id === courtId ? { ...c, positionRow: nextRow, positionCol: nextCol } : c));
+    });
+  }
+
+  // Xoay chiều sân ngang / dọc
+  function toggleOrientation(courtId: string) {
+    setCourts((prevCourts) => {
+      setLayoutDirty(true);
+      return prevCourts.map((c) =>
+        c.id === courtId
+          ? { ...c, orientation: c.orientation === "VERTICAL" ? "HORIZONTAL" : "VERTICAL" }
+          : c
+      );
+    });
+  }
+
+  // Sắp xếp tự động bố cục sân dạng lưới 3 cột
+  function autoArrangeLayout() {
+    setCourts((prevCourts) => {
+      setLayoutDirty(true);
+      return prevCourts.map((c, index) => ({
+        ...c,
+        positionRow: Math.floor(index / 3) + 1,
+        positionCol: (index % 3) + 1,
+      }));
+    });
+    setNotice("Đã xếp tự động dạng lưới 3 cột. Nhấn 'Lưu bố cục sơ đồ' để áp dụng.");
+  }
+
+  // Lưu bố cục sơ đồ sân lên database
+  async function handleSaveLayout() {
+    if (!selectedVenueId || savingLayout) return;
+    setSavingLayout(true);
+    setNotice("");
+    try {
+      const res = await fetch("/api/venue-operations/courts/layout", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          venueId: selectedVenueId,
+          layout: courts.map((c) => ({
+            courtId: c.id,
+            positionRow: c.positionRow,
+            positionCol: c.positionCol,
+            orientation: c.orientation,
+            sortOrder: c.sortOrder,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Lưu bố cục thất bại.");
+      setLayoutDirty(false);
+      setNotice("Đã lưu bố cục sơ đồ sân thành công. Khách hàng sẽ thấy đúng sơ đồ này.");
+      await refreshCourts(selectedVenueId);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Lưu bố cục thất bại.");
+    } finally {
+      setSavingLayout(false);
+    }
+  }
+
   if (isLoading) return <p className="p-8">Đang kiểm tra quyền...</p>;
   if (!allowed)
     return (
@@ -297,6 +571,14 @@ export default function VenueOperationsPage() {
           }`}
         >
           📋 Đơn đặt sân & Tiền mặt
+        </button>
+        <button
+          onClick={() => setActiveTab("COURTS")}
+          className={`flex-1 border-b-2 py-3 text-center transition ${
+            activeTab === "COURTS" ? "border-court-600 text-court-600" : "border-transparent text-muted hover:text-ink"
+          }`}
+        >
+          🏸 Quản lý sân & Sơ đồ 2D ({courts.length})
         </button>
         <button
           onClick={() => setActiveTab("SCAN_TICKET")}
@@ -676,6 +958,527 @@ export default function VenueOperationsPage() {
                     className="rounded-control bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                   >
                     {refundProcessing ? "Đang lưu..." : "Xác nhận hoàn tất"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB 4: QUẢN LÝ SÂN CON & SƠ ĐỒ 2D (§1 & §2) */}
+      {activeTab === "COURTS" && (
+        <section className="space-y-6">
+          {/* Thanh chọn cơ sở & hành động quản lý */}
+          <div className="flex flex-col gap-4 rounded-card border border-border bg-surface p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-xs font-bold text-muted">Cơ sở đang quản lý:</label>
+              {venues.length > 1 ? (
+                <select
+                  value={selectedVenueId}
+                  onChange={(e) => {
+                    setSelectedVenueId(e.target.value);
+                    void refreshCourts(e.target.value);
+                  }}
+                  className="rounded-control border border-border bg-bg px-3 py-1.5 text-xs font-bold text-ink outline-none focus:border-court-500"
+                >
+                  {venues.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              ) : venues.length === 1 ? (
+                <span className="font-bold text-ink text-sm">{venues[0].name}</span>
+              ) : (
+                <span className="text-xs text-muted">Đang tải cơ sở...</span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleOpenCreateCourt}
+                className="inline-flex items-center gap-1.5 rounded-control bg-court-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-court-700"
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                Thêm sân con mới
+              </button>
+
+              <button
+                type="button"
+                disabled={!layoutDirty || savingLayout}
+                onClick={handleSaveLayout}
+                className="inline-flex items-center gap-1.5 rounded-control bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Save size={14} />
+                {savingLayout ? "Đang lưu..." : layoutDirty ? "Lưu bố cục sơ đồ *" : "Đã lưu bố cục"}
+              </button>
+
+              <button
+                type="button"
+                onClick={autoArrangeLayout}
+                className="inline-flex items-center gap-1.5 rounded-control border border-border bg-surface px-3 py-2 text-xs font-semibold text-ink hover:bg-surface-elevated transition"
+                title="Tự động sắp xếp các sân theo lưới 3 cột"
+              >
+                <Layers size={13} />
+                Tự xếp 3 cột
+              </button>
+
+              <button
+                type="button"
+                onClick={() => selectedVenueId && void refreshCourts(selectedVenueId)}
+                className="rounded-control border border-border px-3 py-2 text-xs font-semibold hover:bg-surface-elevated"
+              >
+                Làm mới
+              </button>
+            </div>
+          </div>
+
+          {loadingCourts ? (
+            <p className="py-8 text-center text-xs text-muted">Đang tải danh sách sân...</p>
+          ) : !courts.length ? (
+            <div className="rounded-card border border-dashed border-border bg-surface p-8 text-center space-y-3">
+              <p className="text-sm text-muted">Cơ sở này hiện chưa có sân con nào được cấu hình.</p>
+              <button
+                type="button"
+                onClick={handleOpenCreateCourt}
+                className="rounded-control bg-court-600 px-4 py-2 text-xs font-bold text-white hover:bg-court-700"
+              >
+                + Thêm sân đầu tiên
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* KHỐI 1: SƠ ĐỒ 2D TRỰC QUAN CHO CHỦ SÂN */}
+              <div className="rounded-card border border-border bg-surface p-5 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
+                  <div>
+                    <h2 className="text-base font-bold text-ink">Bố cục sơ đồ 2D của cơ sở</h2>
+                    <p className="text-xs text-muted">
+                      Điều chỉnh hàng/cột và xoay ngang/dọc cho từng sân. Khách hàng sẽ thấy đúng sơ đồ này khi đặt lịch.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Hoạt động
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2.5 w-2.5 rounded-full bg-amber-400" /> Tạm ngừng/Bảo trì
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2.5 w-2.5 rounded-full bg-slate-400" /> Ngừng hoạt động
+                    </span>
+                  </div>
+                </div>
+
+                {/* Grid layout tương tác */}
+                <div
+                  className="grid gap-4 overflow-x-auto p-2"
+                  style={{
+                    gridTemplateColumns: `repeat(${Math.max(1, ...courts.map((c) => c.positionCol))}, minmax(180px, 1fr))`,
+                    gridTemplateRows: `repeat(${Math.max(1, ...courts.map((c) => c.positionRow))}, minmax(130px, auto))`,
+                  }}
+                >
+                  {courts.map((court) => {
+                    const isVertical = court.orientation === "VERTICAL";
+                    const isMaintenance = court.status === "MAINTENANCE";
+                    const isInactive = court.status === "INACTIVE";
+
+                    return (
+                      <div
+                        key={court.id}
+                        style={{
+                          gridRowStart: court.positionRow,
+                          gridColumnStart: court.positionCol,
+                        }}
+                        className={`relative flex flex-col justify-between rounded-card border p-3.5 shadow-sm transition ${
+                          isMaintenance
+                            ? "border-amber-300 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20"
+                            : isInactive
+                            ? "border-slate-300 bg-slate-100/70 dark:border-slate-800 dark:bg-slate-900/40 opacity-75"
+                            : "border-border bg-white dark:bg-surface hover:border-court-300"
+                        }`}
+                      >
+                        {/* Header của thẻ sân */}
+                        <div>
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="font-bold text-ink text-sm sm:text-base">{court.name}</span>
+                            {court.hasCustomPricing ? (
+                              <span
+                                title="Sân có cấu hình biểu giá riêng"
+                                className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                              >
+                                <Sparkles size={9} /> Giá riêng
+                              </span>
+                            ) : (
+                              <span className="rounded bg-slate-100 px-1 py-0.2 text-[9px] text-muted dark:bg-slate-800">
+                                Giá chung
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
+                            <span>
+                              Hàng {court.positionRow} · Cột {court.positionCol}
+                            </span>
+                            <span>•</span>
+                            <span className="font-medium text-ink">
+                              {court.orientation === "VERTICAL" ? "Xoay dọc" : "Xoay ngang"}
+                            </span>
+                          </div>
+
+                          {court.activeBookingsCount > 0 && (
+                            <p className="mt-1 text-[11px] font-semibold text-court-600">
+                              ⚡ {court.activeBookingsCount} đơn đang hiệu lực
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Mô phỏng sân cầu lông mini */}
+                        <div className="my-1.5 flex items-center justify-center">
+                          <div
+                            className={`relative rounded border border-court-400/50 bg-court-500/10 ${
+                              isVertical ? "h-10 w-6" : "h-6 w-12"
+                            }`}
+                          >
+                            <div
+                              className={`absolute bg-court-400/50 ${
+                                isVertical ? "top-1/2 left-0 right-0 h-px" : "left-1/2 top-0 bottom-0 w-px"
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Thanh điều hướng vị trí và xoay */}
+                        <div className="flex items-center justify-between border-t border-border/50 pt-2 text-xs">
+                          {/* Nút di chuyển vị trí 4 hướng */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => moveCourt(court.id, -1, 0)}
+                              title="Dịch lên trên"
+                              disabled={court.positionRow <= 1}
+                              className="rounded border border-border p-1 hover:bg-surface-elevated disabled:opacity-30"
+                            >
+                              ⬆️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveCourt(court.id, 1, 0)}
+                              title="Dịch xuống dưới"
+                              className="rounded border border-border p-1 hover:bg-surface-elevated"
+                            >
+                              ⬇️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveCourt(court.id, 0, -1)}
+                              title="Dịch sang trái"
+                              disabled={court.positionCol <= 1}
+                              className="rounded border border-border p-1 hover:bg-surface-elevated disabled:opacity-30"
+                            >
+                              ⬅️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveCourt(court.id, 0, 1)}
+                              title="Dịch sang phải"
+                              className="rounded border border-border p-1 hover:bg-surface-elevated"
+                            >
+                              ➡️
+                            </button>
+                          </div>
+
+                          {/* Nút xoay và sửa */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => toggleOrientation(court.id)}
+                              title="Xoay chiều sân ngang / dọc"
+                              className="rounded border border-border p-1 hover:bg-surface-elevated text-[11px]"
+                            >
+                              <RotateCw size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditCourt(court)}
+                              title="Chỉnh sửa thông tin sân"
+                              className="rounded border border-border p-1 hover:bg-surface-elevated text-[11px] text-court-600"
+                            >
+                              <Edit3 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* KHỐI 2: BẢNG DANH SÁCH CHI TIẾT SÂN CON */}
+              <div className="rounded-card border border-border bg-surface p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                  <h2 className="text-base font-bold text-ink">Danh sách sân con ({courts.length} sân)</h2>
+                  <span className="text-xs text-muted">
+                    Sân đã có lịch sử đặt sẽ được bảo toàn và không thể xóa vĩnh viễn
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-muted">
+                        <th className="py-2.5 font-bold">Tên sân</th>
+                        <th className="py-2.5 font-bold">Trạng thái</th>
+                        <th className="py-2.5 font-bold">Biểu giá</th>
+                        <th className="py-2.5 font-bold">Vị trí sơ đồ</th>
+                        <th className="py-2.5 font-bold">Đơn hiệu lực</th>
+                        <th className="py-2.5 font-bold">Tổng lượt đặt</th>
+                        <th className="py-2.5 text-right font-bold">Hành động</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {courts.map((court) => (
+                        <tr key={court.id} className="hover:bg-surface-elevated transition">
+                          <td className="py-3 font-bold text-ink">
+                            <div>{court.name}</div>
+                            {court.description && (
+                              <div className="text-[11px] font-normal text-muted line-clamp-1">{court.description}</div>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                court.status === "ACTIVE"
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                  : court.status === "MAINTENANCE"
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                                  : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                              }`}
+                            >
+                              {court.status === "ACTIVE"
+                                ? "● Đang hoạt động"
+                                : court.status === "MAINTENANCE"
+                                ? "⚠ Tạm ngừng/Bảo trì"
+                                : "✕ Lưu trữ/Ngừng"}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            {court.hasCustomPricing ? (
+                              <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-400">
+                                <Sparkles size={11} /> Biểu giá riêng
+                              </span>
+                            ) : (
+                              <span className="text-muted">Theo giá cơ sở</span>
+                            )}
+                          </td>
+                          <td className="py-3 font-medium text-ink">
+                            Hàng {court.positionRow}, Cột {court.positionCol} ({court.orientation === "VERTICAL" ? "Dọc" : "Ngang"})
+                          </td>
+                          <td className="py-3">
+                            {court.activeBookingsCount > 0 ? (
+                              <span className="font-bold text-court-600">{court.activeBookingsCount} đơn</span>
+                            ) : (
+                              <span className="text-muted">0</span>
+                            )}
+                          </td>
+                          <td className="py-3 text-muted">{court.totalBookingsCount} lượt</td>
+                          <td className="py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditCourt(court)}
+                                className="rounded border border-border px-2 py-1 text-court-600 hover:bg-surface-elevated font-semibold"
+                              >
+                                Sửa
+                              </button>
+
+                              {court.status === "ACTIVE" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleChangeCourtStatus(court, "MAINTENANCE")}
+                                  className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 font-semibold"
+                                  title="Tạm ngừng hoạt động để bảo trì"
+                                >
+                                  Tạm ngừng
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleChangeCourtStatus(court, "ACTIVE")}
+                                  className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 font-semibold"
+                                >
+                                  Kích hoạt
+                                </button>
+                              )}
+
+                              {court.status !== "INACTIVE" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleChangeCourtStatus(court, "INACTIVE")}
+                                  className="rounded border border-slate-300 px-2 py-1 text-muted hover:bg-surface-elevated"
+                                  title="Lưu trữ sân này khi không còn sử dụng"
+                                >
+                                  Lưu trữ
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCourt(court)}
+                                className="rounded border border-border p-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                title="Xóa sân (chỉ khi chưa có lịch sử đặt)"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL THÊM / CHỈNH SỬA SÂN CON */}
+          {courtModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <form
+                onSubmit={handleSaveCourt}
+                className="w-full max-w-lg rounded-card border border-border bg-surface p-6 shadow-2xl space-y-4 text-xs"
+              >
+                <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                  <h3 className="text-base font-bold text-ink">
+                    {courtModal.mode === "CREATE" ? "Thêm sân con mới" : `Chỉnh sửa: ${courtModal.court?.name}`}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setCourtModal(null)}
+                    className="text-muted hover:text-ink text-sm font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-ink">
+                    Tên / Số sân <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    required
+                    maxLength={50}
+                    placeholder="VD: Sân 1, Sân 2, Sân VIP 1..."
+                    value={courtFormName}
+                    onChange={(e) => setCourtFormName(e.target.value)}
+                    className="mt-1 w-full rounded-control border border-border bg-bg p-2.5 font-bold text-ink outline-none focus:border-court-500"
+                  />
+                  <p className="mt-1 text-[11px] text-muted">Tên sân là duy nhất trong cùng cơ sở.</p>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-muted">Mô tả sân</label>
+                  <textarea
+                    rows={2}
+                    maxLength={500}
+                    placeholder="Ghi chú về vị trí, ánh sáng, độ bám thảm..."
+                    value={courtFormDescription}
+                    onChange={(e) => setCourtFormDescription(e.target.value)}
+                    className="mt-1 w-full rounded-control border border-border bg-bg p-2 text-ink outline-none focus:border-court-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-muted">Loại mặt sân</label>
+                    <input
+                      placeholder="VD: Thảm PVC, Gỗ..."
+                      value={courtFormSurface}
+                      onChange={(e) => setCourtFormSurface(e.target.value)}
+                      className="mt-1 w-full rounded-control border border-border bg-bg p-2 text-ink outline-none focus:border-court-500"
+                    />
+                  </div>
+
+                  {courtModal.mode === "EDIT" && (
+                    <div>
+                      <label className="block font-semibold text-muted">Trạng thái sân</label>
+                      <select
+                        value={courtFormStatus}
+                        onChange={(e) =>
+                          setCourtFormStatus(e.target.value as "ACTIVE" | "MAINTENANCE" | "INACTIVE")
+                        }
+                        className="mt-1 w-full rounded-control border border-border bg-bg p-2 text-ink outline-none focus:border-court-500 font-bold"
+                      >
+                        <option value="ACTIVE">Hoạt động bình thường</option>
+                        <option value="MAINTENANCE">Tạm ngừng / Bảo trì</option>
+                        <option value="INACTIVE">Lưu trữ / Ngừng hoạt động</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border/60 pt-3">
+                  <span className="font-bold text-ink">Bố cục trên sơ đồ 2D</span>
+                  <div className="mt-2 grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-muted">Hàng (Row ≥ 1)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        required
+                        value={courtFormRow}
+                        onChange={(e) => setCourtFormRow(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="mt-1 w-full rounded-control border border-border bg-bg p-2 text-ink"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-muted">Cột (Col ≥ 1)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        required
+                        value={courtFormCol}
+                        onChange={(e) => setCourtFormCol(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="mt-1 w-full rounded-control border border-border bg-bg p-2 text-ink"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-muted">Hướng xoay</label>
+                      <select
+                        value={courtFormOrientation}
+                        onChange={(e) =>
+                          setCourtFormOrientation(e.target.value as "HORIZONTAL" | "VERTICAL")
+                        }
+                        className="mt-1 w-full rounded-control border border-border bg-bg p-2 text-ink font-semibold"
+                      >
+                        <option value="HORIZONTAL">Ngang</option>
+                        <option value="VERTICAL">Dọc</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-border/60 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setCourtModal(null)}
+                    className="rounded-control border border-border px-4 py-2 text-muted hover:text-ink font-semibold"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={courtSubmitting}
+                    className="rounded-control bg-court-600 px-5 py-2 font-bold text-white hover:bg-court-700 disabled:opacity-50"
+                  >
+                    {courtSubmitting ? "Đang lưu..." : courtModal.mode === "CREATE" ? "Thêm sân" : "Lưu thay đổi"}
                   </button>
                 </div>
               </form>

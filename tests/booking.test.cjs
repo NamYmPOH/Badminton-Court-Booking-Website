@@ -39,7 +39,8 @@ test('Vietnam calendar rolls over at UTC 17:00 and across year/month boundaries'
 });
 for (const [name, slots] of [
   ['empty', []], ['duplicate', [slot(), slot()]],
-  ['gapped', [slot(300), slot(360)]], ['mixed courts', [slot(), slot(1050, 'court-1-2')]],
+  ['gapped on same court', [slot(1020), slot(1140)]],
+  ['different venue courts', [slot(), slot(1050, 'court-2-1')]],
   ['booked', [slot(1080)]], ['unknown court', [slot(1020, 'missing')]],
   ['bad shape', [null]], ['string minutes', [{ ...slot(), startMin: '1020' }]],
   ['invalid duration', [{ ...slot(), endMin: 1080 }]],
@@ -58,4 +59,19 @@ test('sorts reverse selection and applies capped, normalized vouchers', () => {
   assert.equal(voucherDiscount('GIAM20K', 10000), 10000);
   assert.equal(voucherDiscount('INVALID', 110000), 0);
   assert.ok(selectionError([]));
+});
+test('accepts multi-court selection in the same venue with independent slot calculation', () => {
+  const multiSlots = [
+    slot(1020, 'court-1-1'),
+    slot(1050, 'court-1-1'),
+    slot(1020, 'court-1-2'),
+    slot(1050, 'court-1-2'),
+  ];
+  const result = parseSelection(MOCK_VENUES, params(multiSlots), now);
+  assert.ok(result);
+  assert.equal(result.slots.length, 4);
+  assert.equal(result.total, 220000);
+  const courtNames = new Set(result.slots.map(s => s.courtName));
+  assert.equal(courtNames.size, 2);
+  assert.equal(selectionError(multiSlots, venue), "");
 });
