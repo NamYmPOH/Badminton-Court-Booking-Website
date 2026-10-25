@@ -7,8 +7,16 @@ import { formatVND } from "@/lib/utils";
 import type { Booking } from "@/types/booking";
 import { GroupPaymentCreate } from "@/components/GroupPaymentCreate";
 import { formatHour } from "@/lib/booking";
+import { Check, Copy } from "lucide-react";
 
-type PaymentBooking = Booking & { groupToken?: string | null; canChoosePayment: boolean; qrUrl: string | null; bank: { name: string; accountNo: string; accountName: string } | null };
+type PaymentBooking = Booking & {
+  groupToken?: string | null;
+  canChoosePayment: boolean;
+  qrUrl: string | null;
+  qrCleanUrl?: string | null;
+  qrPayload?: string | null;
+  bank: { name: string; accountNo: string; accountName: string } | null;
+};
 function PaymentResultContent() {
   const params = useSearchParams();
   const code = params.get("booking");
@@ -18,8 +26,37 @@ function PaymentResultContent() {
   const [retry, setRetry] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [changing, setChanging] = useState(false);
+  const [cleanQrDataUrl, setCleanQrDataUrl] = useState<string | null>(null);
+  const [qrType, setQrType] = useState<"standard" | "clean">("standard");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const mutation = useRef(false);
   const version = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    if (booking?.qrPayload) {
+      void import("qrcode")
+        .then(({ default: qr }) =>
+          qr.toDataURL(booking.qrPayload!, { width: 340, margin: 2, errorCorrectionLevel: "M" })
+        )
+        .then(url => {
+          if (active) setCleanQrDataUrl(url);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [booking?.qrPayload]);
+
+  function copy(key: string, value: string) {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2500);
+    }
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -74,13 +111,110 @@ function PaymentResultContent() {
       {payable && <div className="grid gap-6 md:grid-cols-[1fr_260px]">
       <section className="space-y-3 rounded-control border border-border p-4">
       <h2 className="font-bold">{cash ? "Thanh toán tại sân" : "Thanh toán online qua QR"}</h2>
-      {cash ? <><p>{pending ? "Đã gửi yêu cầu thanh toán tiền mặt. Đơn chưa được duyệt và chưa được ghi nhận đã trả tiền." : "Bạn đã chọn thanh toán tiền mặt."}</p><p className="text-sm text-muted">Liên hệ sân để nhân viên hoặc chủ sân kiểm tra đơn.</p></> : booking.qrUrl && !error ? <>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={booking.qrUrl} alt={`QR chuyển khoản cho ${booking.code}`} width={360} height={480} className="mx-auto h-auto max-w-full rounded-control" />
-        <p>{booking.bank?.name} · {booking.bank?.accountNo}</p><p>{booking.bank?.accountName}</p>
-        <p>Nội dung chuyển khoản: <strong>{booking.code}</strong></p>
-        <p className="text-sm text-muted">Chuyển đúng số tiền và nội dung. Trang tự cập nhật khi SePay xác nhận.</p>
-      </> : <p role="status">Thanh toán online hiện chưa sẵn sàng. Bạn có thể chọn thanh toán bằng tiền mặt hoặc kiểm tra lại sau.</p>}
+      {cash ? (
+        <>
+          <p>{pending ? "Đã gửi yêu cầu thanh toán tiền mặt. Đơn chưa được duyệt và chưa được ghi nhận đã trả tiền." : "Bạn đã chọn thanh toán tiền mặt."}</p>
+          <p className="text-sm text-muted">Liên hệ sân để nhân viên hoặc chủ sân kiểm tra đơn.</p>
+        </>
+      ) : booking.qrUrl && !error ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-center gap-2 rounded-control bg-slate-100 p-1 text-xs font-medium dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setQrType("standard")}
+              className={`flex-1 rounded px-3 py-1.5 transition-colors ${
+                qrType === "standard"
+                  ? "bg-white font-semibold shadow-sm dark:bg-slate-700"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              Mẫu VietQR
+            </button>
+            <button
+              type="button"
+              onClick={() => setQrType("clean")}
+              className={`flex-1 rounded px-3 py-1.5 transition-colors ${
+                qrType === "clean"
+                  ? "bg-white font-semibold shadow-sm dark:bg-slate-700"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              Mã QR nét cao (quét tức thì)
+            </button>
+          </div>
+
+          <div className="relative flex justify-center rounded-control bg-white p-3 dark:bg-slate-900">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrType === "clean" && cleanQrDataUrl ? cleanQrDataUrl : booking.qrUrl}
+              alt={`QR chuyển khoản cho ${booking.code}`}
+              width={340}
+              height={qrType === "clean" && cleanQrDataUrl ? 340 : 440}
+              className="mx-auto h-auto max-w-full rounded-control"
+            />
+          </div>
+
+          <div className="space-y-2 rounded-control border border-border bg-slate-50 p-3 text-sm dark:bg-slate-800/50">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted">Ngân hàng:</span>
+              <strong className="font-semibold">{booking.bank?.name}</strong>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted">Số tài khoản:</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold">{booking.bank?.accountNo}</span>
+                <button
+                  type="button"
+                  onClick={() => copy("accountNo", booking.bank?.accountNo || "")}
+                  className="inline-flex items-center gap-1 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
+                >
+                  {copiedKey === "accountNo" ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                  {copiedKey === "accountNo" ? "Đã chép" : "Sao chép"}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted">Chủ tài khoản:</span>
+              <strong className="font-semibold">{booking.bank?.accountName}</strong>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted">Số tiền:</span>
+              <div className="flex items-center gap-2">
+                <strong className="text-base text-court-600">{formatVND(booking.total)}</strong>
+                <button
+                  type="button"
+                  onClick={() => copy("amount", String(booking.total))}
+                  className="inline-flex items-center gap-1 rounded bg-slate-200 px-2 py-0.5 text-xs font-semibold hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
+                >
+                  {copiedKey === "amount" ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                  {copiedKey === "amount" ? "Đã chép" : "Sao chép"}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2">
+              <span className="text-muted">Nội dung CK:</span>
+              <div className="flex items-center gap-2">
+                <strong className="font-mono font-bold text-amber-600 dark:text-amber-400">{booking.code}</strong>
+                <button
+                  type="button"
+                  onClick={() => copy("code", booking.code)}
+                  className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-200"
+                >
+                  {copiedKey === "code" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                  {copiedKey === "code" ? "Đã chép" : "Sao chép"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1 text-xs text-muted">
+            <p>• Chuyển đúng số tiền và nội dung chuyển khoản để hệ thống tự động xác nhận đơn ngay khi nhận tiền.</p>
+            <p>• Nếu app ngân hàng báo <em>&quot;Mã QR đã hết hạn, hoặc sai mã&quot;</em>, hãy chuyển sang <strong>Mã QR nét cao</strong> hoặc bấm <strong>Sao chép</strong> số tài khoản và nội dung để chuyển khoản trực tiếp.</p>
+          </div>
+        </div>
+      ) : (
+        <p role="status">Thanh toán online hiện chưa sẵn sàng. Bạn có thể chọn thanh toán bằng tiền mặt hoặc kiểm tra lại sau.</p>
+      )}
       </section>
       <aside className="space-y-3 rounded-control border border-border p-4">
         <h2 className="font-bold">Phương thức khác</h2>

@@ -65,11 +65,53 @@ export function eventFingerprint(event: SepayEvent) {
   ])).digest("hex");
 }
 
-export function createVietQrUrl(amount: number, code: string, config: Pick<SepayConfig, "BANK_BIN" | "BANK_ACCOUNT_NO" | "BANK_ACCOUNT_NAME">) {
+export function crc16Ccitt(str: string): string {
+  let crc = 0xffff;
+  for (let i = 0; i < str.length; i++) {
+    crc ^= str.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = ((crc << 1) ^ 0x1021) & 0xffff;
+      } else {
+        crc = (crc << 1) & 0xffff;
+      }
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+
+export function buildVietQrPayload(bin: string, accountNo: string, amount: number, content: string): string {
+  if (!/^\d{6}$/.test(bin) || !/^\d{6,19}$/.test(accountNo) || !Number.isSafeInteger(amount) || amount <= 0) {
+    throw new PaymentError(400, "Thông tin thanh toán không hợp lệ.");
+  }
+  const f = (id: string, val: string) => id + String(val.length).padStart(2, "0") + val;
+  const sub01 = f("00", bin) + f("01", accountNo);
+  const tag38 = f("00", "A000000727") + f("01", sub01) + f("02", "QRIBFTTA");
+  const tag62 = f("08", content);
+
+  const payloadWithoutCrc =
+    f("00", "01") +
+    f("01", "12") +
+    f("38", tag38) +
+    f("53", "704") +
+    f("54", String(amount)) +
+    f("58", "VN") +
+    f("62", tag62) +
+    "6304";
+
+  return payloadWithoutCrc + crc16Ccitt(payloadWithoutCrc);
+}
+
+export function createVietQrUrl(
+  amount: number,
+  code: string,
+  config: Pick<SepayConfig, "BANK_BIN" | "BANK_ACCOUNT_NO" | "BANK_ACCOUNT_NAME">,
+  template: "compact2" | "compact" | "qr_only" = "compact2"
+) {
   if (!Number.isSafeInteger(amount) || amount <= 0 || !/^(?:DATSAN\d{1,10}|GP[A-F0-9]{24})$/.test(code)) {
     throw new PaymentError(400, "Thông tin thanh toán không hợp lệ.");
   }
-  const url = new URL(`https://img.vietqr.io/image/${config.BANK_BIN}-${config.BANK_ACCOUNT_NO}-compact2.png`);
+  const url = new URL(`https://img.vietqr.io/image/${config.BANK_BIN}-${config.BANK_ACCOUNT_NO}-${template}.png`);
   url.search = new URLSearchParams({ amount: String(amount), addInfo: code, accountName: config.BANK_ACCOUNT_NAME }).toString();
   return url.toString();
 }

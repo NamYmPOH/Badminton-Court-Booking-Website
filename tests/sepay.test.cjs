@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { createHmac } = require('node:crypto');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, filename);
-const { getSepayConfig, verifySepaySignature, parseSepayEvent, extractBookingCode, eventFingerprint, createVietQrUrl, readPaymentBody, paymentErrorResponse } = require('../src/lib/sepay.ts');
+const { getSepayConfig, verifySepaySignature, parseSepayEvent, extractBookingCode, eventFingerprint, createVietQrUrl, buildVietQrPayload, crc16Ccitt, readPaymentBody, paymentErrorResponse } = require('../src/lib/sepay.ts');
 const { receiveSepayPayment, serializable } = require('../src/services/sepay.service.ts');
 const { bookingRequestSchema, priceBooking } = require('../src/lib/booking-request.ts');
 const { createReservation, publicBooking } = require('../src/services/reservation.service.ts');
@@ -47,6 +47,14 @@ test('payload validation, code boundaries, multiple codes and QR encoding', () =
   assert.equal(url.searchParams.get('addInfo'), 'DATSAN1234567890');
   assert.equal(url.searchParams.get('accountName'), config.BANK_ACCOUNT_NAME);
   assert.match(url.pathname, /0001234703/);
+  const cleanUrl = new URL(createVietQrUrl(150000, 'DATSAN1234567890', config, 'qr_only'));
+  assert.match(cleanUrl.pathname, /qr_only\.png$/);
+  const emv = buildVietQrPayload(config.BANK_BIN, config.BANK_ACCOUNT_NO, 150000, 'DATSAN1234567890');
+  assert.match(emv, /^000201010212/);
+  assert.ok(emv.includes(config.BANK_BIN));
+  assert.ok(emv.includes(config.BANK_ACCOUNT_NO));
+  assert.ok(emv.includes('DATSAN1234567890'));
+  assert.equal(emv.slice(-4), crc16Ccitt(emv.slice(0, -4)));
   assert.throws(() => getSepayConfig({}), error => error.status === 503);
 });
 test('bounded raw-body reader rejects wrong content type and oversized payload', async () => {

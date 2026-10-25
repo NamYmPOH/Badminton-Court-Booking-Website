@@ -161,8 +161,8 @@ test("createCoachAvailability prevents non-active coaches and detects overlappin
 
   const futureSlot = {
     venueId: "venue-1",
-    startsAt: "2026-10-25T18:00:00.000Z",
-    endsAt: "2026-10-25T20:00:00.000Z",
+    startsAt: new Date(Date.now() + 86400000).toISOString(),
+    endsAt: new Date(Date.now() + 93600000).toISOString(),
   };
 
   // Coach is PENDING -> cannot create availability

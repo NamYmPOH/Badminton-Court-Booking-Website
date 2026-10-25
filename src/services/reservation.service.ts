@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { type BookingRequest, priceBooking } from "../lib/booking-request";
-import { createVietQrUrl, PaymentError, type SepayConfig } from "../lib/sepay";
+import { buildVietQrPayload, createVietQrUrl, PaymentError, type SepayConfig } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { canPayBooking } from "../lib/booking-payment";
 
@@ -89,6 +89,8 @@ export function publicBooking(booking: StoredBooking, config?: SepayConfig) {
     priceLines,
     coach,
     qrUrl: payable && config ? createVietQrUrl(booking.total, booking.code, config) : null,
+    qrCleanUrl: payable && config ? createVietQrUrl(booking.total, booking.code, config, "qr_only") : null,
+    qrPayload: payable && config ? buildVietQrPayload(config.BANK_BIN, config.BANK_ACCOUNT_NO, booking.total, booking.code) : null,
     bank: payable && config ? { name: config.SEPAY_BANK_GATEWAY, accountNo: config.BANK_ACCOUNT_NO, accountName: config.BANK_ACCOUNT_NAME } : null,
   };
 }
