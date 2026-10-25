@@ -88,9 +88,32 @@ export function publicBooking(booking: StoredBooking, config?: SepayConfig) {
     })),
     priceLines,
     coach,
-    qrUrl: payable && config ? createVietQrUrl(booking.total, booking.code, config) : null,
-    qrCleanUrl: payable && config ? createVietQrUrl(booking.total, booking.code, config, "qr_only") : null,
-    qrPayload: payable && config ? buildVietQrPayload(config.BANK_BIN, config.BANK_ACCOUNT_NO, booking.total, booking.code) : null,
+    qrUrl: payable && config
+      ? createVietQrUrl(
+          booking.total,
+          config.SEPAY_BANK_GATEWAY.toLowerCase().includes("vietinbank") ? `SEVQR ${booking.code}` : booking.code,
+          config
+        )
+      : null,
+    qrCleanUrl: payable && config
+      ? createVietQrUrl(
+          booking.total,
+          config.SEPAY_BANK_GATEWAY.toLowerCase().includes("vietinbank") ? `SEVQR ${booking.code}` : booking.code,
+          config,
+          "qr_only"
+        )
+      : null,
+    qrPayload: payable && config
+      ? buildVietQrPayload(
+          config.BANK_BIN,
+          config.BANK_ACCOUNT_NO,
+          booking.total,
+          config.SEPAY_BANK_GATEWAY.toLowerCase().includes("vietinbank") ? `SEVQR ${booking.code}` : booking.code
+        )
+      : null,
+    paymentReference: config && config.SEPAY_BANK_GATEWAY.toLowerCase().includes("vietinbank")
+      ? `SEVQR ${booking.code}`
+      : booking.code,
     bank: payable && config ? { name: config.SEPAY_BANK_GATEWAY, accountNo: config.BANK_ACCOUNT_NO, accountName: config.BANK_ACCOUNT_NAME } : null,
   };
 }

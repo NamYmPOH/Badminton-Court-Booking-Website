@@ -41,12 +41,15 @@ test('payload validation, code boundaries, multiple codes and QR encoding', () =
   assert.throws(() => parseSepayEvent(Buffer.from('{')));
   assert.equal(extractBookingCode('ck datsan00123!'), 'DATSAN00123');
   for (const content of ['XDATSAN123', 'DATSAN123x', 'DATSAN12345678901', 'DATSAN123 DATSAN456']) assert.equal(extractBookingCode(content), null);
-  assert.equal(extractBookingCode('DATSAN123 DATSAN123'), 'DATSAN123');
+  assert.equal(extractBookingCode('SEVQR DATSAN00123'), 'DATSAN00123');
+  assert.equal(extractBookingCode('SEVQRDATSAN00123'), 'DATSAN00123');
   const url = new URL(createVietQrUrl(150000, 'DATSAN1234567890', config));
   assert.equal(url.searchParams.get('amount'), '150000');
   assert.equal(url.searchParams.get('addInfo'), 'DATSAN1234567890');
   assert.equal(url.searchParams.get('accountName'), config.BANK_ACCOUNT_NAME);
   assert.match(url.pathname, /0001234703/);
+  const sevqrUrl = new URL(createVietQrUrl(150000, 'SEVQR DATSAN1234567890', config));
+  assert.equal(sevqrUrl.searchParams.get('addInfo'), 'SEVQR DATSAN1234567890');
   const cleanUrl = new URL(createVietQrUrl(150000, 'DATSAN1234567890', config, 'qr_only'));
   assert.match(cleanUrl.pathname, /qr_only\.png$/);
   const emv = buildVietQrPayload(config.BANK_BIN, config.BANK_ACCOUNT_NO, 150000, 'DATSAN1234567890');

@@ -15,6 +15,7 @@ type PaymentBooking = Booking & {
   qrUrl: string | null;
   qrCleanUrl?: string | null;
   qrPayload?: string | null;
+  paymentReference?: string;
   bank: { name: string; accountNo: string; accountName: string } | null;
 };
 function PaymentResultContent() {
@@ -194,10 +195,10 @@ function PaymentResultContent() {
             <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2">
               <span className="text-muted">Nội dung CK:</span>
               <div className="flex items-center gap-2">
-                <strong className="font-mono font-bold text-amber-600 dark:text-amber-400">{booking.code}</strong>
+                <strong className="font-mono font-bold text-amber-600 dark:text-amber-400">{booking.paymentReference || booking.code}</strong>
                 <button
                   type="button"
-                  onClick={() => copy("code", booking.code)}
+                  onClick={() => copy("code", booking.paymentReference || booking.code)}
                   className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-200"
                 >
                   {copiedKey === "code" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}

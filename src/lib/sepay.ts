@@ -52,7 +52,8 @@ export function parseSepayEvent(raw: Buffer) {
 }
 
 export function extractBookingCode(content: string) {
-  const codes = new Set(Array.from(content.matchAll(/(?<![A-Z0-9])DATSAN(\d{1,10})(?![A-Z0-9])/gi))
+  const clean = content.replace(/SEVQR/gi, " ");
+  const codes = new Set(Array.from(clean.matchAll(/(?<![A-Z0-9])DATSAN(\d{1,10})(?![A-Z0-9])/gi))
     .map(match => `DATSAN${match[1]}`));
   return codes.size === 1 ? Array.from(codes)[0] : null;
 }
@@ -108,7 +109,7 @@ export function createVietQrUrl(
   config: Pick<SepayConfig, "BANK_BIN" | "BANK_ACCOUNT_NO" | "BANK_ACCOUNT_NAME">,
   template: "compact2" | "compact" | "qr_only" = "compact2"
 ) {
-  if (!Number.isSafeInteger(amount) || amount <= 0 || !/^(?:DATSAN\d{1,10}|GP[A-F0-9]{24})$/.test(code)) {
+  if (!Number.isSafeInteger(amount) || amount <= 0 || !/^(?:(?:SEVQR\s*)?(?:DATSAN\d{1,10}|GP[A-F0-9]{24}))$/i.test(code)) {
     throw new PaymentError(400, "Thông tin thanh toán không hợp lệ.");
   }
   const url = new URL(`https://img.vietqr.io/image/${config.BANK_BIN}-${config.BANK_ACCOUNT_NO}-${template}.png`);
