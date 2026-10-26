@@ -49,7 +49,10 @@ export default function RegisterPage() {
 
     if (res.success) {
       toast.success("Đăng ký tài khoản thành công! Bạn đã được đăng nhập.");
-      router.push("/");
+      const next = new URLSearchParams(window.location.search).get("callbackUrl");
+      // Cho phép chuyển hướng an toàn về các relative path nội bộ (như /checkout, /groups), ngăn chặn Open Redirect
+      const isSafePath = next && next.startsWith("/") && !next.startsWith("//") && !next.includes("://");
+      router.push(isSafePath ? next : "/");
       router.refresh();
     } else {
       setErrorMsg(res.error || "Đăng ký thất bại");

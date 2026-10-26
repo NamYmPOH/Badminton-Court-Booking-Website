@@ -28,7 +28,9 @@ export default function LoginPage() {
     if (res.success) {
       toast.success("Đăng nhập thành công!");
       const next = new URLSearchParams(window.location.search).get("callbackUrl");
-      router.push(next && /^\/groups\/[a-f0-9]{48}$/.test(next) ? next : "/");
+      // Cho phép chuyển hướng an toàn về các relative path nội bộ (như /checkout, /groups), ngăn chặn Open Redirect
+      const isSafePath = next && next.startsWith("/") && !next.startsWith("//") && !next.includes("://");
+      router.push(isSafePath ? next : "/");
       router.refresh();
     } else {
       setErrorMsg(res.error || "Đăng nhập thất bại");
