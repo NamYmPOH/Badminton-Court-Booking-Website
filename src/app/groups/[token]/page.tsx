@@ -8,6 +8,7 @@ import { formatVND } from "@/lib/utils";
 import { formatHour } from "@/lib/booking";
 import type { getGroupView } from "@/services/group-payment.service";
 import type { GroupAction } from "@/lib/group-payment";
+import { Copy, Check, Users, QrCode, Ticket, Share2 } from "lucide-react";
 
 type Group = Awaited<ReturnType<typeof getGroupView>>;
 const button =
@@ -36,6 +37,15 @@ export default function GroupPaymentPage({
   const [ticketInput, setTicketInput] = useState("");
   const [refund, setRefund] = useState("");
   const [reference, setReference] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = (key: string, text: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2500);
+    }
+  };
   const mutation = useRef(false);
   const version = useRef(0);
   const endpoint = `/api/groups/${encodeURIComponent(params.token)}`;
@@ -265,17 +275,23 @@ export default function GroupPaymentPage({
                   className="w-full rounded-control border border-border bg-surface p-2 text-ink"
                 />
                 <button
-                  className={`${button} mt-3`}
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(inviteUrl);
-                      setNotice("Đã sao chép liên kết mời nhóm.");
-                    } catch {
-                      setNotice("Hãy chọn và sao chép liên kết trong ô trên.");
-                    }
+                  type="button"
+                  className={`${button} mt-3 inline-flex items-center gap-1.5`}
+                  onClick={() => {
+                    handleCopy("invite", inviteUrl);
+                    setNotice("Đã sao chép liên kết mời nhóm.");
                   }}
                 >
-                  Sao chép liên kết
+                  {copiedKey === "invite" ? (
+                    <Check size={14} className="text-emerald-600" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                  <span>
+                    {copiedKey === "invite"
+                      ? "Đã sao chép liên kết"
+                      : "Sao chép liên kết mời"}
+                  </span>
                 </button>
               </div>
               {inviteQr && (
@@ -420,14 +436,58 @@ export default function GroupPaymentPage({
                           className="mx-auto h-auto max-w-full rounded-control"
                         />
                       )}
-                      <p>
-                        {i.bank.name} · {i.bank.accountNo}
-                      </p>
-                      <p>{i.bank.accountName}</p>
-                      <p className="break-all">
-                        Nội dung:{" "}
-                        <strong className="font-mono">{i.code}</strong>
-                      </p>
+                      <div className="space-y-2 rounded-control border border-border bg-bg p-3 text-xs text-muted">
+                        <div className="flex items-center justify-between">
+                          <span>Ngân hàng:</span>
+                          <strong className="text-ink font-semibold">{i.bank.name}</strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Số tài khoản:</span>
+                          <div className="flex items-center gap-2">
+                            <strong className="font-mono text-ink font-bold">{i.bank.accountNo}</strong>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`acc-${i.id}`, i.bank.accountNo)}
+                              className="inline-flex items-center gap-1 rounded border border-border bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink shadow-sm hover:bg-court-50"
+                            >
+                              {copiedKey === `acc-${i.id}` ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                              <span>{copiedKey === `acc-${i.id}` ? "Đã chép" : "Sao chép"}</span>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Chủ tài khoản:</span>
+                          <strong className="text-ink font-semibold">{i.bank.accountName}</strong>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-border/70 pt-2">
+                          <span>Số tiền chuyển:</span>
+                          <div className="flex items-center gap-2">
+                            <strong className="text-court-600 font-bold text-sm">{formatVND(i.amount)}</strong>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`amt-${i.id}`, String(i.amount))}
+                              className="inline-flex items-center gap-1 rounded border border-border bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink shadow-sm hover:bg-court-50"
+                            >
+                              {copiedKey === `amt-${i.id}` ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                              <span>{copiedKey === `amt-${i.id}` ? "Đã chép" : "Sao chép"}</span>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-border/70 pt-2">
+                          <span>Nội dung CK:</span>
+                          <div className="flex items-center gap-2">
+                            <strong className="font-mono text-amber-600 dark:text-amber-400 font-bold">{i.code}</strong>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`code-${i.id}`, i.code)}
+                              className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 shadow-sm hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+                            >
+                              {copiedKey === `code-${i.id}` ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                              <span>{copiedKey === `code-${i.id}` ? "Đã chép" : "Sao chép"}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                       <p className="text-sm text-muted">
                         Chuyển đúng số tiền và nội dung. Chờ hệ thống xác nhận
                         trước khi trả thêm.
