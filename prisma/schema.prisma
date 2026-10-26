@@ -76,6 +76,13 @@ enum ItemStatus {
   EXPIRED
 }
 
+enum SessionStatus {
+  UPCOMING
+  IN_USE
+  OVERDUE_PENDING
+  COMPLETED
+}
+
 enum PaymentProvider {
   VNPAY
   MOMO
@@ -240,6 +247,7 @@ model User {
   groupShares    GroupShare[]
   coachProfile   CoachProfile?
   partnerMembers PartnerMember[]
+  staffShifts    StaffShift[]
 }
 
 // ───────────── Cơ sở / Sân / Giá ─────────────
@@ -286,18 +294,41 @@ model Venue {
   vouchers            Voucher[]
   coachVenues         CoachVenue[]
   coachAvailabilities CoachAvailability[]
+  staffShifts         StaffShift[]
 
   @@index([status, district])
   @@index([lat, lng])
 }
 
 model VenueStaff {
-  userId  String
-  venueId String
-  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  venue   Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  userId    String
+  venueId   String
+  role      String   @default("RECEPTIONIST")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
 
   @@id([userId, venueId])
+  @@index([venueId, isActive])
+}
+
+model StaffShift {
+  id        String    @id @default(cuid())
+  userId    String
+  venueId   String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  note      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([venueId, endedAt])
+  @@index([userId, endedAt])
 }
 
 model Court {
@@ -367,6 +398,10 @@ model Booking {
   cancelledAt   DateTime?
   cancelReason  String?
   recurringId   String? // Phase 2
+  sessionStatus           SessionStatus @default(UPCOMING)
+  overdueNotifiedAt       DateTime?
+  hasCashPayment          Boolean       @default(false)
+  manualHandoverRequired  Boolean       @default(false)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 

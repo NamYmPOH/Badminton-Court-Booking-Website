@@ -64,8 +64,10 @@ export async function performAdminAction(
         include: { courts: true, pricing: true, owner: true },
       });
       if (!venue) throw new PaymentError(404, "Không tìm thấy cơ sở.");
+      const ownerRoleBefore = venue.owner?.role;
       if (input.status === "ACTIVE") {
         if (
+          !venue.owner ||
           venue.owner.status !== "ACTIVE" ||
           !venue.courts.some((c) => c.status === "ACTIVE") ||
           !venue.pricing.length
@@ -74,7 +76,8 @@ export async function performAdminAction(
             409,
             "Cơ sở cần chủ tài khoản hoạt động, sân hoạt động và bảng giá trước khi duyệt.",
           );
-        if (venue.owner.role === "CUSTOMER")
+        // Tự động chuyển vai trò sang OWNER nếu chưa phải ADMIN hay OWNER
+        if (venue.owner.role !== "ADMIN" && venue.owner.role !== "OWNER")
           await tx.user.update({
             where: { id: venue.ownerId },
             data: { role: "OWNER" },
@@ -89,7 +92,13 @@ export async function performAdminAction(
         after: input.status,
         venue: venue.name,
         ownerId: venue.ownerId,
-        ownerRoleBefore: venue.owner.role,
+        ownerRoleBefore,
+        ownerRoleAfter:
+          input.status === "ACTIVE" &&
+          ownerRoleBefore !== "ADMIN" &&
+          ownerRoleBefore !== "OWNER"
+            ? "OWNER"
+            : ownerRoleBefore,
       };
     } else if (input.action === "COACH_STATUS") {
       const coach = await tx.coachProfile.findUnique({
@@ -304,6 +313,7 @@ export async function performAdminAction(
       if (input.action === "CHECK_IN") update.status = "CHECKED_IN";
       if (input.action === "COMPLETE") {
         update.status = "COMPLETED";
+        update.sessionStatus = "COMPLETED";
         if (tx.coachBooking) {
           await tx.coachBooking.updateMany({
             where: {
@@ -362,6 +372,8 @@ export async function performAdminAction(
         });
         update.paymentStatus = "PAID";
         update.paymentMethod = "CASH";
+        update.hasCashPayment = true;
+        update.manualHandoverRequired = true;
         await recordVoucherConsumption(
           tx,
           booking.id,
