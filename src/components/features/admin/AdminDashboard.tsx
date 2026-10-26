@@ -233,6 +233,15 @@ export default function AdminDashboard() {
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.message || "Không thực hiện được thao tác.");
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        try {
+          const channel = new BroadcastChannel("smashbook-auth");
+          channel.postMessage("changed");
+          channel.close();
+        } catch {
+          // Trình duyệt không hỗ trợ hoặc chặn BroadcastChannel
+        }
+      }
       setAction(null);
       setMessage(`${title}: đã lưu và ghi nhật ký.`);
       setRefresh((v) => v + 1);

@@ -206,8 +206,22 @@ function database(patch = {}, failAudit = false) {
             ),
         },
         venue: {
-          findUnique: async () => copy.venue,
-          update: async ({ data }) => Object.assign(copy.venue, data),
+          findUnique: async ({ where }) => {
+            const v = Array.isArray(copy.venues)
+              ? copy.venues.find((item) => item.id === where?.id) || copy.venue
+              : copy.venue;
+            if (!v) return null;
+            const user = copy.users.find((u) => u.id === v.ownerId);
+            const owner = v.owner ? { ...user, ...v.owner } : user;
+            return { ...v, owner };
+          },
+          update: async ({ where, data }) => {
+            if (Array.isArray(copy.venues)) {
+              const item = copy.venues.find((v) => v.id === where?.id);
+              if (item) return Object.assign(item, data);
+            }
+            return Object.assign(copy.venue, data);
+          },
         },
         booking: {
           findUnique: async () => copy.booking,
@@ -402,3 +416,162 @@ test("manual reconciliation checks stored bank evidence and refuses reused/expir
     (e) => e.status === 409,
   );
 });
+
+test("quy trình duyệt cơ sở: duyệt thành công nâng quyền CUSTOMER thành OWNER và liên kết sân", async () => {
+  const db = database();
+  // Trạng thái ban đầu: venue PENDING, owner CUSTOMER
+  assert.equal(db.state.venue.status, "PENDING");
+  assert.equal(db.state.venue.ownerId, "customer");
+  assert.equal(db.state.users.find((u) => u.id === "customer").role, "CUSTOMER");
+
+  await performAdminAction(
+    db,
+    "admin",
+    action("VENUE_STATUS", { id: "v", status: "ACTIVE" }),
+  );
+
+  // Sau khi duyệt: venue ACTIVE, owner chuyển thành OWNER, ownerId liên kết chuẩn
+  assert.equal(db.state.venue.status, "ACTIVE");
+  assert.equal(db.state.venue.ownerId, "customer");
+  assert.equal(db.state.users.find((u) => u.id === "customer").role, "OWNER");
+
+  // Kiểm tra nhật ký kiểm toán ghi đúng thông tin
+  const lastAudit = db.state.audits[db.state.audits.length - 1];
+  assert.equal(lastAudit.action, "VENUE_STATUS");
+  assert.equal(lastAudit.entityId, "v");
+  assert.equal(lastAudit.details.before, "PENDING");
+  assert.equal(lastAudit.details.after, "ACTIVE");
+  assert.equal(lastAudit.details.ownerRoleBefore, "CUSTOMER");
+  assert.equal(lastAudit.details.ownerRoleAfter, "OWNER");
+});
+
+test("quy trình từ chối đăng ký cơ sở (SUSPENDED): không đổi vai trò tài khoản", async () => {
+  const db = database();
+  assert.equal(db.state.venue.status, "PENDING");
+  assert.equal(db.state.users.find((u) => u.id === "customer").role, "CUSTOMER");
+
+  await performAdminAction(
+    db,
+    "admin",
+    action("VENUE_STATUS", {
+      id: "v",
+      status: "SUSPENDED",
+      reason: "Hồ sơ cơ sở chưa đủ giấy phép kinh doanh hợp lệ",
+    }),
+  );
+
+  // Sân chuyển sang SUSPENDED
+  assert.equal(db.state.venue.status, "SUSPENDED");
+  // Vai trò của tài khoản KHÔNG bị thay đổi
+  assert.equal(db.state.users.find((u) => u.id === "customer").role, "CUSTOMER");
+
+  // Audit ghi nhận từ chối
+  const lastAudit = db.state.audits[db.state.audits.length - 1];
+  assert.equal(lastAudit.details.after, "SUSPENDED");
+  assert.equal(lastAudit.details.ownerRoleBefore, "CUSTOMER");
+  assert.equal(lastAudit.details.ownerRoleAfter, "CUSTOMER");
+});
+
+test("duyệt lặp cơ sở: an toàn, idempotent và giữ nguyên vai trò OWNER", async () => {
+  const db = database();
+
+  // Duyệt lần 1: thành công
+  await performAdminAction(
+    db,
+    "admin",
+    action("VENUE_STATUS", { id: "v", status: "ACTIVE" }),
+  );
+  assert.equal(db.state.venue.status, "ACTIVE");
+  assert.equal(db.state.users.find((u) => u.id === "customer").role, "OWNER");
+
+  // Duyệt lần 2 (nhấn duyệt lặp lại hoặc request đồng thời tới sau):
+  await performAdminAction(
+    db,
+    "admin",
+    action("VENUE_STATUS", { id: "v", status: "ACTIVE" }),
+  );
+  // Vẫn an toàn: sân vẫn ACTIVE, role vẫn là OWNER
+  assert.equal(db.state.venue.status, "ACTIVE");
+  assert.equal(db.state.users.find((u) => u.id === "customer").role, "OWNER");
+});
+
+test("tài khoản đã là chủ sân hoặc quản trị viên: duyệt thêm sân không hạ quyền, giữ vai trò cao hơn", async () => {
+  // Ca 1: Tài khoản đã là OWNER từ trước, duyệt thêm sân thứ 2
+  const dbOwner = database({
+    users: [
+      { id: "admin", name: "Administrator", role: "ADMIN", status: "ACTIVE" },
+      { id: "owner-user", name: "Existing Owner", role: "OWNER", status: "ACTIVE" },
+    ],
+    venue: {
+      id: "v-second",
+      name: "Cơ sở thứ 2",
+      status: "PENDING",
+      ownerId: "owner-user",
+      courts: [{ status: "ACTIVE" }],
+      pricing: [{}],
+    },
+  });
+
+  await performAdminAction(
+    dbOwner,
+    "admin",
+    action("VENUE_STATUS", { id: "v-second", status: "ACTIVE" }),
+  );
+  assert.equal(dbOwner.state.venue.status, "ACTIVE");
+  assert.equal(dbOwner.state.users.find((u) => u.id === "owner-user").role, "OWNER");
+
+  // Ca 2: Tài khoản ADMIN sở hữu cơ sở và được duyệt, không bao giờ bị hạ quyền xuống OWNER
+  const dbAdminOwner = database({
+    venue: {
+      id: "v-admin",
+      name: "Cơ sở của Admin",
+      status: "PENDING",
+      ownerId: "admin",
+      courts: [{ status: "ACTIVE" }],
+      pricing: [{}],
+    },
+  });
+
+  await performAdminAction(
+    dbAdminOwner,
+    "admin",
+    action("VENUE_STATUS", { id: "v-admin", status: "ACTIVE" }),
+  );
+  assert.equal(dbAdminOwner.state.venue.status, "ACTIVE");
+  assert.equal(dbAdminOwner.state.users.find((u) => u.id === "admin").role, "ADMIN");
+});
+
+test("người dùng không có quyền (CUSTOMER/STAFF) cố gọi API duyệt cơ sở: bị từ chối 403", async () => {
+  const db = database({
+    users: [
+      { id: "admin", name: "Administrator", role: "ADMIN", status: "ACTIVE" },
+      { id: "customer", name: "Customer", role: "CUSTOMER", status: "ACTIVE" },
+      { id: "staff", name: "Staff", role: "STAFF", status: "ACTIVE" },
+    ],
+  });
+
+  // CUSTOMER cố gọi duyệt sân
+  await assert.rejects(
+    performAdminAction(
+      db,
+      "customer",
+      action("VENUE_STATUS", { id: "v", status: "ACTIVE" }),
+    ),
+    (e) => e.status === 403 && e.message.includes("không có quyền quản trị"),
+  );
+
+  // STAFF cố gọi duyệt sân
+  await assert.rejects(
+    performAdminAction(
+      db,
+      "staff",
+      action("VENUE_STATUS", { id: "v", status: "ACTIVE" }),
+    ),
+    (e) => e.status === 403 && e.message.includes("không có quyền quản trị"),
+  );
+
+  // Đảm bảo không có thay đổi nào xảy ra trong DB
+  assert.equal(db.state.venue.status, "PENDING");
+  assert.equal(db.state.users.find((u) => u.id === "customer").role, "CUSTOMER");
+});
+
