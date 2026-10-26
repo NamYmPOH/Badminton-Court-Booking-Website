@@ -169,6 +169,19 @@ export default function AccountPage() {
 
       {/* Lối tắt quản lý */}
       <div className="mt-6 rounded-card border border-border bg-surface divide-y divide-border/60 text-sm">
+        {["ADMIN", "OWNER", "STAFF"].includes(user.role) && (
+          <Link
+            href="/venue-operations"
+            className="flex items-center justify-between p-4 transition hover:bg-court-50/50"
+          >
+            <div className="flex items-center gap-3">
+              <Shield size={18} className="text-court-600" />
+              <span className="font-medium text-ink">Quản lý đơn tại sân</span>
+            </div>
+            <span className="text-xs text-muted">›</span>
+          </Link>
+        )}
+
         <Link
           href="/bookings"
           className="flex items-center justify-between p-4 transition hover:bg-court-50/50"
