@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/lib/utils";
 import { formatHour } from "@/lib/booking";
-import { Clock, ShieldCheck, AlertTriangle, CheckCircle, UserCheck, UserX, UserPlus, RefreshCw } from "lucide-react";
+import { Clock, ShieldCheck, AlertTriangle, CheckCircle, UserCheck, UserX, UserPlus, RefreshCw, Plus, Settings } from "lucide-react";
+import CounterBookingModal from "@/components/features/venue-operations/CounterBookingModal";
+import VenueCourtsModal from "@/components/features/venue-operations/VenueCourtsModal";
+import RefundModal from "@/components/features/venue-operations/RefundModal";
 
 interface CourtInfo {
   id: string;
@@ -46,6 +49,11 @@ interface Order {
   isOverdue: boolean;
   endTimestamp: number;
   expiresAt: string | null;
+  cancelRequestedAt?: string | null;
+  cancelApprovedAt?: string | null;
+  refundAmountApproved?: number | null;
+  refundCompletedAt?: string | null;
+  source?: string;
   venue: { id: string; name: string; paymentMode: string };
   items: { date: string; startMin: number; endMin: number; court: { id: string; name: string } }[];
   group?: {
@@ -92,6 +100,14 @@ export default function VenueOperationsPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
+  // Modals mới
+  const [showCounterModal, setShowCounterModal] = useState(false);
+  const [showCourtsModal, setShowCourtsModal] = useState(false);
+  const [refundModal, setRefundModal] = useState<{
+    booking: Order;
+    mode: "APPROVE" | "RECORD";
+  } | null>(null);
+
   // Modal Xác Nhận Thu Tiền Mặt (Bước 1)
   const [cashModal, setCashModal] = useState<{
     orderId: string;
@@ -101,7 +117,7 @@ export default function VenueOperationsPage() {
   } | null>(null);
   const [cashNote, setCashNote] = useState("Đã nhận đủ tiền mặt trực tiếp tại quầy");
 
-  // Hộp thoại xác nhận các thao tác khác (CHECK_IN, COMPLETE, CANCEL)
+  // Hộp thoại xác nhận các thao tác khác (CONFIRM, CHECK_IN, COMPLETE, CANCEL, CANCEL_REQUEST)
   const [actionModal, setActionModal] = useState<{
     id: string;
     action: string;
@@ -398,7 +414,22 @@ export default function VenueOperationsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Nút có nhãn chính xác: "Nhân viên tạo đơn" */}
+          <button
+            type="button"
+            onClick={() => {
+              if (user.role === "STAFF" && !isOnShift) {
+                setError("Bạn cần bấm 'Bắt đầu ca trực' trước khi tạo đơn tại quầy cho khách.");
+                return;
+              }
+              setShowCounterModal(true);
+            }}
+            className="rounded-control bg-court-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-court-700 shadow-sm inline-flex items-center gap-1.5"
+          >
+            <Plus size={14} /> Nhân viên tạo đơn
+          </button>
+
           {isOnShift ? (
             <button
               disabled={busy}
@@ -411,19 +442,28 @@ export default function VenueOperationsPage() {
             <button
               disabled={busy}
               onClick={() => void toggleShift("START_SHIFT")}
-              className="rounded-control bg-court-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-court-700"
+              className="rounded-control border border-court-600 bg-court-50 px-3 py-1.5 text-xs font-semibold text-court-700 hover:bg-court-100 dark:bg-court-950/40 dark:text-court-300"
             >
               {busy ? "Đang lưu..." : "Bắt đầu ca trực"}
             </button>
           )}
 
           {["ADMIN", "OWNER"].includes(user.role) && (
-            <button
-              onClick={() => setShowStaffTab(!showStaffTab)}
-              className="rounded-control border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-court-50"
-            >
-              {showStaffTab ? "Ẩn quản lý nhân viên" : "Quản lý nhân viên cụm sân"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowCourtsModal(true)}
+                className="rounded-control border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-court-50 inline-flex items-center gap-1"
+              >
+                <Settings size={13} /> Sân & Bảng giá
+              </button>
+              <button
+                onClick={() => setShowStaffTab(!showStaffTab)}
+                className="rounded-control border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-court-50"
+              >
+                {showStaffTab ? "Ẩn nhân viên" : "Nhân viên cụm sân"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -696,8 +736,26 @@ export default function VenueOperationsPage() {
 
                   {/* Thanh điều khiển thao tác */}
                   <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+                    {/* Duyệt đơn (CONFIRM) cho đơn chờ thanh toán / chờ duyệt */}
+                    {order.status === "PENDING_PAYMENT" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          setActionModal({
+                            id: order.id,
+                            action: "CONFIRM",
+                            title: `Duyệt xác nhận đơn ${order.code}`,
+                          })
+                        }
+                        className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-court-700"
+                      >
+                        Duyệt đơn
+                      </button>
+                    )}
+
                     {/* Bước 1: Thu tiền mặt nếu còn thiếu */}
-                    {order.remaining > 0 && (
+                    {order.remaining > 0 && order.status !== "CANCELLED" && (
                       <button
                         type="button"
                         disabled={busy}
@@ -715,8 +773,8 @@ export default function VenueOperationsPage() {
                       </button>
                     )}
 
-                    {/* Nhận sân */}
-                    {order.status === "CONFIRMED" && order.remaining === 0 && (
+                    {/* Nhận sân: Cho phép check-in với đơn đã xác nhận (kể cả chưa trả tiền nếu là thanh toán tại sân) */}
+                    {order.status === "CONFIRMED" && (order.remaining === 0 || order.hasCashPayment || order.paymentMethod === "CASH") && (
                       <button
                         type="button"
                         disabled={busy}
@@ -760,22 +818,74 @@ export default function VenueOperationsPage() {
                       Hoàn tất & Bàn giao sân
                     </button>
 
-                    {/* Hủy đơn */}
-                    {order.status === "CONFIRMED" && (
+                    {/* Quy trình hoàn tiền: Nếu đã được duyệt hoàn tiền -> Ghi nhận đã hoàn tiền */}
+                    {order.cancelApprovedAt && order.refundAmountApproved && !order.refundCompletedAt && (
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() =>
-                          setActionModal({
-                            id: order.id,
-                            action: "CANCEL",
-                            title: `Hủy đơn ${order.code}`,
-                          })
-                        }
-                        className="rounded-control border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        onClick={() => setRefundModal({ booking: order, mode: "RECORD" })}
+                        className="rounded-control bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm"
                       >
-                        Hủy
+                        Đã hoàn tiền ({formatVND(order.refundAmountApproved)})
                       </button>
+                    )}
+
+                    {/* Nếu có yêu cầu hủy chờ duyệt và là OWNER / ADMIN -> Phê duyệt hoàn tiền */}
+                    {(order.cancelRequestedAt || order.paymentStatus === "REFUND_PENDING") && !order.cancelApprovedAt && ["ADMIN", "OWNER"].includes(user.role) && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setRefundModal({ booking: order, mode: "APPROVE" })}
+                        className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-court-700 shadow-sm"
+                      >
+                        Duyệt hủy & hoàn tiền
+                      </button>
+                    )}
+
+                    {/* Nếu có yêu cầu hủy mà là STAFF -> badge thông báo */}
+                    {order.cancelRequestedAt && !order.cancelApprovedAt && user.role === "STAFF" && (
+                      <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        Chờ chủ sân duyệt hủy
+                      </span>
+                    )}
+
+                    {/* Hủy đơn chưa thanh toán hoặc Gửi yêu cầu hủy đơn đã thanh toán */}
+                    {["PENDING_PAYMENT", "CONFIRMED"].includes(order.status) && !order.cancelRequestedAt && (
+                      order.totalPaid > 0 ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            if (["ADMIN", "OWNER"].includes(user.role)) {
+                              setRefundModal({ booking: order, mode: "APPROVE" });
+                            } else {
+                              setActionModal({
+                                id: order.id,
+                                action: "CANCEL_REQUEST",
+                                title: `Gửi yêu cầu hủy đơn đã thanh toán ${order.code}`,
+                              });
+                            }
+                          }}
+                          className="rounded-control border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        >
+                          {["ADMIN", "OWNER"].includes(user.role) ? "Hủy & Duyệt hoàn tiền" : "Yêu cầu hủy"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            setActionModal({
+                              id: order.id,
+                              action: "CANCEL",
+                              title: `Hủy đơn chưa thanh toán ${order.code}`,
+                            })
+                          }
+                          className="rounded-control border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        >
+                          Hủy đơn
+                        </button>
+                      )
                     )}
                   </div>
                 </article>
@@ -876,6 +986,42 @@ export default function VenueOperationsPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Nhân viên tạo đơn tại quầy */}
+      <CounterBookingModal
+        isOpen={showCounterModal}
+        onClose={() => setShowCounterModal(false)}
+        venueId={selectedVenueId}
+        venueName={venues.find((v) => v.id === selectedVenueId)?.name || "Cụm sân"}
+        onSuccess={() => {
+          setNotice("Đã tạo đơn tại quầy cho khách thành công!");
+          void refresh();
+        }}
+      />
+
+      {/* Modal Quản lý sân con, bảng giá & khóa khung giờ */}
+      <VenueCourtsModal
+        isOpen={showCourtsModal}
+        onClose={() => setShowCourtsModal(false)}
+        venueId={selectedVenueId}
+        venueName={venues.find((v) => v.id === selectedVenueId)?.name || "Cụm sân"}
+        onUpdated={() => {
+          void refresh();
+        }}
+      />
+
+      {/* Modal Duyệt hủy & Hoàn tiền 2 bước */}
+      <RefundModal
+        isOpen={Boolean(refundModal)}
+        onClose={() => setRefundModal(null)}
+        booking={refundModal?.booking || null}
+        userRole={user.role}
+        mode={refundModal?.mode || "APPROVE"}
+        onSuccess={() => {
+          setNotice("Đã cập nhật trạng thái hủy và hoàn tiền thành công!");
+          void refresh();
+        }}
+      />
     </main>
   );
 }

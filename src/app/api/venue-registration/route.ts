@@ -33,10 +33,12 @@ export async function POST(request: Request) {
     const result = await serializable(db, async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: userId },
-        select: { status: true },
+        select: { status: true, role: true },
       });
       if (user?.status !== "ACTIVE")
         throw new PaymentError(403, "Tài khoản không hoạt động.");
+      if (user.role === "STAFF")
+        throw new PaymentError(403, "Nhân viên không có quyền đăng ký cơ sở sân mới.");
       if (
         (await tx.venue.count({
           where: { ownerId: userId, status: "PENDING" },

@@ -1,6 +1,9 @@
 import { Prisma, type PrismaClient, type SessionStatus } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import { randomInt } from "node:crypto";
 import { PaymentError } from "../lib/sepay";
 import { serializable } from "../lib/transaction";
+import { formatHour } from "../lib/booking";
 
 export interface BookingTimeSlot {
   date: Date | string;
@@ -108,31 +111,27 @@ export async function assertVenueOperatorAccess(
     return { isOwnerOrAdmin: true, isStaff: false };
   }
 
-  if (actor.role === "OWNER") {
-    const venue = await tx.venue.findFirst({
-      where: { id: venueId, ownerId: actor.id },
-      select: { id: true },
-    });
-    if (!venue) {
-      throw new PaymentError(403, "Bạn không có quyền quản lý cơ sở sân này.");
-    }
+  // 1. Kiểm tra vai trò chủ sở hữu cơ sở
+  const ownedVenue = await tx.venue.findFirst({
+    where: { id: venueId, ownerId: actor.id },
+    select: { id: true, status: true },
+  });
+  if (ownedVenue) {
     return { isOwnerOrAdmin: true, isStaff: false };
   }
 
-  if (actor.role === "STAFF") {
-    const staff = await tx.venueStaff.findFirst({
-      where: {
-        userId: actor.id,
-        venueId,
-        isActive: true,
-      },
-      select: { role: true, isActive: true },
-    });
+  // 2. Kiểm tra vai trò nhân viên tại cơ sở (áp dụng cả khi role hệ thống là STAFF hoặc OWNER của sân khác)
+  const staff = await tx.venueStaff.findFirst({
+    where: {
+      userId: actor.id,
+      venueId,
+      isActive: true,
+      venue: { status: "ACTIVE" },
+    },
+    select: { role: true, isActive: true },
+  });
 
-    if (!staff || !staff.isActive) {
-      throw new PaymentError(403, "Bạn không có quyền hoặc đã bị vô hiệu hóa quyền làm việc tại cơ sở này.");
-    }
-
+  if (staff && staff.isActive) {
     if (requireActiveShift) {
       const activeShift = await tx.staffShift.findFirst({
         where: {
@@ -146,11 +145,10 @@ export async function assertVenueOperatorAccess(
         throw new PaymentError(403, "Bạn cần bắt đầu ca trực để thực hiện thao tác này tại sân.");
       }
     }
-
     return { isOwnerOrAdmin: false, isStaff: true };
   }
 
-  throw new PaymentError(403, "Bạn không có quyền truy cập quản lý sân.");
+  throw new PaymentError(403, "Bạn không có quyền quản lý hoặc làm việc tại cơ sở sân này.");
 }
 
 export interface CourtLiveStatus {
@@ -776,11 +774,37 @@ export async function getVenueStaffList(
   actor: { id: string; role: string; status: string },
   venueId: string
 ) {
-  // Chỉ OWNER của cơ sở này hoặc ADMIN
-  if (actor.role !== "ADMIN") {
-    const venue = await db.venue.findFirst({
+  let venue: {
+    id: string;
+    name: string;
+    status: string;
+    ownerId: string;
+    owner: { name: string; phone: string | null; email: string | null; status: string };
+  } | null = null;
+
+  // ADMIN hoặc OWNER của cơ sở này
+  if (actor.role === "ADMIN") {
+    venue = await db.venue.findUnique({
+      where: { id: venueId },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        ownerId: true,
+        owner: { select: { name: true, phone: true, email: true, status: true } },
+      },
+    });
+    if (!venue) throw new PaymentError(404, "Không tìm thấy cơ sở.");
+  } else {
+    venue = await db.venue.findFirst({
       where: { id: venueId, ownerId: actor.id },
-      select: { id: true },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        ownerId: true,
+        owner: { select: { name: true, phone: true, email: true, status: true } },
+      },
     });
     if (!venue) throw new PaymentError(403, "Bạn không có quyền quản lý nhân viên của cơ sở này.");
   }
@@ -811,18 +835,27 @@ export async function getVenueStaffList(
 
   const shiftUserIds = new Set(activeShifts.map((s) => s.userId));
 
-  return staff.map((s) => ({
-    userId: s.userId,
-    venueId: s.venueId,
-    name: s.user.name,
-    phone: s.user.phone,
-    email: s.user.email,
-    userStatus: s.user.status,
-    role: s.role,
-    isActive: s.isActive,
-    isOnShift: shiftUserIds.has(s.userId),
-    createdAt: s.createdAt,
-  }));
+  return {
+    venue: {
+      id: venue.id,
+      name: venue.name,
+      status: venue.status,
+      ownerId: venue.ownerId,
+      owner: venue.owner,
+    },
+    staff: staff.map((s) => ({
+      userId: s.userId,
+      venueId: s.venueId,
+      name: s.user.name,
+      phone: s.user.phone,
+      email: s.user.email,
+      userStatus: s.user.status,
+      role: s.role,
+      isActive: s.isActive,
+      isOnShift: shiftUserIds.has(s.userId),
+      createdAt: s.createdAt,
+    })),
+  };
 }
 
 export async function addVenueStaff(
@@ -832,13 +865,19 @@ export async function addVenueStaff(
   identifier: string,
   role = "RECEPTIONIST"
 ) {
+  if (role === "ADMIN" || role === "OWNER") {
+    throw new PaymentError(400, "Không thể cấp vai trò Quản trị viên hoặc Chủ sân qua quan hệ nhân viên.");
+  }
+
   return serializable(db, async (tx) => {
     if (actor.role !== "ADMIN") {
       const venue = await tx.venue.findFirst({
-        where: { id: venueId, ownerId: actor.id },
+        where: { id: venueId, ownerId: actor.id, status: "ACTIVE" },
         select: { id: true },
       });
-      if (!venue) throw new PaymentError(403, "Bạn không có quyền quản lý nhân viên cơ sở này.");
+      if (!venue) {
+        throw new PaymentError(403, "Cơ sở sân cần được duyệt và đang hoạt động để phân công nhân viên.");
+      }
     }
 
     const cleanIdentifier = identifier.trim();
@@ -851,10 +890,11 @@ export async function addVenueStaff(
     if (!user) {
       throw new PaymentError(
         404,
-        "Không tìm thấy tài khoản với số điện thoại hoặc email này. Nhân viên cần đăng ký tài khoản trước."
+        "Không tìm thấy tài khoản với số điện thoại hoặc email này. Nhân viên cần đăng ký tài khoản trước hoặc dùng tính năng Tạo tài khoản nhân viên mới."
       );
     }
 
+    // Không hạ quyền của OWNER hoặc ADMIN nếu người đó được thêm làm nhân viên sân khác
     if (user.role === "CUSTOMER") {
       await tx.user.update({
         where: { id: user.id },
@@ -883,7 +923,7 @@ export async function addVenueStaff(
         action: "ADD_STAFF",
         entityId: staff.userId,
         reason: `Gán nhân viên ${user.name} vào cơ sở`,
-        details: { venueId, role },
+        details: { venueId, role, userRole: user.role },
       },
     });
 
@@ -901,36 +941,146 @@ export async function addVenueStaff(
   });
 }
 
+export async function createVenueStaffAccount(
+  db: PrismaClient,
+  actor: { id: string; role: string; status: string; name: string },
+  venueId: string,
+  input: {
+    name: string;
+    phone: string;
+    email?: string | null;
+    password: string;
+    role?: string;
+  }
+) {
+  const role = input.role || "RECEPTIONIST";
+  if (role === "ADMIN" || role === "OWNER") {
+    throw new PaymentError(400, "Không thể cấp vai trò Quản trị viên hoặc Chủ sân qua API nhân viên.");
+  }
+
+  return serializable(db, async (tx) => {
+    if (actor.role !== "ADMIN") {
+      const venue = await tx.venue.findFirst({
+        where: { id: venueId, ownerId: actor.id, status: "ACTIVE" },
+        select: { id: true },
+      });
+      if (!venue) {
+        throw new PaymentError(403, "Cơ sở sân cần được duyệt và đang hoạt động trước khi tạo tài khoản nhân viên.");
+      }
+    }
+
+    const cleanPhone = input.phone.trim();
+    const cleanEmail = input.email ? input.email.trim().toLowerCase() : null;
+
+    // Kiểm tra trùng tài khoản
+    const existing = await tx.user.findFirst({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          ...(cleanEmail ? [{ email: cleanEmail }] : []),
+        ],
+      },
+      select: { id: true, phone: true, email: true },
+    });
+    if (existing) {
+      throw new PaymentError(
+        409,
+        "Số điện thoại hoặc email này đã tồn tại trên hệ thống. Vui lòng dùng tính năng Thêm nhân viên có sẵn."
+      );
+    }
+
+    if (!input.password || input.password.length < 6) {
+      throw new PaymentError(400, "Mật khẩu ban đầu phải có ít nhất 6 ký tự.");
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, 10);
+    const newUser = await tx.user.create({
+      data: {
+        name: input.name.trim(),
+        phone: cleanPhone,
+        email: cleanEmail,
+        passwordHash,
+        role: "STAFF",
+        status: "ACTIVE",
+      },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        role: true,
+        status: true,
+      },
+    });
+
+    const staff = await tx.venueStaff.create({
+      data: {
+        userId: newUser.id,
+        venueId,
+        role,
+        isActive: true,
+      },
+    });
+
+    await tx.adminAudit.create({
+      data: {
+        actorId: actor.id,
+        actorName: actor.name,
+        action: "CREATE_STAFF_ACCOUNT",
+        entityId: newUser.id,
+        reason: `Tạo tài khoản nhân viên mới ${newUser.name} tại cơ sở`,
+        details: { venueId, role, phone: newUser.phone, email: newUser.email },
+      },
+    });
+
+    return {
+      success: true,
+      staff: {
+        userId: newUser.id,
+        name: newUser.name,
+        phone: newUser.phone,
+        email: newUser.email,
+        role: staff.role,
+        isActive: staff.isActive,
+      },
+    };
+  });
+}
+
 export async function setVenueStaffActive(
   db: PrismaClient,
   actor: { id: string; role: string; status: string; name: string },
   venueId: string,
   targetUserId: string,
-  isActive: boolean
+  isActive: boolean,
+  reason?: string
 ) {
   return serializable(db, async (tx) => {
     if (actor.role !== "ADMIN") {
       const venue = await tx.venue.findFirst({
-        where: { id: venueId, ownerId: actor.id },
+        where: { id: venueId, ownerId: actor.id, status: "ACTIVE" },
         select: { id: true },
       });
-      if (!venue) throw new PaymentError(403, "Bạn không có quyền quản lý nhân viên cơ sở này.");
+      if (!venue) throw new PaymentError(403, "Bạn không có quyền quản lý nhân viên cơ sở này hoặc cơ sở chưa hoạt động.");
     }
 
     const staff = await tx.venueStaff.findUnique({
       where: { userId_venueId: { userId: targetUserId, venueId } },
+      include: { user: { select: { name: true, phone: true } } },
     });
 
     if (!staff) {
       throw new PaymentError(404, "Nhân viên không thuộc cơ sở này.");
     }
 
+    const beforeStatus = staff.isActive;
+
     await tx.venueStaff.update({
       where: { userId_venueId: { userId: targetUserId, venueId } },
       data: { isActive },
     });
 
-    // Nếu vô hiệu hóa nhân viên: đóng ngay lập tức bất kỳ ca làm nào đang mở
+    // Nếu vô hiệu hóa/sa thải: đóng ngay lập tức bất kỳ ca làm nào đang mở tại cơ sở này
     if (!isActive) {
       await tx.staffShift.updateMany({
         where: {
@@ -951,11 +1101,583 @@ export async function setVenueStaffActive(
         actorName: actor.name,
         action: "SET_STAFF_STATUS",
         entityId: targetUserId,
-        reason: isActive ? "Kích hoạt lại nhân viên" : "Vô hiệu hóa quyền nhân viên tại cơ sở",
-        details: { venueId, isActive },
+        reason: reason || (isActive ? "Kích hoạt lại quyền nhân viên tại cơ sở" : "Vô hiệu hóa/sa thải nhân viên tại cơ sở"),
+        details: {
+          venueId,
+          before: beforeStatus,
+          after: isActive,
+          targetName: staff.user.name,
+        },
       },
     });
 
     return { success: true, isActive };
+  });
+}
+
+// ───────────── Thông Báo Nghiệp Vụ Tại Cơ Sở ─────────────
+
+export async function sendVenueNotification(
+  tx: Prisma.TransactionClient,
+  venueId: string,
+  title: string,
+  body: string,
+  data: Record<string, unknown>,
+  excludeUserId?: string
+) {
+  const venue = await tx.venue.findUnique({
+    where: { id: venueId },
+    select: { ownerId: true, owner: { select: { status: true } } },
+  });
+  if (!venue) return;
+
+  const recipientIds = new Set<string>();
+  if (venue.owner?.status === "ACTIVE") {
+    recipientIds.add(venue.ownerId);
+  }
+
+  const staffMembers = await tx.venueStaff.findMany({
+    where: {
+      venueId,
+      isActive: true,
+      user: { status: "ACTIVE" },
+    },
+    select: { userId: true },
+  });
+
+  for (const s of staffMembers) {
+    recipientIds.add(s.userId);
+  }
+
+  if (excludeUserId) {
+    recipientIds.delete(excludeUserId);
+  }
+
+  const idList = Array.from(recipientIds);
+  for (const userId of idList) {
+    const bookingId = data.bookingId as string | undefined;
+
+    // Chống gửi trùng lặp nếu thông báo cùng bookingId đã tạo trong 5 phút
+    if (bookingId) {
+      const existing = await tx.notification.findFirst({
+        where: {
+          userId,
+          type: "SYSTEM",
+          data: {
+            path: ["bookingId"],
+            equals: bookingId,
+          },
+        },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (existing && Date.now() - existing.createdAt.getTime() < 300000) {
+        continue;
+      }
+    }
+
+    await tx.notification.create({
+      data: {
+        userId,
+        type: "SYSTEM",
+        title,
+        body,
+        data: data as Prisma.InputJsonValue,
+      },
+    });
+  }
+}
+
+// ───────────── Tạo Đơn Tại Quầy (Counter Booking) ─────────────
+
+export interface CounterBookingInput {
+  venueId: string;
+  courtId: string;
+  date: string; // YYYY-MM-DD
+  startMin: number;
+  endMin: number;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string | null;
+  note?: string | null;
+  paymentMethod: "CASH" | "BANK_TRANSFER";
+  requestId?: string;
+}
+
+export async function createCounterBooking(
+  db: PrismaClient,
+  actor: { id: string; role: string; status: string; name: string },
+  input: CounterBookingInput,
+  now = new Date()
+) {
+  return serializable(db, async (tx) => {
+    // 1. Phân quyền và ca trực: STAFF bắt buộc có ca trực đang mở
+    await assertVenueOperatorAccess(tx, actor, input.venueId, actor.role === "STAFF");
+
+    // 2. Chống gửi trùng request
+    if (input.requestId) {
+      const existing = await tx.booking.findUnique({
+        where: { requestId: input.requestId },
+        include: {
+          items: { include: { court: true } },
+          venue: { select: { id: true, name: true, paymentMode: true } },
+          payments: true,
+        },
+      });
+      if (existing) {
+        return { success: true, booking: existing, alreadyCreated: true };
+      }
+    }
+
+    // 3. Cơ sở
+    const venue = await tx.venue.findUnique({
+      where: { id: input.venueId },
+      include: { pricing: true },
+    });
+    if (!venue || venue.status !== "ACTIVE") {
+      throw new PaymentError(400, "Cơ sở này hiện không thể nhận đặt sân.");
+    }
+
+    if (input.startMin < venue.openMin || input.endMin > venue.closeMin) {
+      throw new PaymentError(400, "Khung giờ nằm ngoài thời gian hoạt động của cơ sở.");
+    }
+    const durationMin = input.endMin - input.startMin;
+    if (durationMin < venue.minBookingMin || durationMin > venue.maxBookingMin) {
+      throw new PaymentError(400, `Thời gian đặt sân phải từ ${venue.minBookingMin} đến ${venue.maxBookingMin} phút.`);
+    }
+
+    // 4. Sân con
+    const court = await tx.court.findFirst({
+      where: { id: input.courtId, venueId: input.venueId, status: "ACTIVE" },
+    });
+    if (!court) {
+      throw new PaymentError(404, "Sân không tồn tại hoặc đang bảo trì.");
+    }
+
+    // 5. Kiểm tra trùng lịch
+    const dateObj = new Date(`${input.date}T00:00:00.000Z`);
+    const blocked = await tx.courtBlock.findFirst({
+      where: {
+        courtId: input.courtId,
+        date: dateObj,
+        startMin: { lt: input.endMin },
+        endMin: { gt: input.startMin },
+      },
+    });
+    if (blocked) {
+      throw new PaymentError(409, "Khung giờ này đã bị khóa. Vui lòng chọn giờ khác.");
+    }
+
+    const conflict = await tx.bookingItem.findFirst({
+      where: {
+        courtId: input.courtId,
+        date: dateObj,
+        startMin: { lt: input.endMin },
+        endMin: { gt: input.startMin },
+        status: { in: ["HELD", "CONFIRMED"] },
+        booking: {
+          OR: [
+            { status: { in: ["CONFIRMED", "CHECKED_IN", "COMPLETED", "NO_SHOW"] } },
+            { status: "PENDING_PAYMENT", expiresAt: { gt: now } },
+          ],
+        },
+      },
+    });
+    if (conflict) {
+      throw new PaymentError(409, "Khung giờ này đã có người đặt. Vui lòng chọn khung giờ khác.");
+    }
+
+    // 6. Tính giá backend
+    const dayOfWeek = dateObj.getUTCDay() === 0 ? 7 : dateObj.getUTCDay();
+    const matchedRule = venue.pricing.find(
+      (p) =>
+        p.daysOfWeek.includes(dayOfWeek) &&
+        p.startMin <= input.startMin &&
+        p.endMin >= input.endMin
+    );
+    const hourlyRate = matchedRule?.walkInPrice ?? venue.priceFrom ?? 100000;
+    const price = Math.round((hourlyRate * durationMin) / 60);
+
+    const isCash = input.paymentMethod === "CASH";
+    const code = `DATSAN${randomInt(1000000000, 10000000000)}`;
+
+    // 7. Tạo Booking tách biệt dữ liệu: userId = null (khách vãng lai), createdByStaffId = actor.id
+    const booking = await tx.booking.create({
+      data: {
+        requestId: input.requestId,
+        code,
+        userId: null,
+        venueId: venue.id,
+        source: "COUNTER",
+        status: "CONFIRMED",
+        paymentStatus: isCash ? "UNPAID" : "PENDING",
+        paymentMethod: isCash ? "CASH" : "BANK_TRANSFER",
+        customerName: input.customerName.trim(),
+        customerPhone: input.customerPhone.trim(),
+        note: input.note ? input.note.trim() : null,
+        subtotal: price,
+        discount: 0,
+        total: price,
+        hasCashPayment: isCash,
+        manualHandoverRequired: true,
+        createdByStaffId: actor.id,
+        expiresAt: null, // Đơn tại quầy không hết hạn giữ chỗ như đơn online
+        sessionStatus: "UPCOMING",
+        items: {
+          create: {
+            courtId: court.id,
+            date: dateObj,
+            startMin: input.startMin,
+            endMin: input.endMin,
+            price,
+            status: "CONFIRMED",
+          },
+        },
+        priceLines: {
+          create: {
+            type: "COURT",
+            amount: price,
+            label: `Tiền thuê ${court.name} (${durationMin} phút - tại quầy)`,
+            beneficiaryId: venue.ownerId,
+          },
+        },
+      },
+      include: {
+        items: { include: { court: true } },
+        venue: { select: { id: true, name: true, paymentMode: true } },
+      },
+    });
+
+    // 8. Nhật ký và thông báo
+    await tx.adminAudit.create({
+      data: {
+        actorId: actor.id,
+        actorName: actor.name,
+        action: "COUNTER_BOOKING",
+        entityId: booking.id,
+        reason: `Nhân viên ${actor.name} tạo đơn tại quầy cho khách ${booking.customerName}`,
+        details: {
+          code: booking.code,
+          venueId: venue.id,
+          courtName: court.name,
+          date: input.date,
+          startMin: input.startMin,
+          endMin: input.endMin,
+          price,
+          paymentMethod: input.paymentMethod,
+        },
+      },
+    });
+
+    await sendVenueNotification(
+      tx,
+      venue.id,
+      `Đơn tại quầy mới · ${booking.code}`,
+      `Nhân viên ${actor.name} vừa tạo đơn tại quầy cho khách ${booking.customerName} (${court.name}, ${formatHour(input.startMin)} - ${formatHour(input.endMin)}).`,
+      {
+        tag: "COUNTER_BOOKING",
+        bookingId: booking.id,
+        bookingCode: booking.code,
+        venueId: venue.id,
+        staffName: actor.name,
+      },
+      actor.id
+    );
+
+    return { success: true, booking };
+  });
+}
+
+// ───────────── Hủy Đơn & Hoàn Tiền ─────────────
+
+export async function requestBookingCancellation(
+  db: PrismaClient,
+  actor: { id: string; role: string; status: string; name: string },
+  bookingId: string,
+  reason: string,
+  now = new Date()
+) {
+  return serializable(db, async (tx) => {
+    const booking = await tx.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        venue: true,
+        items: true,
+        payments: { where: { status: "PAID" } },
+      },
+    });
+    if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
+
+    const isCustomer = booking.userId === actor.id;
+    let isOwnerOrAdmin = actor.role === "ADMIN" || booking.venue.ownerId === actor.id;
+
+    if (!isCustomer && !isOwnerOrAdmin) {
+      const staff = await tx.venueStaff.findFirst({
+        where: { userId: actor.id, venueId: booking.venueId, isActive: true },
+      });
+      if (!staff) throw new PaymentError(403, "Bạn không có quyền thao tác trên đơn này.");
+    }
+
+    if (["CANCELLED", "COMPLETED"].includes(booking.status)) {
+      throw new PaymentError(409, "Đơn đã kết thúc hoặc đã bị hủy trước đó.");
+    }
+
+    const paidPayments = booking.payments.filter((p) => p.status === "PAID");
+    const totalPaid = paidPayments.reduce((s, p) => s + p.amount, 0);
+    const isPaid = booking.paymentStatus === "PAID" || totalPaid > 0;
+
+    // Đơn chưa thanh toán: hủy ngay lập tức
+    if (!isPaid) {
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: now,
+          cancelReason: reason,
+          expiresAt: null,
+        },
+      });
+      await tx.bookingItem.updateMany({
+        where: { bookingId: booking.id, status: { in: ["HELD", "CONFIRMED"] } },
+        data: { status: "CANCELLED" },
+      });
+      if (tx.coachBooking) {
+        await tx.coachBooking.updateMany({
+          where: { bookingItem: { bookingId: booking.id }, status: { in: ["HELD", "CONFIRMED"] } },
+          data: { status: "CANCELLED", cancelledAt: now, cancelReason: reason },
+        });
+      }
+      if (tx.offerUsage) {
+        await tx.offerUsage.updateMany({
+          where: { bookingId: booking.id, state: "RESERVED" },
+          data: { state: "RELEASED" },
+        });
+      }
+
+      await tx.adminAudit.create({
+        data: {
+          actorId: actor.id,
+          actorName: actor.name,
+          action: "CANCEL_UNPAID",
+          entityId: booking.id,
+          reason,
+          details: { bookingCode: booking.code, totalPaid: 0 },
+        },
+      });
+
+      return { success: true, status: "CANCELLED", requiresApproval: false };
+    }
+
+    // Đơn đã thanh toán:
+    // Nếu là OWNER hoặc ADMIN: có thể duyệt hủy trực tiếp
+    if (isOwnerOrAdmin) {
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: now,
+          cancelReason: reason,
+          cancelApprovedAt: now,
+          paymentStatus: "REFUND_PENDING",
+          refundAmountApproved: totalPaid || booking.total,
+        },
+      });
+      await tx.bookingItem.updateMany({
+        where: { bookingId: booking.id, status: { in: ["HELD", "CONFIRMED"] } },
+        data: { status: "CANCELLED" },
+      });
+      await tx.payment.updateMany({
+        where: { bookingId: booking.id, status: "PAID" },
+        data: { status: "REFUND_PENDING" },
+      });
+
+      await tx.adminAudit.create({
+        data: {
+          actorId: actor.id,
+          actorName: actor.name,
+          action: "APPROVE_CANCEL",
+          entityId: booking.id,
+          reason,
+          details: {
+            bookingCode: booking.code,
+            approvedAmount: totalPaid || booking.total,
+            approvedBy: actor.id,
+          },
+        },
+      });
+
+      return { success: true, status: "CANCELLED", requiresApproval: false, refundApproved: totalPaid || booking.total };
+    }
+
+    // Nếu là STAFF hoặc CUSTOMER: chỉ được gửi yêu cầu hủy (chờ duyệt)
+    await tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        cancelRequestedAt: now,
+        cancelReason: reason,
+      },
+    });
+
+    await tx.adminAudit.create({
+      data: {
+        actorId: actor.id,
+        actorName: actor.name,
+        action: "REQUEST_CANCEL",
+        entityId: booking.id,
+        reason,
+        details: {
+          bookingCode: booking.code,
+          requesterRole: isCustomer ? "CUSTOMER" : "STAFF",
+        },
+      },
+    });
+
+    await sendVenueNotification(
+      tx,
+      booking.venueId,
+      `Yêu cầu hủy đơn · ${booking.code}`,
+      `${isCustomer ? "Khách hàng" : "Nhân viên"} đã gửi yêu cầu hủy đơn đã thanh toán ${booking.code}. Lý do: ${reason}`,
+      { tag: "CANCEL_REQUEST", bookingId: booking.id, bookingCode: booking.code }
+    );
+
+    return { success: true, status: booking.status, requiresApproval: true };
+  });
+}
+
+export async function approveBookingCancellation(
+  db: PrismaClient,
+  actor: { id: string; role: string; status: string; name: string },
+  bookingId: string,
+  refundAmount: number,
+  reason: string,
+  now = new Date()
+) {
+  return serializable(db, async (tx) => {
+    const booking = await tx.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        venue: true,
+        payments: { where: { status: "PAID" } },
+      },
+    });
+    if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
+
+    const isOwnerOrAdmin = actor.role === "ADMIN" || booking.venue.ownerId === actor.id;
+    if (!isOwnerOrAdmin) {
+      throw new PaymentError(403, "Chỉ chủ sân hoặc quản trị viên mới có quyền phê duyệt hủy đơn và hoàn tiền.");
+    }
+
+    const totalPaid = booking.payments.reduce((s, p) => s + p.amount, 0) || (booking.paymentStatus === "PAID" ? booking.total : 0);
+    if (refundAmount <= 0 || refundAmount > totalPaid) {
+      throw new PaymentError(400, `Số tiền hoàn duyệt (${refundAmount.toLocaleString("vi-VN")} đ) không hợp lệ. Tối đa: ${totalPaid.toLocaleString("vi-VN")} đ.`);
+    }
+
+    await tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: now,
+        cancelApprovedAt: now,
+        cancelReason: reason,
+        paymentStatus: "REFUND_PENDING",
+        refundAmountApproved: refundAmount,
+      },
+    });
+
+    await tx.bookingItem.updateMany({
+      where: { bookingId: booking.id, status: { in: ["HELD", "CONFIRMED"] } },
+      data: { status: "CANCELLED" },
+    });
+
+    await tx.payment.updateMany({
+      where: { bookingId: booking.id, status: "PAID" },
+      data: { status: "REFUND_PENDING" },
+    });
+
+    await tx.adminAudit.create({
+      data: {
+        actorId: actor.id,
+        actorName: actor.name,
+        action: "APPROVE_CANCEL",
+        entityId: booking.id,
+        reason,
+        details: {
+          bookingCode: booking.code,
+          refundAmountApproved: refundAmount,
+          approvedBy: actor.name,
+        },
+      },
+    });
+
+    return { success: true, refundAmountApproved: refundAmount };
+  });
+}
+
+export async function recordManualRefund(
+  db: PrismaClient,
+  actor: { id: string; role: string; status: string; name: string },
+  bookingId: string,
+  amount: number,
+  reason: string,
+  now = new Date()
+) {
+  return serializable(db, async (tx) => {
+    const booking = await tx.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        venue: true,
+      },
+    });
+    if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
+
+    // Kiểm tra quyền: nhân viên hoặc chủ sân hoặc admin
+    await assertVenueOperatorAccess(tx, actor, booking.venueId, false);
+
+    if (!booking.cancelApprovedAt || !booking.refundAmountApproved) {
+      throw new PaymentError(409, "Khoản hoàn tiền chưa được chủ sân hoặc quản trị viên phê duyệt.");
+    }
+
+    if (booking.refundCompletedAt) {
+      throw new PaymentError(409, "Khoản hoàn tiền này đã được ghi nhận hoàn tất trước đó.");
+    }
+
+    if (amount <= 0 || amount > booking.refundAmountApproved) {
+      throw new PaymentError(400, `Số tiền hoàn (${amount.toLocaleString("vi-VN")} đ) không được vượt quá số tiền đã duyệt (${booking.refundAmountApproved.toLocaleString("vi-VN")} đ).`);
+    }
+
+    const isFullRefund = amount >= (booking.refundAmountApproved || booking.total);
+
+    await tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        paymentStatus: isFullRefund ? "REFUNDED" : "PARTIALLY_PAID",
+        refundCompletedAt: now,
+        refundCompletedById: actor.id,
+      },
+    });
+
+    await tx.payment.updateMany({
+      where: { bookingId: booking.id, status: "REFUND_PENDING" },
+      data: { status: "REFUNDED" },
+    });
+
+    await tx.adminAudit.create({
+      data: {
+        actorId: actor.id,
+        actorName: actor.name,
+        action: "RECORD_REFUND",
+        entityId: booking.id,
+        reason,
+        details: {
+          bookingCode: booking.code,
+          refundedAmount: amount,
+          recordedBy: actor.name,
+          isFullRefund,
+        },
+      },
+    });
+
+    return { success: true, paymentStatus: isFullRefund ? "REFUNDED" : "PARTIALLY_PAID" };
   });
 }

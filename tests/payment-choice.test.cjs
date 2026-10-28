@@ -44,8 +44,16 @@ test('cash request must be approved before collection and venue policy cannot ov
   b.paymentStatus = 'PAID'; assert.throws(() => checkBookingAction(b, 'CASH_PAID'));
 });
 test('operator access is scoped to ownership or staff membership; customers and blocked operators denied', async () => {
-  assert.deepEqual(operatorVenueScope({ id: 'o', role: 'OWNER', status: 'ACTIVE' }), { ownerId: 'o' });
-  assert.deepEqual(operatorVenueScope({ id: 's', role: 'STAFF', status: 'ACTIVE' }), { staff: { some: { userId: 's' } } });
+  assert.deepEqual(operatorVenueScope({ id: 'o', role: 'OWNER', status: 'ACTIVE' }), {
+    OR: [
+      { ownerId: 'o' },
+      { status: 'ACTIVE', staff: { some: { userId: 'o', isActive: true } } },
+    ],
+  });
+  assert.deepEqual(operatorVenueScope({ id: 's', role: 'STAFF', status: 'ACTIVE' }), {
+    status: 'ACTIVE',
+    staff: { some: { userId: 's', isActive: true } },
+  });
   for (const actor of [{ role: 'CUSTOMER', status: 'ACTIVE' }, { role: 'OWNER', status: 'BLOCKED' }]) assert.throws(() => operatorVenueScope(actor));
   for (const role of ['OWNER', 'STAFF']) {
     let writes = 0;

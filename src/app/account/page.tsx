@@ -141,7 +141,7 @@ export default function AccountPage() {
           <div>
             <h2 className="text-lg font-bold text-ink">{user.name}</h2>
             <p className="text-xs text-muted">
-              {user.role === "ADMIN" ? "Quản trị viên" : user.role === "OWNER" ? "Chủ sân" : "Hội viên"} • {user.loyaltyPoints} điểm thưởng
+              {user.role === "ADMIN" ? "Quản trị viên" : user.role === "OWNER" ? "Chủ sân" : user.role === "STAFF" ? "Nhân viên" : "Hội viên"} • {user.loyaltyPoints} điểm thưởng
             </p>
           </div>
         </div>

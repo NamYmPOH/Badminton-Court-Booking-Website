@@ -111,7 +111,7 @@ export function checkBookingAction(
     action === "CONFIRM"
       ? pendingLive && (paid || atVenue)
       : action === "CHECK_IN"
-        ? confirmed && paid
+        ? confirmed && (paid || atVenue)
         : action === "COMPLETE"
           ? booking.status === "CHECKED_IN" && paid
           : action === "CANCEL"

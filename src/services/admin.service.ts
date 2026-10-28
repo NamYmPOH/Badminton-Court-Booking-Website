@@ -82,6 +82,17 @@ export async function performAdminAction(
             where: { id: venue.ownerId },
             data: { role: "OWNER" },
           });
+      } else if (input.status === "SUSPENDED") {
+        // Đóng toàn bộ ca trực đang mở tại cơ sở khi bị đình chỉ
+        if (tx.staffShift) {
+          await tx.staffShift.updateMany({
+            where: { venueId: venue.id, endedAt: null },
+            data: {
+              endedAt: now,
+              note: "Đóng ca do cơ sở bị đình chỉ hoạt động",
+            },
+          });
+        }
       }
       await tx.venue.update({
         where: { id: venue.id },
@@ -278,9 +289,23 @@ export async function performAdminAction(
         include: { venue: true, items: true, group: true },
       });
       if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
+      let isOwnerOrAdmin = actor!.role === "ADMIN";
       if (actor!.role !== "ADMIN") {
-        const allowed = await tx.venue.findFirst({ where: { id: booking.venueId, ...operatorVenueScope(actor!) }, select: { id: true } });
+        const allowed = await tx.venue.findFirst({ where: { id: booking.venueId, ...operatorVenueScope(actor!) }, select: { id: true, ownerId: true } });
         if (!allowed) throw new PaymentError(403, "Bạn không được phân quyền tại sân này.");
+        if (allowed.ownerId === actor!.id) {
+          isOwnerOrAdmin = true;
+        } else {
+          // Là STAFF: bắt buộc phải có ca trực đang mở tại cơ sở
+          if (tx.staffShift) {
+            const activeShift = await tx.staffShift.findFirst({
+              where: { userId: actor!.id, venueId: booking.venueId, endedAt: null },
+            });
+            if (!activeShift) {
+              throw new PaymentError(403, "Nhân viên phải bắt đầu ca trực để thực hiện thao tác này tại sân.");
+            }
+          }
+        }
       }
       if (booking.group && input.action !== "COMPLETE") throw new PaymentError(409, "Đơn nhóm: dùng màn hình quản lý nhóm để xử lý từng phần và vé cá nhân.");
       checkBookingAction(booking, input.action, now);
@@ -310,10 +335,14 @@ export async function performAdminAction(
           });
         }
       }
-      if (input.action === "CHECK_IN") update.status = "CHECKED_IN";
+      if (input.action === "CHECK_IN") {
+        update.status = "CHECKED_IN";
+        update.checkedInById = actor!.id;
+      }
       if (input.action === "COMPLETE") {
         update.status = "COMPLETED";
         update.sessionStatus = "COMPLETED";
+        update.completedById = actor!.id;
         if (tx.coachBooking) {
           await tx.coachBooking.updateMany({
             where: {
@@ -325,6 +354,13 @@ export async function performAdminAction(
         }
       }
       if (input.action === "CANCEL") {
+        // Đơn đã thanh toán: STAFF không được tự hủy, phải là OWNER hoặc ADMIN
+        if (booking.paymentStatus === "PAID" && !isOwnerOrAdmin) {
+          throw new PaymentError(
+            403,
+            "Đơn đã thanh toán. Nhân viên chỉ được gửi yêu cầu hủy để chủ sân hoặc quản trị viên phê duyệt hoàn tiền."
+          );
+        }
         update.status = "CANCELLED";
         update.cancelledAt = now;
         update.cancelReason = input.reason;

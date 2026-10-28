@@ -18,6 +18,7 @@ import type { LucideIcon } from "lucide-react";
 import type { Venue } from "@/types/venue";
 import { formatVND } from "@/lib/utils";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/context/AuthContext";
 
 interface VenueCardProps {
   venue: Venue;
@@ -43,7 +44,9 @@ const AMENITY_MAP: Record<string, AmenityMeta> = {
 };
 
 export function VenueCard({ venue, className = "" }: VenueCardProps) {
+  const { user } = useAuth();
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
+  const isMyVenue = !!user && (user.role === "ADMIN" || (user.role === "OWNER" && venue.ownerId === user.id));
   const [imgSrc, setImgSrc] = useState<string>(
     venue.images?.[0] || "/images/courts/court-1.svg"
   );
@@ -268,12 +271,22 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
               </div>
             </div>
 
-            <Link
-              href={`/venues/${venue.slug}`}
-              className="inline-flex items-center justify-center rounded-control bg-racket-500 px-4 py-2 text-xs font-semibold text-court-950 shadow-sm transition-all hover:bg-racket-600 active:scale-95"
-            >
-              Xem lịch & đặt
-            </Link>
+            <div className="flex items-center gap-2">
+              {isMyVenue && (
+                <Link
+                  href={`/venue-operations?venueId=${venue.id}`}
+                  className="inline-flex items-center justify-center rounded-control border border-court-500 bg-court-500/10 px-3 py-2 text-xs font-semibold text-court-700 dark:text-court-300 shadow-sm transition-all hover:bg-court-500/20 active:scale-95"
+                >
+                  Quản lý sân
+                </Link>
+              )}
+              <Link
+                href={`/venues/${venue.slug}`}
+                className="inline-flex items-center justify-center rounded-control bg-racket-500 px-4 py-2 text-xs font-semibold text-court-950 shadow-sm transition-all hover:bg-racket-600 active:scale-95"
+              >
+                Xem lịch & đặt
+              </Link>
+            </div>
           </div>
         </div>
       </div>

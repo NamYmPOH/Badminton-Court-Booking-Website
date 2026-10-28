@@ -55,6 +55,16 @@ export default function RegisterVenuePage() {
         >
           Đăng nhập để gửi hồ sơ
         </Link>
+      ) : user.role === "STAFF" ? (
+        <div className="mt-8 rounded-card border border-rose-300 bg-rose-50/50 p-6 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300">
+          <p className="font-bold">Không thể đăng ký cơ sở mới</p>
+          <p className="mt-1 text-xs">
+            Tài khoản có vai trò Nhân viên (STAFF) không được phép gửi hồ sơ đăng ký cơ sở sân. Vui lòng đăng nhập bằng tài khoản Khách hàng hoặc liên hệ quản trị viên.
+          </p>
+          <Link href="/account" className="mt-3 inline-block font-semibold underline">
+            Quay lại trang tài khoản
+          </Link>
+        </div>
       ) : done ? (
         <div
           role="status"

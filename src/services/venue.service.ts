@@ -44,6 +44,8 @@ async function loadVenues(): Promise<Venue[]> {
         })),
         pricingRules: v.pricing,
         reviews: [],
+        ownerId: v.ownerId,
+        status: v.status,
       }));
     }
   } catch (err) {
@@ -58,7 +60,7 @@ async function loadVenues(): Promise<Venue[]> {
  * Lọc và tìm kiếm sân cầu lông đa tiêu chí (Tên sân, Quận/Huyện, Khoảng giá, Sân trống, Tiện ích, Sắp xếp)
  * Hỗ trợ tiếng Việt có dấu và không dấu hoàn chỉnh.
  */
-export async function getVenues(params?: VenueFilterParams): Promise<Venue[]> {
+export async function getVenues(params?: VenueFilterParams, ownerUserId?: string): Promise<Venue[]> {
   let list = [...(await loadVenues())];
 
   // 1. Tìm kiếm theo từ khóa (Tên sân, Địa chỉ, Quận/Huyện, Mô tả)
@@ -98,7 +100,7 @@ export async function getVenues(params?: VenueFilterParams): Promise<Venue[]> {
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
     list = list.filter(
-      (v) => currentMinutes >= v.openMin && currentMinutes <= v.closeMin,
+      (v) => currentMinutes >= v.openMin && currentMinutes < v.closeMin,
     );
   }
 
@@ -119,6 +121,11 @@ export async function getVenues(params?: VenueFilterParams): Promise<Venue[]> {
   } else {
     // Mặc định: Ưu tiên khoảng cách gần hoặc đánh giá cao
     list.sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
+
+    // Ưu tiên các sân thuộc sở hữu của chủ sân trên danh sách mặc định (không phá bộ lọc/tìm kiếm)
+    if (ownerUserId && !params?.q && (!params?.district || params?.district === "all")) {
+      list.sort((a, b) => (b.ownerId === ownerUserId ? 1 : 0) - (a.ownerId === ownerUserId ? 1 : 0));
+    }
   }
 
   return list;

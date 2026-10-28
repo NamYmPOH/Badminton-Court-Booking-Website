@@ -7,21 +7,35 @@ import { PaymentError, paymentErrorResponse, readPaymentBody } from "@/lib/sepay
 import {
   getVenueStaffList,
   addVenueStaff,
+  createVenueStaffAccount,
   setVenueStaffActive,
 } from "@/services/venue-session.service";
 
 export const dynamic = "force-dynamic";
 
-const addStaffSchema = z.object({
-  venueId: z.string().min(1),
-  identifier: z.string().trim().min(3).max(100),
-  role: z.enum(["RECEPTIONIST", "STAFF"]).default("RECEPTIONIST"),
-});
+const staffActionSchema = z.union([
+  z.object({
+    action: z.literal("CREATE_ACCOUNT"),
+    venueId: z.string().min(1),
+    name: z.string().trim().min(2, "Họ tên phải có ít nhất 2 ký tự").max(100),
+    phone: z.string().trim().min(8, "Số điện thoại không hợp lệ").max(20),
+    email: z.string().trim().email("Email không hợp lệ").optional().nullable(),
+    password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự").max(100),
+    role: z.enum(["RECEPTIONIST", "STAFF"]).default("RECEPTIONIST"),
+  }),
+  z.object({
+    action: z.literal("ADD_EXISTING").optional(),
+    venueId: z.string().min(1),
+    identifier: z.string().trim().min(3).max(100),
+    role: z.enum(["RECEPTIONIST", "STAFF"]).default("RECEPTIONIST"),
+  }),
+]);
 
 const updateStaffSchema = z.object({
   venueId: z.string().min(1),
   userId: z.string().min(1),
   isActive: z.boolean(),
+  reason: z.string().trim().max(500).optional(),
 });
 
 export async function GET(request: Request) {
@@ -31,6 +45,10 @@ export async function GET(request: Request) {
       where: { id },
       select: { id: true, role: true, status: true, name: true },
     });
+
+    if (actor.status !== "ACTIVE") {
+      throw new PaymentError(403, "Tài khoản của bạn đã bị khóa hoặc chưa kích hoạt.");
+    }
 
     const url = new URL(request.url);
     const venueId = url.searchParams.get("venueId");
@@ -52,6 +70,10 @@ export async function POST(request: Request) {
       select: { id: true, role: true, status: true, name: true },
     });
 
+    if (actor.status !== "ACTIVE") {
+      throw new PaymentError(403, "Tài khoản của bạn đã bị khóa hoặc chưa kích hoạt.");
+    }
+
     const raw = await readPaymentBody(request, 2048);
     let body: unknown;
     try {
@@ -60,9 +82,20 @@ export async function POST(request: Request) {
       throw new PaymentError(400, "JSON không hợp lệ.");
     }
 
-    const parsed = addStaffSchema.safeParse(body);
+    const parsed = staffActionSchema.safeParse(body);
     if (!parsed.success) {
       throw new PaymentError(400, parsed.error.issues[0]?.message || "Dữ liệu không hợp lệ.");
+    }
+
+    if (parsed.data.action === "CREATE_ACCOUNT") {
+      const result = await createVenueStaffAccount(db, actor, parsed.data.venueId, {
+        name: parsed.data.name,
+        phone: parsed.data.phone,
+        email: parsed.data.email,
+        password: parsed.data.password,
+        role: parsed.data.role,
+      });
+      return NextResponse.json(result, { status: 201 });
     }
 
     const result = await addVenueStaff(
@@ -106,7 +139,8 @@ export async function PATCH(request: Request) {
       actor,
       parsed.data.venueId,
       parsed.data.userId,
-      parsed.data.isActive
+      parsed.data.isActive,
+      parsed.data.reason
     );
 
     return NextResponse.json(result);
