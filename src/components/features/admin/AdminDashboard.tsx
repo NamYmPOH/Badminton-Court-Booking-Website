@@ -49,6 +49,7 @@ type Row = {
   total?: number;
   amount?: number;
   txnRef?: string;
+  groupRefund?: { amount: number; completedAmount: number; status: string } | null;
   provider?: string;
   result?: string;
   content?: string;
@@ -690,6 +691,11 @@ export default function AdminDashboard() {
                       <p className="mt-1 break-all text-xs text-muted">
                         {r.txnRef} · {date(r.paidAt)}
                       </p>
+                      {r.groupRefund && <p className="mt-1 text-sm text-muted">
+                        Đã duyệt hoàn {money(r.groupRefund.amount)}
+                        {r.groupRefund.status !== "REVIEW_REQUIRED" && <> · Đã chi {money(r.groupRefund.completedAmount)} · Còn {money(r.groupRefund.amount - r.groupRefund.completedAmount)}</>}
+                        {r.groupRefund.status === "REVIEW_REQUIRED" ? " · Cần đối soát chứng từ cũ" : ""}
+                      </p>}
                     </div>
                     <Badge value={r.status} />
                   </div>

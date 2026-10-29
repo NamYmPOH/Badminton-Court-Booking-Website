@@ -1,3 +1,4 @@
+const { fixture, actors } = require("./helpers/refund-db.cjs");
 const fs = require("node:fs");
 const ts = require("typescript");
 const assert = require("node:assert/strict");
@@ -488,79 +489,22 @@ test("7. Chống trùng đơn khi gửi lại request với requestId (Idempoten
 });
 
 test("8. STAFF không được tự duyệt hủy đơn đã thanh toán hoặc tự duyệt hoàn tiền", async () => {
-  const db = createMockDb();
-  const staffA = { id: "staff_a", role: "STAFF", status: "ACTIVE", name: "Nhân viên A" };
-
-  // Tạo đơn đã thanh toán
-  const booking = await db.booking.create({
-    data: {
-      code: "DATSAN999",
-      venueId: "venue_a",
-      userId: "customer_x",
-      status: "CONFIRMED",
-      paymentStatus: "PAID",
-      total: 200000,
-    },
-  });
-  db.getState().payments.push({ id: "pay_1", bookingId: booking.id, amount: 200000, status: "PAID" });
-
-  // STAFF gửi yêu cầu hủy đơn đã thanh toán -> Chuyển sang cancelRequestedAt (requiresApproval: true)
-  const cancelRes = await requestBookingCancellation(db, staffA, booking.id, "Khách bận việc đột xuất");
-  assert.equal(cancelRes.requiresApproval, true, "STAFF chỉ được gửi yêu cầu, không được tự duyệt hủy");
-
-  // STAFF cố tự duyệt hoàn tiền -> Bị chặn 403
-  await assert.rejects(
-    async () => {
-      await approveBookingCancellation(db, staffA, booking.id, 200000, "Tự duyệt");
-    },
-    { message: /Chỉ chủ sân hoặc quản trị viên mới có quyền phê duyệt/ }
-  );
+  const db = fixture();
+  assert.equal((await requestBookingCancellation(db, actors.staff, 'b', 'Khách bận đột xuất')).requiresApproval, true);
+  await assert.rejects(approveBookingCancellation(db, actors.staff, 'b', 400000, 'Tự duyệt hoàn tiền'), { status: 403 });
+  assert.equal(db.state.refunds.length, 0);
 });
 
 test("9. OWNER duyệt hủy đơn và hoàn tiền 2 bước chuẩn xác", async () => {
-  const db = createMockDb();
-  const ownerA = { id: "owner_a", role: "OWNER", status: "ACTIVE", name: "Chủ Sân A" };
-  const staffA = { id: "staff_a", role: "STAFF", status: "ACTIVE", name: "Nhân viên A" };
-
-  // Tạo đơn đã thanh toán và đã gửi yêu cầu hủy
-  const booking = await db.booking.create({
-    data: {
-      code: "DATSAN888",
-      venueId: "venue_a",
-      userId: "customer_x",
-      status: "CONFIRMED",
-      paymentStatus: "PAID",
-      total: 200000,
-      cancelRequestedAt: new Date(),
-    },
-  });
-  db.getState().payments.push({ id: "pay_2", bookingId: booking.id, amount: 200000, status: "PAID" });
-
-  // Bước 1: OWNER phê duyệt hủy và số tiền hoàn
-  const approveRes = await approveBookingCancellation(db, ownerA, booking.id, 180000, "Đồng ý hủy hoàn 90% theo chính sách");
-  assert.equal(approveRes.success, true);
-  assert.equal(approveRes.refundAmountApproved, 180000);
-
-  // Không cho hoàn vượt quá số tiền duyệt
-  await assert.rejects(
-    async () => {
-      await recordManualRefund(db, staffA, booking.id, 250000, "Hoàn lố");
-    },
-    { message: /không được vượt quá số tiền đã duyệt/ }
-  );
-
-  // Bước 2: Nhân viên ghi nhận đã hoàn tiền thủ công cho khách
-  const refundRes = await recordManualRefund(db, staffA, booking.id, 180000, "Đã chuyển khoản trả lại khách");
-  assert.equal(refundRes.success, true);
-  assert.equal(refundRes.paymentStatus, "REFUNDED");
-
-  // Chống ghi nhận hoàn trùng lần 2
-  await assert.rejects(
-    async () => {
-      await recordManualRefund(db, staffA, booking.id, 180000, "Hoàn lại lần nữa");
-    },
-    { message: /đã được ghi nhận hoàn tất trước đó/ }
-  );
+  const db = fixture({total: 200000, amounts: [200000]});
+  const result = await approveBookingCancellation(db, actors.owner, 'b', 180000, 'Duyệt hoàn 90% theo chính sách');
+  assert.equal(result.refundAmountApproved, 180000);
+  const id = db.state.refunds[0].id;
+  await assert.rejects(recordManualRefund(db, actors.staff, 'b', 250000, 'Hoàn vượt mức', id, 'BANK-OVER'), { status: 409 });
+  const paid = await recordManualRefund(db, actors.staff, 'b', 180000, 'Đã chuyển tiền', id, 'BANK-OK');
+  assert.equal(paid.paymentStatus, 'REFUNDED');
+  assert.equal((await recordManualRefund(db, actors.staff, 'b', 180000, 'Gửi lại yêu cầu', id, 'BANK-OK')).duplicate, true);
+  await assert.rejects(recordManualRefund(db, actors.staff, 'b', 180000, 'Hoàn thêm lần nữa', id, 'BANK-TWICE'), { status: 409 });
 });
 
 test("10. Đơn tiền mặt không tự hoàn tất khi hết giờ nếu chưa thu đủ tiền", async () => {

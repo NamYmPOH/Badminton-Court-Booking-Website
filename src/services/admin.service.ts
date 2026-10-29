@@ -1,3 +1,4 @@
+import { approveCancellationInTransaction, refundLedger } from "./refund.service";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   assertAdmin,
@@ -354,46 +355,13 @@ export async function performAdminAction(
         }
       }
       if (input.action === "CANCEL") {
-        // Đơn đã thanh toán: STAFF không được tự hủy, phải là OWNER hoặc ADMIN
-        if (booking.paymentStatus === "PAID" && !isOwnerOrAdmin) {
-          throw new PaymentError(
-            403,
-            "Đơn đã thanh toán. Nhân viên chỉ được gửi yêu cầu hủy để chủ sân hoặc quản trị viên phê duyệt hoàn tiền."
-          );
+        const ledger = await refundLedger(tx, booking.id);
+        if ((ledger.received > 0 || ["PAID", "PARTIALLY_PAID", "REFUND_PENDING", "REFUNDED"].includes(booking.paymentStatus)) && !isOwnerOrAdmin) {
+          throw new PaymentError(403, "Nhân viên chỉ được gửi yêu cầu hủy đơn có tiền thu để chủ sân phê duyệt.");
         }
+        const after = await approveCancellationInTransaction(tx, booking, ledger.available, input.reason, now);
         update.status = "CANCELLED";
-        update.cancelledAt = now;
-        update.cancelReason = input.reason;
-        update.expiresAt = null;
-        if (booking.paymentStatus === "PAID") {
-          update.paymentStatus = "REFUND_PENDING";
-          await tx.payment.updateMany({
-            where: { bookingId: booking.id, status: "PAID" },
-            data: { status: "REFUND_PENDING" },
-          });
-        }
-        await tx.bookingItem.updateMany({
-          where: {
-            bookingId: booking.id,
-            status: { in: ["HELD", "CONFIRMED"] },
-          },
-          data: { status: "CANCELLED" },
-        });
-        if (tx.coachBooking) {
-          await tx.coachBooking.updateMany({
-            where: {
-              bookingItem: { bookingId: booking.id },
-              status: { in: ["HELD", "CONFIRMED"] },
-            },
-            data: { status: "CANCELLED", cancelledAt: now, cancelReason: input.reason },
-          });
-        }
-        if (tx.offerUsage) {
-          await tx.offerUsage.updateMany({
-            where: { bookingId: booking.id, state: "RESERVED" },
-            data: { state: "RELEASED" },
-          });
-        }
+        update.paymentStatus = after.pending > 0 ? "REFUND_PENDING" : after.completed > 0 ? "REFUNDED" : booking.paymentStatus;
       }
       if (input.action === "CASH_PAID") {
         await tx.payment.create({

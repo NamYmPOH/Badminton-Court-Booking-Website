@@ -4,6 +4,7 @@ import { randomInt } from "node:crypto";
 import { PaymentError } from "../lib/sepay";
 import { serializable } from "../lib/transaction";
 import { formatHour } from "../lib/booking";
+import { approveCancellationInTransaction, completeRefund, refundLedger } from "./refund.service";
 
 export interface BookingTimeSlot {
   date: Date | string;
@@ -490,6 +491,7 @@ export async function confirmCashPayment(
     const booking = await tx.booking.findUnique({
       where: { id: bookingId },
       include: {
+        group: true,
         payments: {
           where: { status: "PAID" },
           select: { amount: true, status: true, provider: true },
@@ -502,6 +504,10 @@ export async function confirmCashPayment(
     // Kiểm tra quyền của nhân viên/chủ sân
     await assertVenueOperatorAccess(tx, actor, booking.venueId, actor.role === "STAFF");
 
+    if (!["CONFIRMED", "CHECKED_IN"].includes(booking.status) || booking.cancelApprovedAt) {
+      throw new PaymentError(409, "Đơn không còn cho phép thu tiền.");
+    }
+    if (booking.group) throw new PaymentError(409, "Đơn nhóm phải thu theo từng phần tại màn hình nhóm.");
     const payment = calculateBookingPaymentDetails(booking);
 
     if (payment.remaining <= 0) {
@@ -1399,6 +1405,9 @@ export async function requestBookingCancellation(
   now = new Date()
 ) {
   return serializable(db, async (tx) => {
+    const currentActor = await tx.user.findUnique({ where: { id: actor.id }, select: { id: true, role: true, status: true, name: true } });
+    if (!currentActor || currentActor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
+    actor = currentActor;
     const booking = await tx.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -1419,95 +1428,20 @@ export async function requestBookingCancellation(
       if (!staff) throw new PaymentError(403, "Bạn không có quyền thao tác trên đơn này.");
     }
 
-    if (["CANCELLED", "COMPLETED"].includes(booking.status)) {
-      throw new PaymentError(409, "Đơn đã kết thúc hoặc đã bị hủy trước đó.");
+    if (actor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
+    if (!["PENDING_PAYMENT", "CONFIRMED"].includes(booking.status)) {
+      throw new PaymentError(409, "Đơn đã kết thúc, đang sử dụng hoặc đã bị hủy.");
     }
-
-    const paidPayments = booking.payments.filter((p) => p.status === "PAID");
-    const totalPaid = paidPayments.reduce((s, p) => s + p.amount, 0);
-    const isPaid = booking.paymentStatus === "PAID" || totalPaid > 0;
-
-    // Đơn chưa thanh toán: hủy ngay lập tức
-    if (!isPaid) {
-      await tx.booking.update({
-        where: { id: booking.id },
-        data: {
-          status: "CANCELLED",
-          cancelledAt: now,
-          cancelReason: reason,
-          expiresAt: null,
-        },
-      });
-      await tx.bookingItem.updateMany({
-        where: { bookingId: booking.id, status: { in: ["HELD", "CONFIRMED"] } },
-        data: { status: "CANCELLED" },
-      });
-      if (tx.coachBooking) {
-        await tx.coachBooking.updateMany({
-          where: { bookingItem: { bookingId: booking.id }, status: { in: ["HELD", "CONFIRMED"] } },
-          data: { status: "CANCELLED", cancelledAt: now, cancelReason: reason },
-        });
-      }
-      if (tx.offerUsage) {
-        await tx.offerUsage.updateMany({
-          where: { bookingId: booking.id, state: "RESERVED" },
-          data: { state: "RELEASED" },
-        });
-      }
-
-      await tx.adminAudit.create({
-        data: {
-          actorId: actor.id,
-          actorName: actor.name,
-          action: "CANCEL_UNPAID",
-          entityId: booking.id,
-          reason,
-          details: { bookingCode: booking.code, totalPaid: 0 },
-        },
-      });
-
-      return { success: true, status: "CANCELLED", requiresApproval: false };
-    }
-
-    // Đơn đã thanh toán:
-    // Nếu là OWNER hoặc ADMIN: có thể duyệt hủy trực tiếp
-    if (isOwnerOrAdmin) {
-      await tx.booking.update({
-        where: { id: booking.id },
-        data: {
-          status: "CANCELLED",
-          cancelledAt: now,
-          cancelReason: reason,
-          cancelApprovedAt: now,
-          paymentStatus: "REFUND_PENDING",
-          refundAmountApproved: totalPaid || booking.total,
-        },
-      });
-      await tx.bookingItem.updateMany({
-        where: { bookingId: booking.id, status: { in: ["HELD", "CONFIRMED"] } },
-        data: { status: "CANCELLED" },
-      });
-      await tx.payment.updateMany({
-        where: { bookingId: booking.id, status: "PAID" },
-        data: { status: "REFUND_PENDING" },
-      });
-
-      await tx.adminAudit.create({
-        data: {
-          actorId: actor.id,
-          actorName: actor.name,
-          action: "APPROVE_CANCEL",
-          entityId: booking.id,
-          reason,
-          details: {
-            bookingCode: booking.code,
-            approvedAmount: totalPaid || booking.total,
-            approvedBy: actor.id,
-          },
-        },
-      });
-
-      return { success: true, status: "CANCELLED", requiresApproval: false, refundApproved: totalPaid || booking.total };
+    const ledger = await refundLedger(tx, booking.id);
+    const isPaid = ledger.received > 0 || ["PAID", "PARTIALLY_PAID", "REFUND_PENDING", "REFUNDED"].includes(booking.paymentStatus);
+    if (!isPaid || isOwnerOrAdmin) {
+      const after = await approveCancellationInTransaction(tx, booking, ledger.available, reason, now);
+      await tx.adminAudit.create({ data: {
+        actorId: actor.id, actorName: actor.name, action: isPaid ? "APPROVE_CANCEL" : "CANCEL_UNPAID",
+        entityId: booking.id, reason,
+        details: { bookingCode: booking.code, received: ledger.received, additionalRefund: ledger.available, approvedAmount: after.approved },
+      } });
+      return { success: true, status: "CANCELLED", requiresApproval: false, refundApproved: after.approved };
     }
 
     // Nếu là STAFF hoặc CUSTOMER: chỉ được gửi yêu cầu hủy (chờ duyệt)
@@ -1554,6 +1488,9 @@ export async function approveBookingCancellation(
   now = new Date()
 ) {
   return serializable(db, async (tx) => {
+    const currentActor = await tx.user.findUnique({ where: { id: actor.id }, select: { id: true, role: true, status: true, name: true } });
+    if (!currentActor || currentActor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
+    actor = currentActor;
     const booking = await tx.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -1568,32 +1505,8 @@ export async function approveBookingCancellation(
       throw new PaymentError(403, "Chỉ chủ sân hoặc quản trị viên mới có quyền phê duyệt hủy đơn và hoàn tiền.");
     }
 
-    const totalPaid = booking.payments.reduce((s, p) => s + p.amount, 0) || (booking.paymentStatus === "PAID" ? booking.total : 0);
-    if (refundAmount <= 0 || refundAmount > totalPaid) {
-      throw new PaymentError(400, `Số tiền hoàn duyệt (${refundAmount.toLocaleString("vi-VN")} đ) không hợp lệ. Tối đa: ${totalPaid.toLocaleString("vi-VN")} đ.`);
-    }
-
-    await tx.booking.update({
-      where: { id: booking.id },
-      data: {
-        status: "CANCELLED",
-        cancelledAt: now,
-        cancelApprovedAt: now,
-        cancelReason: reason,
-        paymentStatus: "REFUND_PENDING",
-        refundAmountApproved: refundAmount,
-      },
-    });
-
-    await tx.bookingItem.updateMany({
-      where: { bookingId: booking.id, status: { in: ["HELD", "CONFIRMED"] } },
-      data: { status: "CANCELLED" },
-    });
-
-    await tx.payment.updateMany({
-      where: { bookingId: booking.id, status: "PAID" },
-      data: { status: "REFUND_PENDING" },
-    });
+    if (actor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
+    const ledger = await approveCancellationInTransaction(tx, booking, refundAmount, reason, now);
 
     await tx.adminAudit.create({
       data: {
@@ -1610,7 +1523,7 @@ export async function approveBookingCancellation(
       },
     });
 
-    return { success: true, refundAmountApproved: refundAmount };
+    return { success: true, refundAmountApproved: ledger.approved };
   });
 }
 
@@ -1620,9 +1533,14 @@ export async function recordManualRefund(
   bookingId: string,
   amount: number,
   reason: string,
+  refundId: string,
+  reference: string,
   now = new Date()
 ) {
   return serializable(db, async (tx) => {
+    const currentActor = await tx.user.findUnique({ where: { id: actor.id }, select: { id: true, role: true, status: true, name: true } });
+    if (!currentActor || currentActor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
+    actor = currentActor;
     const booking = await tx.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -1634,50 +1552,12 @@ export async function recordManualRefund(
     // Kiểm tra quyền: nhân viên hoặc chủ sân hoặc admin
     await assertVenueOperatorAccess(tx, actor, booking.venueId, false);
 
-    if (!booking.cancelApprovedAt || !booking.refundAmountApproved) {
-      throw new PaymentError(409, "Khoản hoàn tiền chưa được chủ sân hoặc quản trị viên phê duyệt.");
-    }
-
-    if (booking.refundCompletedAt) {
-      throw new PaymentError(409, "Khoản hoàn tiền này đã được ghi nhận hoàn tất trước đó.");
-    }
-
-    if (amount <= 0 || amount > booking.refundAmountApproved) {
-      throw new PaymentError(400, `Số tiền hoàn (${amount.toLocaleString("vi-VN")} đ) không được vượt quá số tiền đã duyệt (${booking.refundAmountApproved.toLocaleString("vi-VN")} đ).`);
-    }
-
-    const isFullRefund = amount >= (booking.refundAmountApproved || booking.total);
-
-    await tx.booking.update({
-      where: { id: booking.id },
-      data: {
-        paymentStatus: isFullRefund ? "REFUNDED" : "PARTIALLY_PAID",
-        refundCompletedAt: now,
-        refundCompletedById: actor.id,
-      },
-    });
-
-    await tx.payment.updateMany({
-      where: { bookingId: booking.id, status: "REFUND_PENDING" },
-      data: { status: "REFUNDED" },
-    });
-
-    await tx.adminAudit.create({
-      data: {
-        actorId: actor.id,
-        actorName: actor.name,
-        action: "RECORD_REFUND",
-        entityId: booking.id,
-        reason,
-        details: {
-          bookingCode: booking.code,
-          refundedAmount: amount,
-          recordedBy: actor.name,
-          isFullRefund,
-        },
-      },
-    });
-
-    return { success: true, paymentStatus: isFullRefund ? "REFUNDED" : "PARTIALLY_PAID" };
+    const result = await completeRefund(tx, booking.id, refundId, amount, reference, actor.id, now);
+    if (!result.duplicate) await tx.adminAudit.create({ data: {
+      actorId: actor.id, actorName: actor.name, action: "RECORD_REFUND", entityId: booking.id, reason,
+      details: { bookingCode: booking.code, refundId, amount, reference: reference.trim().toUpperCase() },
+    } });
+    const updated = await tx.booking.findUniqueOrThrow({ where: { id: booking.id } });
+    return { success: true, ...result, paymentStatus: updated.paymentStatus };
   });
 }

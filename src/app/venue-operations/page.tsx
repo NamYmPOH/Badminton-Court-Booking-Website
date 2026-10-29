@@ -52,6 +52,10 @@ interface Order {
   cancelRequestedAt?: string | null;
   cancelApprovedAt?: string | null;
   refundAmountApproved?: number | null;
+  refundAvailable: number;
+  refundPending: number;
+  refundNeedsReview: boolean;
+  refunds: Array<{ id: string; amount: number; completedAmount: number; remaining: number; txnRef: string; provider: string }>;
   refundCompletedAt?: string | null;
   source?: string;
   venue: { id: string; name: string; paymentMode: string };
@@ -818,20 +822,21 @@ export default function VenueOperationsPage() {
                       Hoàn tất & Bàn giao sân
                     </button>
 
+                    {order.refundNeedsReview && <span className="text-sm text-amber-700">Khoản hoàn cũ cần đối soát chứng từ trước khi chi tiền.</span>}
                     {/* Quy trình hoàn tiền: Nếu đã được duyệt hoàn tiền -> Ghi nhận đã hoàn tiền */}
-                    {order.cancelApprovedAt && order.refundAmountApproved && !order.refundCompletedAt && (
+                    {order.refundPending > 0 && (
                       <button
                         type="button"
                         disabled={busy}
                         onClick={() => setRefundModal({ booking: order, mode: "RECORD" })}
                         className="rounded-control bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm"
                       >
-                        Đã hoàn tiền ({formatVND(order.refundAmountApproved)})
+                        Ghi nhận hoàn tiền ({formatVND(order.refundPending)})
                       </button>
                     )}
 
                     {/* Nếu có yêu cầu hủy chờ duyệt và là OWNER / ADMIN -> Phê duyệt hoàn tiền */}
-                    {(order.cancelRequestedAt || order.paymentStatus === "REFUND_PENDING") && !order.cancelApprovedAt && ["ADMIN", "OWNER"].includes(user.role) && (
+                    {order.cancelRequestedAt && ["PENDING_PAYMENT", "CONFIRMED"].includes(order.status) && !order.refundNeedsReview && !order.cancelApprovedAt && ["ADMIN", "OWNER"].includes(user.role) && (
                       <button
                         type="button"
                         disabled={busy}
@@ -1012,10 +1017,10 @@ export default function VenueOperationsPage() {
 
       {/* Modal Duyệt hủy & Hoàn tiền 2 bước */}
       <RefundModal
+        key={refundModal ? `${refundModal.booking.id}:${refundModal.mode}` : "closed"}
         isOpen={Boolean(refundModal)}
         onClose={() => setRefundModal(null)}
         booking={refundModal?.booking || null}
-        userRole={user.role}
         mode={refundModal?.mode || "APPROVE"}
         onSuccess={() => {
           setNotice("Đã cập nhật trạng thái hủy và hoàn tiền thành công!");

@@ -1,3 +1,4 @@
+const { fixture, actors } = require("./helpers/refund-db.cjs");
 const fs = require("node:fs");
 const ts = require("typescript");
 const assert = require("node:assert/strict");
@@ -294,13 +295,14 @@ test("cash collection is atomic, audited, and cannot be applied twice", async ()
   assert.equal(failed.state.payments.length, 0);
 });
 test("paid cancellation releases slots and requests refund without claiming money returned", async () => {
-  const db = database();
-  await performAdminAction(db, "admin", action("CASH_PAID"));
-  await performAdminAction(db, "admin", action("CANCEL"));
-  assert.equal(db.state.booking.status, "CANCELLED");
-  assert.equal(db.state.booking.paymentStatus, "REFUND_PENDING");
-  assert.equal(db.state.payments[0].status, "REFUND_PENDING");
-  assert.equal(db.state.booking.items[0].status, "CANCELLED");
+  const db = fixture();
+  await performAdminAction(db, 'owner', action('CANCEL'));
+  assert.equal(db.state.booking.status, 'CANCELLED');
+  assert.equal(db.state.booking.paymentStatus, 'REFUND_PENDING');
+  assert.equal(db.state.payments[0].status, 'PAID');
+  assert.equal(db.state.refunds[0].amount, 400000);
+  assert.equal(db.state.refunds[0].completedAmount, 0);
+  assert.equal(db.state.items[0].status, 'CANCELLED');
 });
 test("admin cannot self-demote or self-block; approved owners cannot self-approve", async () => {
   const db = database();

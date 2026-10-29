@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, DollarSign, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { X, DollarSign, AlertTriangle } from "lucide-react";
 import { formatVND } from "@/lib/utils";
 
 interface RefundModalProps {
@@ -17,8 +17,9 @@ interface RefundModalProps {
     cancelRequestedAt?: string | null;
     cancelApprovedAt?: string | null;
     refundAmountApproved?: number | null;
+    refundAvailable: number;
+    refunds: Array<{ id: string; remaining: number; txnRef: string; provider: string }>;
   } | null;
-  userRole: string;
   mode: "APPROVE" | "RECORD";
   onSuccess: () => void;
 }
@@ -27,14 +28,16 @@ export default function RefundModal({
   isOpen,
   onClose,
   booking,
-  userRole,
   mode,
   onSuccess,
 }: RefundModalProps) {
+  const pendingRefunds = booking?.refunds.filter((r) => r.remaining > 0) || [];
+  const [refundId, setRefundId] = useState(pendingRefunds[0]?.id || "");
+  const [reference, setReference] = useState("");
   const [amount, setAmount] = useState<number>(() => {
     if (!booking) return 0;
-    if (mode === "APPROVE") return booking.totalPaid || booking.total;
-    return booking.refundAmountApproved || booking.totalPaid || booking.total;
+    if (mode === "APPROVE") return booking.refundAvailable;
+    return pendingRefunds[0]?.remaining || 0;
   });
   const [reason, setReason] = useState(
     mode === "APPROVE"
@@ -47,15 +50,15 @@ export default function RefundModal({
   if (!booking) return null;
 
   const maxAmount = mode === "APPROVE"
-    ? (booking.totalPaid || booking.total)
-    : (booking.refundAmountApproved || booking.totalPaid || booking.total);
+    ? booking.refundAvailable
+    : (pendingRefunds.find((r) => r.id === refundId)?.remaining || 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (busy || !booking) return;
 
-    if (amount <= 0 || amount > maxAmount) {
-      setError(`Số tiền hoàn phải lớn hơn 0 và không vượt quá ${formatVND(maxAmount)}.`);
+    if (!Number.isSafeInteger(amount) || amount < (mode === "APPROVE" ? 0 : 1) || amount > maxAmount) {
+      setError(`Số tiền phải là VND nguyên, trong giới hạn từ ${mode === "APPROVE" ? 0 : 1} đến ${formatVND(maxAmount)}.`);
       return;
     }
 
@@ -66,7 +69,7 @@ export default function RefundModal({
       const action = mode === "APPROVE" ? "APPROVE_CANCEL" : "RECORD_REFUND";
       const payload = mode === "APPROVE"
         ? { action, id: booking.id, refundAmount: amount, reason }
-        : { action, id: booking.id, amount, reason };
+        : { action, id: booking.id, amount, reason, refundId, reference };
 
       const res = await fetch("/api/venue-operations", {
         method: "POST",
@@ -127,16 +130,31 @@ export default function RefundModal({
           )}
 
           <form onSubmit={handleSubmit} className="mt-3 space-y-4">
+            {mode === "RECORD" && <>
+              <label className="block text-sm">Giao dịch gốc cần hoàn
+                <select value={refundId} onChange={(e) => {
+                  setRefundId(e.target.value);
+                  setAmount(pendingRefunds.find((r) => r.id === e.target.value)?.remaining || 0);
+                  setReference("");
+                }} className="mt-1 w-full rounded-lg border p-2 dark:bg-zinc-900">
+                  {pendingRefunds.map((r) => <option key={r.id} value={r.id}>{r.txnRef} · {r.provider} · còn {formatVND(r.remaining)}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm">Mã giao dịch chi / số phiếu chi riêng biệt
+                <input required minLength={5} maxLength={160} value={reference} onChange={(e) => setReference(e.target.value)} className="mt-1 w-full rounded-lg border p-2 dark:bg-zinc-900" />
+              </label>
+              <p className="text-xs text-zinc-500">Hoàn cho người thực trả của giao dịch gốc. Chỉ ghi nhận số tiền đã chi; phần còn lại tiếp tục chờ hoàn.</p>
+            </>}
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Số tiền {mode === "APPROVE" ? "duyệt hoàn" : "thực tế đã hoàn"} (VND) *
+                Số tiền {mode === "APPROVE" ? "duyệt hoàn thêm khi hủy sân" : "thực tế đã hoàn"} (VND) *
               </label>
               <input
                 required
                 type="number"
-                min="1000"
+                min={mode === "APPROVE" ? 0 : 1}
                 max={maxAmount}
-                step="1000"
+                step="1"
                 value={amount}
                 onChange={(e) => setAmount(Number(e.target.value))}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-bold text-court-600 dark:border-zinc-700 dark:bg-zinc-900"
@@ -173,7 +191,7 @@ export default function RefundModal({
               </button>
               <button
                 type="submit"
-                disabled={busy || amount <= 0 || amount > maxAmount || reason.trim().length < 5}
+                disabled={busy || !Number.isSafeInteger(amount) || amount < (mode === "APPROVE" ? 0 : 1) || amount > maxAmount || reason.trim().length < 5 || (mode === "RECORD" && (!refundId || reference.trim().length < 5))}
                 className={`rounded-lg px-5 py-2 text-xs font-bold text-white disabled:opacity-50 ${
                   mode === "APPROVE" ? "bg-court-600 hover:bg-court-700" : "bg-emerald-600 hover:bg-emerald-700"
                 }`}

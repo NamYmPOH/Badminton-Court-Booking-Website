@@ -75,11 +75,13 @@ const venueOpActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("APPROVE_CANCEL"),
     id: z.string().min(1),
-    refundAmount: z.number().int().positive("Số tiền hoàn phải lớn hơn 0"),
+    refundAmount: z.number().int().nonnegative(),
     reason: z.string().trim().min(5, "Ghi lý do ít nhất 5 ký tự.").max(500),
   }),
   z.object({
     action: z.literal("RECORD_REFUND"),
+    refundId: z.string().min(1).max(100),
+    reference: z.string().trim().min(5).max(160),
     id: z.string().min(1),
     amount: z.number().int().positive("Số tiền hoàn phải lớn hơn 0"),
     reason: z.string().trim().min(5, "Ghi lý do ít nhất 5 ký tự.").max(500),
@@ -145,6 +147,7 @@ export async function GET(request: Request) {
           { status: "PENDING_PAYMENT", expiresAt: { gt: now } },
           { cancelRequestedAt: { not: null } },
           { paymentStatus: "REFUND_PENDING" },
+          { payments: { some: { groupRefund: { is: { status: { in: ["PENDING", "REVIEW_REQUIRED"] } } } } } },
         ],
       },
       take: 100,
@@ -155,8 +158,8 @@ export async function GET(request: Request) {
         },
         venue: { select: { id: true, name: true, paymentMode: true } },
         payments: {
-          where: { status: "PAID" },
-          select: { id: true, amount: true, status: true, provider: true, paidAt: true },
+          where: { status: { in: ["PAID", "REFUND_PENDING", "REFUNDED"] } },
+          include: { groupRefund: true },
         },
         group: {
           select: {
@@ -168,6 +171,16 @@ export async function GET(request: Request) {
     });
 
     const bookings = rawBookings.map((b) => {
+      const receipts = b.payments.filter((p) => !p.txnRef.startsWith("REFUND-"));
+      const received = receipts.reduce((sum, p) => sum + p.amount, 0);
+      const refunds = receipts.flatMap((p) => p.groupRefund ? [{
+        id: p.groupRefund.id, amount: p.groupRefund.amount, completedAmount: p.groupRefund.completedAmount,
+        remaining: p.groupRefund.amount - p.groupRefund.completedAmount, txnRef: p.txnRef, provider: p.provider,
+      }] : []);
+      const refundApproved = refunds.reduce((sum, r) => sum + r.amount, 0);
+      const refundNeedsReview = b.payments.some((p) => p.txnRef.startsWith("REFUND-") || (p.status !== "PAID" && !p.groupRefund))
+        || b.payments.some((p) => p.groupRefund?.status === "REVIEW_REQUIRED")
+        || refundApproved > received || refunds.some((r) => r.remaining < 0);
       const paymentDetails = calculateBookingPaymentDetails(b);
       const endTimestamp = getBookingEndTimestamp(b.items);
       const isOverdue = endTimestamp > 0 && now.getTime() >= endTimestamp;
@@ -192,6 +205,10 @@ export async function GET(request: Request) {
         cancelRequestedAt: b.cancelRequestedAt ? b.cancelRequestedAt.toISOString() : null,
         cancelApprovedAt: b.cancelApprovedAt ? b.cancelApprovedAt.toISOString() : null,
         refundAmountApproved: b.refundAmountApproved,
+        refundAvailable: refundNeedsReview ? 0 : Math.max(0, received - refundApproved),
+        refundPending: refundNeedsReview ? 0 : refunds.reduce((sum, r) => sum + r.remaining, 0),
+        refundNeedsReview,
+        refunds: refundNeedsReview ? [] : refunds,
         refundCompletedAt: b.refundCompletedAt ? b.refundCompletedAt.toISOString() : null,
         source: b.source,
         venue: b.venue,
@@ -299,7 +316,7 @@ export async function POST(request: Request) {
     // 7. Thao tác ghi nhận hoàn tiền thủ công
     if (data.action === "RECORD_REFUND") {
       return NextResponse.json(
-        await recordManualRefund(db, actor, data.id, data.amount, data.reason)
+        await recordManualRefund(db, actor, data.id, data.amount, data.reason, data.refundId, data.reference)
       );
     }
 

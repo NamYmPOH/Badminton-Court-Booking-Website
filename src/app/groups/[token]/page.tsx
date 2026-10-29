@@ -36,6 +36,7 @@ export default function GroupPaymentPage({
   const [reason, setReason] = useState("");
   const [ticketInput, setTicketInput] = useState("");
   const [refund, setRefund] = useState("");
+  const [refundAmount, setRefundAmount] = useState(0);
   const [reference, setReference] = useState("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -770,14 +771,14 @@ export default function GroupPaymentPage({
                   className="flex flex-wrap justify-between gap-3"
                 >
                   <p>
-                    {formatVND(r.amount)} ·{" "}
+                    {formatVND(r.amount)} · {r.status !== "REVIEW_REQUIRED" && <>Đã hoàn {formatVND(r.completedAmount)} · Còn {formatVND(r.remaining)} · </>}{" "}
                     {r.status === "COMPLETED"
                       ? "Đã xác nhận hoàn"
-                      : "Chờ xử lý hoàn"}
+                      : r.status === "REVIEW_REQUIRED" ? "Cần đối soát chứng từ cũ" : "Chờ xử lý hoàn"}
                     {r.txnRef ? ` · ${r.txnRef}` : ""}
                   </p>
                   {group.isOperator && r.status === "PENDING" && (
-                    <button className={button} onClick={() => setRefund(r.id)}>
+                    <button className={button} onClick={() => { setRefund(r.id); setRefundAmount(r.remaining); setReference(""); }}>
                       Ghi nhận đã hoàn
                     </button>
                   )}
@@ -791,17 +792,24 @@ export default function GroupPaymentPage({
                     void act({
                       action: "REFUND_DONE",
                       refundId: refund,
+                      amount: refundAmount,
                       reference,
                       reason: "Đã kiểm tra chứng từ hoàn cho giao dịch gốc",
                     });
                   }}
                 >
                   <label className="block">
+                    Số tiền thực tế đã hoàn (VND)
+                    <input required type="number" min={1} step={1} max={group.refunds.find((r) => r.id === refund)?.remaining || 0}
+                      value={refundAmount} onChange={(e) => setRefundAmount(Number(e.target.value))}
+                      className="ml-3 rounded-control border border-border bg-surface p-2 text-ink" />
+                  </label>
+                  <label className="block">
                     Mã chứng từ hoàn thực tế
                     <input
                       required
                       minLength={5}
-                      maxLength={200}
+                      maxLength={160}
                       value={reference}
                       onChange={(e) => setReference(e.target.value)}
                       className="ml-3 rounded-control border border-border bg-surface p-2 text-ink"
@@ -811,7 +819,7 @@ export default function GroupPaymentPage({
                     Chỉ xác nhận sau khi đã hoàn cho người thực trả theo giao
                     dịch gốc.
                   </p>
-                  <button disabled={busy || !!error} className={button}>
+                  <button disabled={busy || !Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > (group.refunds.find((r) => r.id === refund)?.remaining || 0) || reference.trim().length < 5} className={button}>
                     Xác nhận đã hoàn
                   </button>
                 </form>
