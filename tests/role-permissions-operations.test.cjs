@@ -80,7 +80,7 @@ function createMockDb(initialState = {}) {
   const db = {
     $transaction: async (fn) => fn(db),
     user: {
-      findUnique: async ({ where }) => state.users.find((u) => u.id === where.id || u.phone === where.phone || u.email === where.email) || null,
+      findUnique: async ({ where }) => state.users.find((u) => (where.id && u.id === where.id) || (where.phone && u.phone === where.phone) || (where.email && u.email === where.email)) || null,
       findFirst: async ({ where }) => state.users.find((u) => {
         if (where.phone && u.phone !== where.phone) return false;
         if (where.email && u.email !== where.email) return false;

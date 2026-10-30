@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AlertCircle, X, CheckCircle2 } from "lucide-react";
 
 interface CancelBookingNoticeModalProps {
@@ -22,6 +22,55 @@ export function CancelBookingNoticeModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [requiresApproval, setRequiresApproval] = useState<boolean | null>(null);
+
+  const prevBookingCodeRef = useRef(bookingCode);
+  const prevIsOpenRef = useRef(isOpen);
+  const activeRequestIdRef = useRef(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Reset state khi mở modal mới hoặc đổi bookingCode, nhưng giữ reason nếu chỉ background refresh
+  useEffect(() => {
+    const isNewBooking = bookingCode !== prevBookingCodeRef.current;
+    const isNewlyOpened = isOpen && !prevIsOpenRef.current;
+
+    prevBookingCodeRef.current = bookingCode;
+    prevIsOpenRef.current = isOpen;
+
+    if (isNewlyOpened || isNewBooking) {
+      setError("");
+      setSuccessMessage("");
+      setRequiresApproval(null);
+      setBusy(false);
+      activeRequestIdRef.current++; // Hủy bỏ bất kỳ request cũ nào đang chờ response
+
+      if (isNewBooking) {
+        setReason("");
+      }
+    }
+  }, [isOpen, bookingCode]);
+
+  // Tự động focus vào ô nhập lý do khi mở
+  useEffect(() => {
+    if (isOpen && !successMessage) {
+      const timer = setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, successMessage]);
+
+  // Hỗ trợ phím Escape để đóng modal
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, busy, onClose]);
 
   if (!isOpen) return null;
 
@@ -29,28 +78,48 @@ export function CancelBookingNoticeModal({
     e.preventDefault();
     if (busy || reason.trim().length < 5) return;
 
+    const currentRequestId = ++activeRequestIdRef.current;
+    const targetCode = bookingCode;
     setBusy(true);
     setError("");
 
     try {
-      const res = await fetch(`/api/bookings/${bookingCode}/cancel`, {
+      const res = await fetch(`/api/bookings/${targetCode}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: reason.trim() }),
       });
 
       const data = await res.json();
+
+      // Ngăn response của request cũ cập nhật modal nếu đã chuyển sang đơn khác
+      if (currentRequestId !== activeRequestIdRef.current) return;
+
       if (!res.ok) {
         throw new Error(data.message || "Không thể hủy đơn đặt sân.");
       }
 
-      setSuccessMessage(data.message || "Đã gửi yêu cầu hủy đơn thành công.");
+      const needsApproval = Boolean(data.requiresApproval);
+      setRequiresApproval(needsApproval);
+      setSuccessMessage(
+        needsApproval
+          ? "Yêu cầu hủy đơn đã được gửi tới chủ cơ sở. Đang chờ phê duyệt và xử lý hoàn tiền."
+          : "Đơn đặt sân đã được hủy thành công."
+      );
       onCancelled?.();
     } catch (e) {
+      if (currentRequestId !== activeRequestIdRef.current) return;
       setError(e instanceof Error ? e.message : "Có lỗi xảy ra khi hủy đơn.");
     } finally {
-      setBusy(false);
+      if (currentRequestId === activeRequestIdRef.current) {
+        setBusy(false);
+      }
     }
+  }
+
+  function handleCloseModal() {
+    activeRequestIdRef.current++;
+    onClose();
   }
 
   return (
@@ -63,7 +132,7 @@ export function CancelBookingNoticeModal({
       {/* Nền mờ phía sau */}
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in"
-        onClick={!busy ? onClose : undefined}
+        onClick={!busy ? handleCloseModal : undefined}
         aria-hidden="true"
       />
 
@@ -72,7 +141,7 @@ export function CancelBookingNoticeModal({
         <button
           type="button"
           disabled={busy}
-          onClick={onClose}
+          onClick={handleCloseModal}
           className="absolute right-4 top-4 rounded-full p-1 text-muted transition hover:bg-court-50 hover:text-ink dark:hover:bg-surface/80"
           aria-label="Đóng hộp thoại"
         >
@@ -102,17 +171,30 @@ export function CancelBookingNoticeModal({
 
         {successMessage ? (
           <div className="mt-4 space-y-4">
-            <div className="rounded-xl bg-emerald-50 p-4 text-xs text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-start gap-2">
-              <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
+            <div
+              className={`rounded-xl p-4 text-xs border flex items-start gap-2 ${
+                requiresApproval
+                  ? "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300"
+                  : "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+              }`}
+            >
+              <CheckCircle2
+                size={18}
+                className={`shrink-0 ${
+                  requiresApproval ? "text-amber-600 dark:text-amber-400" : "text-emerald-600"
+                }`}
+              />
               <div>
-                <p className="font-bold text-sm mb-1">Thao tác thành công</p>
+                <p className="font-bold text-sm mb-1">
+                  {requiresApproval ? "Đang chờ chủ sân phê duyệt" : "Hủy lịch thành công"}
+                </p>
                 <p>{successMessage}</p>
               </div>
             </div>
             <div className="flex justify-end">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleCloseModal}
                 className="rounded-control bg-court-600 px-5 py-2 text-xs font-semibold text-white hover:bg-court-700"
               >
                 Đóng
@@ -128,10 +210,12 @@ export function CancelBookingNoticeModal({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+              <label htmlFor="cancel-reason-input" className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
                 Lý do hủy đơn * (ít nhất 5 ký tự)
               </label>
               <textarea
+                id="cancel-reason-input"
+                ref={textareaRef}
                 required
                 minLength={5}
                 maxLength={500}
@@ -139,7 +223,8 @@ export function CancelBookingNoticeModal({
                 placeholder="Ghi rõ lý do bạn muốn hủy đơn đặt sân này..."
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-ink focus:border-court-500"
+                disabled={busy}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-ink focus:border-court-500 disabled:opacity-50"
               />
             </div>
 
@@ -147,7 +232,7 @@ export function CancelBookingNoticeModal({
               <button
                 type="button"
                 disabled={busy}
-                onClick={onClose}
+                onClick={handleCloseModal}
                 className="rounded-control border border-border px-4 py-2 text-xs font-semibold text-muted hover:bg-court-50"
               >
                 Giữ lại đơn

@@ -3,8 +3,9 @@ import bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { PaymentError } from "../lib/sepay";
 import { serializable } from "../lib/transaction";
-import { formatHour } from "../lib/booking";
+import { formatHour, vietnamDate } from "../lib/booking";
 import { approveCancellationInTransaction, completeRefund, refundLedger } from "./refund.service";
+import { recordVoucherConsumption } from "./settlement.service";
 
 export interface BookingTimeSlot {
   date: Date | string;
@@ -104,17 +105,28 @@ export async function assertVenueOperatorAccess(
   venueId: string,
   requireActiveShift = false
 ): Promise<{ isOwnerOrAdmin: boolean; isStaff: boolean }> {
-  if (actor.status !== "ACTIVE") {
+  let freshUser = actor;
+  if (typeof tx.user?.findUnique === "function") {
+    const dbUser = await tx.user.findUnique({
+      where: { id: actor.id },
+      select: { id: true, role: true, status: true },
+    });
+    if (dbUser && dbUser.id === actor.id) {
+      freshUser = dbUser;
+    }
+  }
+
+  if (freshUser.status !== "ACTIVE") {
     throw new PaymentError(403, "Tài khoản của bạn đang bị khóa hoặc không hoạt động.");
   }
 
-  if (actor.role === "ADMIN") {
+  if (freshUser.role === "ADMIN") {
     return { isOwnerOrAdmin: true, isStaff: false };
   }
 
   // 1. Kiểm tra vai trò chủ sở hữu cơ sở
   const ownedVenue = await tx.venue.findFirst({
-    where: { id: venueId, ownerId: actor.id },
+    where: { id: venueId, ownerId: freshUser.id },
     select: { id: true, status: true },
   });
   if (ownedVenue) {
@@ -124,7 +136,7 @@ export async function assertVenueOperatorAccess(
   // 2. Kiểm tra vai trò nhân viên tại cơ sở (áp dụng cả khi role hệ thống là STAFF hoặc OWNER của sân khác)
   const staff = await tx.venueStaff.findFirst({
     where: {
-      userId: actor.id,
+      userId: freshUser.id,
       venueId,
       isActive: true,
       venue: { status: "ACTIVE" },
@@ -136,7 +148,7 @@ export async function assertVenueOperatorAccess(
     if (requireActiveShift) {
       const activeShift = await tx.staffShift.findFirst({
         where: {
-          userId: actor.id,
+          userId: freshUser.id,
           venueId,
           endedAt: null,
         },
@@ -501,8 +513,8 @@ export async function confirmCashPayment(
 
     if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
 
-    // Kiểm tra quyền của nhân viên/chủ sân
-    await assertVenueOperatorAccess(tx, actor, booking.venueId, actor.role === "STAFF");
+    // Kiểm tra quyền của nhân viên/chủ sân: nhân viên bắt buộc có ca trực đang mở
+    await assertVenueOperatorAccess(tx, actor, booking.venueId, true);
 
     if (!["CONFIRMED", "CHECKED_IN"].includes(booking.status) || booking.cancelApprovedAt) {
       throw new PaymentError(409, "Đơn không còn cho phép thu tiền.");
@@ -533,6 +545,15 @@ export async function confirmCashPayment(
         paidAt: now,
       },
     });
+
+    // Tiêu thụ voucher / PartnerOffer nếu có trong cùng transaction
+    await recordVoucherConsumption(
+      tx,
+      booking.id,
+      booking.voucherId,
+      booking.userId || actor.id,
+      booking.customerName || actor.name
+    );
 
     // Cập nhật trạng thái thanh toán và đánh dấu đơn có tiền mặt (bắt buộc hoàn tất thủ công)
     await tx.booking.update({
@@ -591,8 +612,8 @@ export async function completeBookingSession(
 
     if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
 
-    // Kiểm tra quyền của nhân viên/chủ sân
-    await assertVenueOperatorAccess(tx, actor, booking.venueId, actor.role === "STAFF");
+    // Kiểm tra quyền của nhân viên/chủ sân: nhân viên bắt buộc có ca trực đang mở
+    await assertVenueOperatorAccess(tx, actor, booking.venueId, true);
 
     if (booking.status === "COMPLETED") {
       // Idempotent: đã hoàn tất trước đó
@@ -1218,10 +1239,10 @@ export async function createCounterBooking(
   now = new Date()
 ) {
   return serializable(db, async (tx) => {
-    // 1. Phân quyền và ca trực: STAFF bắt buộc có ca trực đang mở
-    await assertVenueOperatorAccess(tx, actor, input.venueId, actor.role === "STAFF");
+    // 1. Phân quyền và ca trực: nhân viên cơ sở bắt buộc có ca trực đang mở
+    await assertVenueOperatorAccess(tx, actor, input.venueId, true);
 
-    // 2. Chống gửi trùng request
+    // 2. Chống gửi trùng request và bảo vệ dữ liệu chéo cơ sở
     if (input.requestId) {
       const existing = await tx.booking.findUnique({
         where: { requestId: input.requestId },
@@ -1232,6 +1253,36 @@ export async function createCounterBooking(
         },
       });
       if (existing) {
+        // 1. Kiểm tra quyền của operator hiện tại trên chính existing.venueId (ngăn tiết lộ dữ liệu cơ sở khác)
+        await assertVenueOperatorAccess(tx, actor, existing.venueId, true);
+
+        // 2. Ràng buộc ngữ cảnh tạo đơn tại quầy:
+        if (existing.venueId !== input.venueId || existing.source !== "COUNTER") {
+          throw new PaymentError(409, "Mã yêu cầu (requestId) này đã được sử dụng cho một đơn đặt khác.");
+        }
+
+        // 3. So khớp payload chuẩn hóa:
+        const existingItem = existing.items[0];
+        if (!existingItem) {
+          throw new PaymentError(409, "Dữ liệu đơn đặt sân trước đó không hoàn chỉnh. Cần đối soát.");
+        }
+
+        const existingDateStr = existingItem.date instanceof Date
+          ? existingItem.date.toISOString().slice(0, 10)
+          : String(existingItem.date).slice(0, 10);
+        const reqDateStr = input.date.trim();
+
+        const courtMatch = existingItem.courtId === input.courtId;
+        const dateMatch = existingDateStr === reqDateStr;
+        const timeMatch = existingItem.startMin === input.startMin && existingItem.endMin === input.endMin;
+        const customerNameMatch = existing.customerName.trim().toLowerCase() === input.customerName.trim().toLowerCase();
+        const customerPhoneMatch = existing.customerPhone.trim() === input.customerPhone.trim();
+        const paymentMethodMatch = existing.paymentMethod === input.paymentMethod;
+
+        if (!courtMatch || !dateMatch || !timeMatch || !customerNameMatch || !customerPhoneMatch || !paymentMethodMatch) {
+          throw new PaymentError(409, "Mã yêu cầu (requestId) bị trùng lặp với thông tin đặt sân khác.");
+        }
+
         return { success: true, booking: existing, alreadyCreated: true };
       }
     }
@@ -1245,12 +1296,31 @@ export async function createCounterBooking(
       throw new PaymentError(400, "Cơ sở này hiện không thể nhận đặt sân.");
     }
 
+    // Kiểm tra định dạng ngày và tính hợp lệ trên lịch thực
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
+      throw new PaymentError(400, "Định dạng ngày đặt sân không hợp lệ (YYYY-MM-DD).");
+    }
+    const dateObj = new Date(`${input.date}T00:00:00.000Z`);
+    if (isNaN(dateObj.getTime()) || dateObj.toISOString().slice(0, 10) !== input.date) {
+      throw new PaymentError(400, "Ngày đặt sân không tồn tại trên lịch thực.");
+    }
+
+    if (input.startMin < 0 || input.endMin > 1440 || input.startMin >= input.endMin) {
+      throw new PaymentError(400, "Khung giờ đặt sân không hợp lệ.");
+    }
+
     if (input.startMin < venue.openMin || input.endMin > venue.closeMin) {
       throw new PaymentError(400, "Khung giờ nằm ngoài thời gian hoạt động của cơ sở.");
     }
     const durationMin = input.endMin - input.startMin;
     if (durationMin < venue.minBookingMin || durationMin > venue.maxBookingMin) {
       throw new PaymentError(400, `Thời gian đặt sân phải từ ${venue.minBookingMin} đến ${venue.maxBookingMin} phút.`);
+    }
+
+    // Kiểm tra ngày quá khứ
+    const todayStr = vietnamDate(now);
+    if (input.date < todayStr) {
+      throw new PaymentError(400, "Không thể đặt sân cho ngày trong quá khứ.");
     }
 
     // 4. Sân con
@@ -1262,7 +1332,6 @@ export async function createCounterBooking(
     }
 
     // 5. Kiểm tra trùng lịch
-    const dateObj = new Date(`${input.date}T00:00:00.000Z`);
     const blocked = await tx.courtBlock.findFirst({
       where: {
         courtId: input.courtId,
@@ -1294,16 +1363,41 @@ export async function createCounterBooking(
       throw new PaymentError(409, "Khung giờ này đã có người đặt. Vui lòng chọn khung giờ khác.");
     }
 
-    // 6. Tính giá backend
+    // 6. Tính giá backend theo từng khung giờ thực tế
     const dayOfWeek = dateObj.getUTCDay() === 0 ? 7 : dateObj.getUTCDay();
-    const matchedRule = venue.pricing.find(
-      (p) =>
-        p.daysOfWeek.includes(dayOfWeek) &&
-        p.startMin <= input.startMin &&
-        p.endMin >= input.endMin
-    );
-    const hourlyRate = matchedRule?.walkInPrice ?? venue.priceFrom ?? 100000;
-    const price = Math.round((hourlyRate * durationMin) / 60);
+    const applicableRules = (venue.pricing || []).filter((p) => p.daysOfWeek.includes(dayOfWeek));
+
+    let price = 0;
+    if (applicableRules.length > 0) {
+      let totalMinutesPrice = 0;
+      for (let m = input.startMin; m < input.endMin; m++) {
+        const matchingRules = applicableRules.filter((r) => m >= r.startMin && m < r.endMin);
+        if (matchingRules.length === 0) {
+          throw new PaymentError(
+            400,
+            `Cơ sở thiếu cấu hình giá cho khung giờ ${formatHour(m)} - ${formatHour(m + 1)}.`
+          );
+        }
+        if (matchingRules.length > 1) {
+          const prices = new Set(matchingRules.map((r) => r.walkInPrice));
+          if (prices.size > 1) {
+            throw new PaymentError(
+              400,
+              `Cấu hình giá bị chồng lấn không rõ ràng tại khung giờ ${formatHour(m)}.`
+            );
+          }
+        }
+        totalMinutesPrice += matchingRules[0].walkInPrice / 60;
+      }
+      price = Math.round(totalMinutesPrice);
+    } else {
+      const hourlyRate = venue.priceFrom ?? 100000;
+      price = Math.round((hourlyRate * durationMin) / 60);
+    }
+
+    if (!Number.isSafeInteger(price) || price <= 0 || price > 2147483647) {
+      throw new PaymentError(400, "Số tiền tính toán vượt quá giới hạn cho phép.");
+    }
 
     const isCash = input.paymentMethod === "CASH";
     const code = `DATSAN${randomInt(1000000000, 10000000000)}`;

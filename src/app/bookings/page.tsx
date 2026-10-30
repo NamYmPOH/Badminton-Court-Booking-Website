@@ -154,6 +154,7 @@ function BookingsContent() {
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       {/* Modal hướng dẫn huỷ lịch cá nhân */}
       <CancelBookingNoticeModal
+        key={cancelModalData?.code || "none"}
         isOpen={cancelModalData !== null}
         bookingCode={cancelModalData?.code || ""}
         venueName={cancelModalData?.venueName || ""}
