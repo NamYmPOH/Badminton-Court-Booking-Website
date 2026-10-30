@@ -134,8 +134,12 @@ export default function VenueOperationsPage() {
 
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
+      if (signal?.aborted) return;
       try {
-        const response = await fetch(`/api/venue-operations?q=${encodeURIComponent(filter)}`, {
+        const venueId = selectedVenueId || new URLSearchParams(window.location.search).get("venueId");
+        const params = new URLSearchParams({ q: filter });
+        if (venueId) params.set("venueId", venueId);
+        const response = await fetch(`/api/venue-operations?${params}`, {
           cache: "no-store",
           signal,
         });
@@ -147,7 +151,7 @@ export default function VenueOperationsPage() {
           setCourtsByVenue(data.courtsByVenue || {});
           setShiftsByVenue(data.shiftsByVenue || {});
           if (!selectedVenueId && data.venues?.length) {
-            setSelectedVenueId(data.venues[0].id);
+            setSelectedVenueId(data.selectedVenueId || data.venues[0].id);
           }
           setError("");
         }
@@ -179,11 +183,15 @@ export default function VenueOperationsPage() {
     if (!allowed) return;
     const controller = new AbortController();
     setLoading(true);
-    void refresh(controller.signal);
-    const timer = setInterval(() => void refresh(controller.signal), 10000);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      await refresh(controller.signal);
+      if (!controller.signal.aborted) timer = setTimeout(poll, 10000);
+    };
+    void poll();
     return () => {
       controller.abort();
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [allowed, refresh]);
 

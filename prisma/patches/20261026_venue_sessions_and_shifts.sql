@@ -51,3 +51,7 @@ CREATE TABLE IF NOT EXISTS "StaffShift" (
 
 CREATE INDEX IF NOT EXISTS "StaffShift_venueId_endedAt_idx" ON "StaffShift"("venueId", "endedAt");
 CREATE INDEX IF NOT EXISTS "StaffShift_userId_endedAt_idx" ON "StaffShift"("userId", "endedAt");
+
+-- Ca trực chỉ được truy cập qua backend Prisma, giống các bảng nghiệp vụ khác.
+ALTER TABLE "StaffShift" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE "StaffShift" FROM anon, authenticated;

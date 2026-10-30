@@ -112,7 +112,9 @@ export async function GET(request: Request) {
       console.error("Auto overdue processor catchup error:", e);
     }
 
-    const q = (new URL(request.url).searchParams.get("q") || "").slice(0, 80);
+    const params = new URL(request.url).searchParams;
+    const q = (params.get("q") || "").slice(0, 80);
+    const requestedVenueId = params.get("venueId");
     const scope = operatorVenueScope(actor);
 
     // Lấy danh sách cơ sở sân được phân quyền
@@ -121,16 +123,26 @@ export async function GET(request: Request) {
       select: { id: true, name: true, slug: true, paymentMode: true, ownerId: true, status: true },
     });
 
+    const selectedVenue = requestedVenueId
+      ? venues.find((venue) => venue.id === requestedVenueId)
+      : venues[0];
+    if (requestedVenueId && !selectedVenue) {
+      throw new PaymentError(403, "Bạn không có quyền quản lý cơ sở này.");
+    }
+
     const now = new Date();
 
     // Lấy thông tin sân con và ca làm theo từng cơ sở
     const courtsByVenue: Record<string, CourtLiveStatus[]> = {};
     const shiftsByVenue: Record<string, { myShiftId: string | null; hasActiveShift: boolean }> = {};
 
-    for (const v of venues) {
-      courtsByVenue[v.id] = await getVenueCourtsLiveStatus(db, v.id, now);
-      const myShift = await getCurrentStaffShift(db, actor.id, v.id);
-      const venueHasShift = await hasActiveStaffShift(db, v.id);
+    for (const v of selectedVenue ? [selectedVenue] : []) {
+      const [courts, myShift, venueHasShift] = await Promise.all([
+        getVenueCourtsLiveStatus(db, v.id, now),
+        getCurrentStaffShift(db, actor.id, v.id),
+        hasActiveStaffShift(db, v.id),
+      ]);
+      courtsByVenue[v.id] = courts;
       shiftsByVenue[v.id] = {
         myShiftId: myShift ? myShift.id : null,
         hasActiveShift: venueHasShift,
@@ -140,6 +152,7 @@ export async function GET(request: Request) {
     const rawBookings = await db.booking.findMany({
       where: {
         venue: scope,
+        venueId: { in: selectedVenue ? [selectedVenue.id] : [] },
         ...(q ? { code: { contains: q, mode: "insensitive" } } : {}),
         OR: [
           { group: { isNot: null }, paymentStatus: "REFUND_PENDING" },
@@ -226,6 +239,7 @@ export async function GET(request: Request) {
       {
         bookings,
         venues,
+        selectedVenueId: selectedVenue?.id ?? null,
         courtsByVenue,
         shiftsByVenue,
         userRole: actor.role,

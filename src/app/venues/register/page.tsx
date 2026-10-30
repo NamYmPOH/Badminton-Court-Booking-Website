@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { parseCoordinates } from "@/lib/coordinates";
 
 export default function RegisterVenuePage() {
   const { user, isLoading } = useAuth();
@@ -12,10 +13,17 @@ export default function RegisterVenuePage() {
     e.preventDefault();
     if (saving) return;
     const form = new FormData(e.currentTarget);
+    const coordinates = parseCoordinates(String(form.get("coordinates") || ""));
+    if (!coordinates) {
+      setError("Tọa độ không hợp lệ. Dán theo thứ tự vĩ độ, kinh độ, ví dụ: 21.009055, 105.802321.");
+      return;
+    }
+    form.delete("coordinates");
     const values: Record<string, string | number> = Object.fromEntries(
       Array.from(form.entries(), ([key, value]) => [key, String(value)]),
     );
-    for (const key of ["lat", "lng", "courts", "hourlyPrice"])
+    Object.assign(values, coordinates);
+    for (const key of ["courts", "hourlyPrice"])
       values[key] = Number(values[key]);
     for (const key of ["openMin", "closeMin"]) {
       const [h, m] = String(values[key]).split(":").map(Number);
@@ -88,13 +96,12 @@ export default function RegisterVenuePage() {
             ["district", "Quận / huyện", "text", "", ""],
             ["province", "Tỉnh / thành phố", "text", "Hà Nội", ""],
             ["courts", "Số sân", "number", "4", "1"],
-            ["lat", "Vĩ độ (latitude)", "number", "", "any"],
-            ["lng", "Kinh độ (longitude)", "number", "", "any"],
+            ["coordinates", "Tọa độ Google Maps (vĩ độ, kinh độ)", "text", "", ""],
             ["openMin", "Giờ mở cửa", "time", "06:00", "1800"],
             ["closeMin", "Giờ đóng cửa", "time", "22:00", "1800"],
             ["hourlyPrice", "Giá theo giờ (đồng)", "number", "100000", "1000"],
           ].map(([name, label, type, value, step]) => (
-            <label key={name} className="block text-sm">
+            <label key={name} className={`block text-sm ${name === "coordinates" ? "sm:col-span-2" : ""}`}>
               {label}
               <input
                 required
@@ -103,8 +110,15 @@ export default function RegisterVenuePage() {
                 defaultValue={value}
                 step={step || undefined}
                 maxLength={300}
+                placeholder={name === "coordinates" ? "21.009055, 105.802321" : undefined}
+                aria-describedby={name === "coordinates" ? "coordinates-help" : undefined}
                 className="mt-1 w-full rounded-lg border border-border bg-surface text-ink px-3 py-2.5 outline-none focus:border-court-500"
               />
+              {name === "coordinates" && (
+                <span id="coordinates-help" className="mt-1 block text-xs leading-5 text-muted">
+                  Trên Google Maps, nhấp chuột phải vào vị trí sân, chọn dòng tọa độ đầu tiên để sao chép rồi dán vào đây. Vĩ độ trước, kinh độ sau.
+                </span>
+              )}
             </label>
           ))}
           <p className="text-xs leading-6 text-muted sm:col-span-2">
