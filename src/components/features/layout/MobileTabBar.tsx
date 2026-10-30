@@ -18,14 +18,20 @@ import { useAuth } from "@/context/AuthContext";
 export function MobileTabBar() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const isStaff = user?.role === "STAFF";
 
-  const mobileTabs = [
-    { href: "/", label: "Trang chủ", icon: Home },
-    { href: "/venues?view=map", label: "Bản đồ", icon: Map, match: "/venues" },
-    { href: "/offers", label: "Ưu đãi", icon: Tag },
-    { href: user ? "/bookings" : "/login", label: "Lịch của tôi", icon: CalendarDays },
-    { href: user ? "/account" : "/login", label: user ? "Tài khoản" : "Đăng nhập", icon: UserCircle },
-  ];
+  const mobileTabs = isStaff
+    ? [
+        { href: "/venue-operations", label: "Quản lý sân", icon: CalendarDays },
+        { href: "/account", label: "Tài khoản", icon: UserCircle },
+      ]
+    : [
+        { href: "/", label: "Trang chủ", icon: Home },
+        { href: "/venues?view=map", label: "Bản đồ", icon: Map, match: "/venues" },
+        { href: "/offers", label: "Ưu đãi", icon: Tag },
+        { href: user ? "/bookings" : "/login", label: "Lịch của tôi", icon: CalendarDays },
+        { href: user ? "/account" : "/login", label: user ? "Tài khoản" : "Đăng nhập", icon: UserCircle },
+      ];
 
   return (
     <nav

@@ -88,6 +88,109 @@ const venueOpActionSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
+let lastCatchupTimestamp = 0;
+
+export interface TimelineSlot {
+  id: string;
+  courtId: string;
+  startMin: number;
+  endMin: number;
+  type: "BOOKED" | "HELD" | "IN_USE" | "OVERDUE" | "BLOCKED";
+  bookingId?: string;
+  bookingCode?: string;
+  customerName?: string;
+  customerPhone?: string;
+  status?: string;
+  total?: number;
+  isFullyPaid?: boolean;
+  remaining?: number;
+  reason?: string;
+}
+
+export interface TimelineSchedule {
+  date: string;
+  openMin: number;
+  closeMin: number;
+  courts: Array<{ id: string; name: string }>;
+  slots: TimelineSlot[];
+}
+
+function formatBookingForOperation(b: any, now: Date) {
+  const receipts = (b.payments || []).filter((p: any) => !p.txnRef.startsWith("REFUND-"));
+  const received = receipts.reduce((sum: number, p: any) => sum + p.amount, 0);
+  const refunds = receipts.flatMap((p: any) =>
+    p.groupRefund
+      ? [
+          {
+            id: p.groupRefund.id,
+            amount: p.groupRefund.amount,
+            completedAmount: p.groupRefund.completedAmount,
+            remaining: p.groupRefund.amount - p.groupRefund.completedAmount,
+            txnRef: p.txnRef,
+            provider: p.provider,
+          },
+        ]
+      : []
+  );
+  const refundApproved = refunds.reduce((sum: number, r: any) => sum + r.amount, 0);
+  const refundNeedsReview =
+    (b.payments || []).some((p: any) => p.txnRef.startsWith("REFUND-") || (p.status !== "PAID" && !p.groupRefund)) ||
+    (b.payments || []).some((p: any) => p.groupRefund?.status === "REVIEW_REQUIRED") ||
+    refundApproved > received ||
+    refunds.some((r: any) => r.remaining < 0);
+  const paymentDetails = calculateBookingPaymentDetails(b);
+  const endTimestamp = getBookingEndTimestamp(b.items || []);
+  const isOverdue = endTimestamp > 0 && now.getTime() >= endTimestamp;
+
+  return {
+    id: b.id,
+    code: b.code,
+    customerName: b.customerName,
+    customerPhone: b.customerPhone,
+    total: b.total,
+    status: b.status,
+    sessionStatus: b.sessionStatus,
+    paymentStatus: b.paymentStatus,
+    paymentMethod: b.paymentMethod,
+    hasCashPayment: paymentDetails.hasCashPayment,
+    totalPaid: paymentDetails.totalPaid,
+    remaining: paymentDetails.remaining,
+    isFullyPaid: paymentDetails.isFullyPaid,
+    isOverdue,
+    endTimestamp,
+    expiresAt: b.expiresAt ? (b.expiresAt instanceof Date ? b.expiresAt.toISOString() : String(b.expiresAt)) : null,
+    cancelRequestedAt: b.cancelRequestedAt
+      ? b.cancelRequestedAt instanceof Date
+        ? b.cancelRequestedAt.toISOString()
+        : String(b.cancelRequestedAt)
+      : null,
+    cancelApprovedAt: b.cancelApprovedAt
+      ? b.cancelApprovedAt instanceof Date
+        ? b.cancelApprovedAt.toISOString()
+        : String(b.cancelApprovedAt)
+      : null,
+    refundAmountApproved: b.refundAmountApproved,
+    refundAvailable: refundNeedsReview ? 0 : Math.max(0, received - refundApproved),
+    refundPending: refundNeedsReview ? 0 : refunds.reduce((sum: number, r: any) => sum + r.remaining, 0),
+    refundNeedsReview,
+    refunds: refundNeedsReview ? [] : refunds,
+    refundCompletedAt: b.refundCompletedAt
+      ? b.refundCompletedAt instanceof Date
+        ? b.refundCompletedAt.toISOString()
+        : String(b.refundCompletedAt)
+      : null,
+    source: b.source,
+    venue: b.venue,
+    items: (b.items || []).map((i: any) => ({
+      date: i.date instanceof Date ? i.date.toISOString() : String(i.date),
+      startMin: i.startMin,
+      endMin: i.endMin,
+      court: i.court,
+    })),
+    group: b.group,
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const id = await requirePaymentUser();
@@ -105,11 +208,13 @@ export async function GET(request: Request) {
       throw new PaymentError(403, "Bạn không có quyền truy cập khu vực vận hành cơ sở.");
     }
 
-    // 2. Chỉ chạy tác vụ bù đắp khi đã xác thực người gọi là nhân sự vận hành hợp lệ
-    try {
-      await processOverdueAndCompletions(db);
-    } catch (e) {
-      console.error("Auto overdue processor catchup error:", e);
+    // 2. Chạy tác vụ bù đắp hết giờ có throttle (tối đa 1 lần / 30s) tránh chặn response GET
+    const nowMs = Date.now();
+    if (nowMs - lastCatchupTimestamp > 30000) {
+      lastCatchupTimestamp = nowMs;
+      void processOverdueAndCompletions(db).catch((e) => {
+        console.error("Auto overdue processor catchup error:", e);
+      });
     }
 
     const params = new URL(request.url).searchParams;
@@ -117,14 +222,25 @@ export async function GET(request: Request) {
     const requestedVenueId = params.get("venueId");
     const scope = operatorVenueScope(actor);
 
-    // Lấy danh sách cơ sở sân được phân quyền
+    // Lấy danh sách cơ sở sân được phân quyền (hỗ trợ cả slug và id)
     const venues = await db.venue.findMany({
       where: scope,
-      select: { id: true, name: true, slug: true, paymentMode: true, ownerId: true, status: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        paymentMode: true,
+        ownerId: true,
+        status: true,
+        address: true,
+        phone: true,
+        openMin: true,
+        closeMin: true,
+      },
     });
 
     const selectedVenue = requestedVenueId
-      ? venues.find((venue) => venue.id === requestedVenueId)
+      ? venues.find((venue) => venue.id === requestedVenueId || venue.slug === requestedVenueId)
       : venues[0];
     if (requestedVenueId && !selectedVenue) {
       throw new PaymentError(403, "Bạn không có quyền quản lý cơ sở này.");
@@ -149,6 +265,7 @@ export async function GET(request: Request) {
       };
     }
 
+    // A. Danh sách phiên sử dụng & chờ bàn giao (active/handover)
     const rawBookings = await db.booking.findMany({
       where: {
         venue: scope,
@@ -169,9 +286,9 @@ export async function GET(request: Request) {
         items: {
           select: { date: true, startMin: true, endMin: true, court: { select: { id: true, name: true } } },
         },
-        venue: { select: { id: true, name: true, paymentMode: true } },
+        venue: { select: { id: true, name: true, paymentMode: true, address: true, phone: true } },
         payments: {
-          where: { status: { in: ["PAID", "REFUND_PENDING", "REFUNDED"] } },
+          where: { status: { in: ["PAID", "REFUND_PENDING", "REFUNDED"] as any } },
           include: { groupRefund: true },
         },
         group: {
@@ -183,63 +300,195 @@ export async function GET(request: Request) {
       },
     });
 
-    const bookings = rawBookings.map((b) => {
-      const receipts = b.payments.filter((p) => !p.txnRef.startsWith("REFUND-"));
-      const received = receipts.reduce((sum, p) => sum + p.amount, 0);
-      const refunds = receipts.flatMap((p) => p.groupRefund ? [{
-        id: p.groupRefund.id, amount: p.groupRefund.amount, completedAmount: p.groupRefund.completedAmount,
-        remaining: p.groupRefund.amount - p.groupRefund.completedAmount, txnRef: p.txnRef, provider: p.provider,
-      }] : []);
-      const refundApproved = refunds.reduce((sum, r) => sum + r.amount, 0);
-      const refundNeedsReview = b.payments.some((p) => p.txnRef.startsWith("REFUND-") || (p.status !== "PAID" && !p.groupRefund))
-        || b.payments.some((p) => p.groupRefund?.status === "REVIEW_REQUIRED")
-        || refundApproved > received || refunds.some((r) => r.remaining < 0);
-      const paymentDetails = calculateBookingPaymentDetails(b);
-      const endTimestamp = getBookingEndTimestamp(b.items);
-      const isOverdue = endTimestamp > 0 && now.getTime() >= endTimestamp;
+    const bookings = rawBookings.map((b) => formatBookingForOperation(b, now));
 
-      return {
-        id: b.id,
-        code: b.code,
-        customerName: b.customerName,
-        customerPhone: b.customerPhone,
-        total: b.total,
-        status: b.status,
-        sessionStatus: b.sessionStatus,
-        paymentStatus: b.paymentStatus,
-        paymentMethod: b.paymentMethod,
-        hasCashPayment: paymentDetails.hasCashPayment,
-        totalPaid: paymentDetails.totalPaid,
-        remaining: paymentDetails.remaining,
-        isFullyPaid: paymentDetails.isFullyPaid,
-        isOverdue,
-        endTimestamp,
-        expiresAt: b.expiresAt ? b.expiresAt.toISOString() : null,
-        cancelRequestedAt: b.cancelRequestedAt ? b.cancelRequestedAt.toISOString() : null,
-        cancelApprovedAt: b.cancelApprovedAt ? b.cancelApprovedAt.toISOString() : null,
-        refundAmountApproved: b.refundAmountApproved,
-        refundAvailable: refundNeedsReview ? 0 : Math.max(0, received - refundApproved),
-        refundPending: refundNeedsReview ? 0 : refunds.reduce((sum, r) => sum + r.remaining, 0),
-        refundNeedsReview,
-        refunds: refundNeedsReview ? [] : refunds,
-        refundCompletedAt: b.refundCompletedAt ? b.refundCompletedAt.toISOString() : null,
-        source: b.source,
-        venue: b.venue,
-        items: b.items.map((i) => ({
-          date: i.date.toISOString(),
-          startMin: i.startMin,
-          endMin: i.endMin,
-          court: i.court,
-        })),
-        group: b.group,
+    // B. Lịch sân theo thời gian thực (Timeline Schedule)
+    const scheduleDateStr = params.get("scheduleDate") || params.get("date");
+    let timelineSchedule: TimelineSchedule | null = null;
+
+    if (selectedVenue && scheduleDateStr && /^\d{4}-\d{2}-\d{2}$/.test(scheduleDateStr)) {
+      const scheduleDate = new Date(`${scheduleDateStr}T00:00:00.000Z`);
+      const venueCourts = db.court?.findMany
+        ? await db.court.findMany({
+            where: { venueId: selectedVenue.id, status: "ACTIVE" },
+            select: { id: true, name: true },
+            orderBy: { sortOrder: "asc" },
+          })
+        : [];
+
+      const [bookedItems, blockedItems] = await Promise.all([
+        db.bookingItem?.findMany
+          ? db.bookingItem.findMany({
+              where: {
+                court: { venueId: selectedVenue.id },
+                date: scheduleDate,
+                status: { in: ["HELD", "CONFIRMED"] },
+                booking: {
+                  OR: [
+                    { status: { in: ["CONFIRMED", "CHECKED_IN", "COMPLETED"] } },
+                    { status: "PENDING_PAYMENT", expiresAt: { gt: now } },
+                  ],
+                },
+              },
+              include: {
+                booking: {
+                  include: {
+                    payments: {
+                      where: { status: "PAID" },
+                      select: { amount: true, status: true, provider: true },
+                    },
+                  },
+                },
+              },
+            })
+          : [],
+        db.courtBlock?.findMany
+          ? db.courtBlock.findMany({
+              where: { court: { venueId: selectedVenue.id }, date: scheduleDate },
+              select: { id: true, courtId: true, startMin: true, endMin: true, reason: true },
+            })
+          : [],
+      ]);
+
+      const nowVN = new Date(now.getTime() + 7 * 3600000);
+      const isToday = scheduleDateStr === nowVN.toISOString().slice(0, 10);
+      const currentMin = isToday ? nowVN.getUTCHours() * 60 + nowVN.getUTCMinutes() : -1;
+
+      const slots: TimelineSlot[] = [];
+
+      for (const item of bookedItems) {
+        const b = item.booking;
+        const payment = calculateBookingPaymentDetails(b);
+        let type: "BOOKED" | "HELD" | "IN_USE" | "OVERDUE" = "BOOKED";
+        if (b.status === "PENDING_PAYMENT") {
+          type = "HELD";
+        } else if (b.status === "CHECKED_IN") {
+          type = "IN_USE";
+        } else if (isToday && currentMin >= item.endMin && b.status !== "COMPLETED") {
+          type = "OVERDUE";
+        }
+
+        slots.push({
+          id: item.id,
+          courtId: item.courtId,
+          startMin: item.startMin,
+          endMin: item.endMin,
+          type,
+          bookingId: b.id,
+          bookingCode: b.code,
+          customerName: b.customerName,
+          customerPhone: b.customerPhone,
+          status: b.status,
+          total: b.total,
+          isFullyPaid: payment.isFullyPaid,
+          remaining: payment.remaining,
+        });
+      }
+
+      for (const block of blockedItems) {
+        slots.push({
+          id: block.id,
+          courtId: block.courtId,
+          startMin: block.startMin,
+          endMin: block.endMin,
+          type: "BLOCKED",
+          reason: block.reason || "Khóa sân bảo trì",
+        });
+      }
+
+      timelineSchedule = {
+        date: scheduleDateStr,
+        openMin: (selectedVenue as any).openMin ?? 360,
+        closeMin: (selectedVenue as any).closeMin ?? 1320,
+        courts: venueCourts,
+        slots,
       };
-    });
+    }
+
+    // C. Danh sách toàn bộ đơn đặt sân (Paginated & Filterable)
+    const page = Math.max(1, parseInt(params.get("page") || "1", 10));
+    const pageSize = Math.min(50, Math.max(1, parseInt(params.get("pageSize") || "10", 10)));
+    const statusFilter = params.get("statusFilter") || "ALL";
+    const courtFilter = params.get("courtFilter");
+    const dateFilter = params.get("dateFilter");
+
+    const allWhere: any = {
+      venue: scope,
+      venueId: { in: selectedVenue ? [selectedVenue.id] : [] },
+      ...(q
+        ? {
+            OR: [
+              { code: { contains: q, mode: "insensitive" } },
+              { customerName: { contains: q, mode: "insensitive" } },
+              { customerPhone: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+      ...(statusFilter && statusFilter !== "ALL"
+        ? statusFilter === "REFUND_PENDING"
+          ? { paymentStatus: "REFUND_PENDING" }
+          : { status: statusFilter }
+        : {}),
+      ...(courtFilter ? { items: { some: { courtId: courtFilter } } } : {}),
+      ...(dateFilter && /^\d{4}-\d{2}-\d{2}$/.test(dateFilter)
+        ? { items: { some: { date: new Date(`${dateFilter}T00:00:00.000Z`) } } }
+        : {}),
+    };
+
+    const includeOptions = {
+      items: {
+        select: { date: true, startMin: true, endMin: true, court: { select: { id: true, name: true } } },
+      },
+      venue: { select: { id: true, name: true, paymentMode: true, address: true, phone: true } },
+      payments: {
+        where: { status: { in: ["PAID", "REFUND_PENDING", "REFUNDED"] as any } },
+        include: { groupRefund: true },
+      },
+      group: {
+        select: {
+          inviteToken: true,
+          shares: { select: { id: true, position: true, amount: true, cashRequested: true, paymentId: true } },
+        },
+      },
+    };
+
+    const [totalAllBookings, paginatedRawBookings] = await Promise.all([
+      db.booking.count ? db.booking.count({ where: allWhere }) : 0,
+      db.booking.findMany({
+        where: allWhere,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+        include: includeOptions,
+      }),
+    ]);
+
+    const allBookings = paginatedRawBookings.map((b) => formatBookingForOperation(b, now));
 
     return NextResponse.json(
       {
         bookings,
+        allBookings: {
+          items: allBookings,
+          total: totalAllBookings,
+          page,
+          pageSize,
+          totalPages: Math.max(1, Math.ceil(totalAllBookings / pageSize)),
+        },
+        timelineSchedule,
         venues,
         selectedVenueId: selectedVenue?.id ?? null,
+        selectedVenue: selectedVenue
+          ? {
+              id: selectedVenue.id,
+              name: selectedVenue.name,
+              slug: selectedVenue.slug,
+              address: (selectedVenue as any).address || "",
+              phone: (selectedVenue as any).phone || "",
+              openMin: (selectedVenue as any).openMin ?? 360,
+              closeMin: (selectedVenue as any).closeMin ?? 1320,
+            }
+          : null,
         courtsByVenue,
         shiftsByVenue,
         userRole: actor.role,

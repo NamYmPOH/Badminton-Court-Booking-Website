@@ -13,7 +13,7 @@ import type { AuthUser, RegisterInput, LoginInput } from "@/types/auth";
 interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (input: LoginInput) => Promise<{ success: boolean; error?: string }>;
+  login: (input: LoginInput) => Promise<{ success: boolean; error?: string; user?: AuthUser }>;
   register: (input: RegisterInput) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setUser(json.data.user);
       broadcastSession();
-      return { success: true };
+      return { success: true, user: json.data.user };
     } catch {
       return {
         success: false,

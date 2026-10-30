@@ -54,8 +54,16 @@ export async function GET(request: Request) {
     const venueId = url.searchParams.get("venueId");
     if (!venueId) throw new PaymentError(400, "Thiếu mã cơ sở sân (venueId).");
 
-    const staffList = await getVenueStaffList(db, actor, venueId);
-    return NextResponse.json({ success: true, staff: staffList }, { headers: { "Cache-Control": "no-store" } });
+    const staffData = await getVenueStaffList(db, actor, venueId);
+    return NextResponse.json(
+      {
+        success: true,
+        venue: staffData.venue,
+        staff: staffData.staff,
+        staffMembers: staffData.staff,
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
     return paymentErrorResponse(error);
   }

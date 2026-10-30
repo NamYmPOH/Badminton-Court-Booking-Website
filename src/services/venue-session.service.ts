@@ -809,10 +809,10 @@ export async function getVenueStaffList(
     owner: { name: string; phone: string | null; email: string | null; status: string };
   } | null = null;
 
-  // ADMIN hoặc OWNER của cơ sở này
+  // ADMIN hoặc OWNER của cơ sở này (hỗ trợ cả id lẫn slug)
   if (actor.role === "ADMIN") {
-    venue = await db.venue.findUnique({
-      where: { id: venueId },
+    venue = await db.venue.findFirst({
+      where: { OR: [{ id: venueId }, { slug: venueId }] },
       select: {
         id: true,
         name: true,
@@ -824,7 +824,10 @@ export async function getVenueStaffList(
     if (!venue) throw new PaymentError(404, "Không tìm thấy cơ sở.");
   } else {
     venue = await db.venue.findFirst({
-      where: { id: venueId, ownerId: actor.id },
+      where: {
+        OR: [{ id: venueId }, { slug: venueId }],
+        ownerId: actor.id,
+      },
       select: {
         id: true,
         name: true,
@@ -837,7 +840,7 @@ export async function getVenueStaffList(
   }
 
   const staff = await db.venueStaff.findMany({
-    where: { venueId },
+    where: { venueId: venue.id },
     include: {
       user: {
         select: {
@@ -845,6 +848,7 @@ export async function getVenueStaffList(
           name: true,
           phone: true,
           email: true,
+          role: true,
           status: true,
         },
       },
@@ -854,7 +858,7 @@ export async function getVenueStaffList(
 
   const activeShifts = await db.staffShift.findMany({
     where: {
-      venueId,
+      venueId: venue.id,
       endedAt: null,
     },
     select: { userId: true, startedAt: true },
@@ -876,6 +880,7 @@ export async function getVenueStaffList(
       name: s.user.name,
       phone: s.user.phone,
       email: s.user.email,
+      userRole: s.user.role,
       userStatus: s.user.status,
       role: s.role,
       isActive: s.isActive,
@@ -897,15 +902,18 @@ export async function addVenueStaff(
   }
 
   return serializable(db, async (tx) => {
-    if (actor.role !== "ADMIN") {
-      const venue = await tx.venue.findFirst({
-        where: { id: venueId, ownerId: actor.id, status: "ACTIVE" },
-        select: { id: true },
-      });
-      if (!venue) {
-        throw new PaymentError(403, "Cơ sở sân cần được duyệt và đang hoạt động để phân công nhân viên.");
-      }
+    const venue = await tx.venue.findFirst({
+      where: {
+        OR: [{ id: venueId }, { slug: venueId }],
+        ...(actor.role === "ADMIN" ? {} : { ownerId: actor.id }),
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (!venue) {
+      throw new PaymentError(403, "Cơ sở sân cần được duyệt và đang hoạt động để phân công nhân viên.");
     }
+    const actualVenueId = venue.id;
 
     const cleanIdentifier = identifier.trim();
     const user = await tx.user.findFirst({
@@ -930,10 +938,10 @@ export async function addVenueStaff(
     }
 
     const staff = await tx.venueStaff.upsert({
-      where: { userId_venueId: { userId: user.id, venueId } },
+      where: { userId_venueId: { userId: user.id, venueId: actualVenueId } },
       create: {
         userId: user.id,
-        venueId,
+        venueId: actualVenueId,
         role,
         isActive: true,
       },
@@ -950,7 +958,7 @@ export async function addVenueStaff(
         action: "ADD_STAFF",
         entityId: staff.userId,
         reason: `Gán nhân viên ${user.name} vào cơ sở`,
-        details: { venueId, role, userRole: user.role },
+        details: { venueId: actualVenueId, role, userRole: user.role },
       },
     });
 
@@ -986,15 +994,18 @@ export async function createVenueStaffAccount(
   }
 
   return serializable(db, async (tx) => {
-    if (actor.role !== "ADMIN") {
-      const venue = await tx.venue.findFirst({
-        where: { id: venueId, ownerId: actor.id, status: "ACTIVE" },
-        select: { id: true },
-      });
-      if (!venue) {
-        throw new PaymentError(403, "Cơ sở sân cần được duyệt và đang hoạt động trước khi tạo tài khoản nhân viên.");
-      }
+    const venue = await tx.venue.findFirst({
+      where: {
+        OR: [{ id: venueId }, { slug: venueId }],
+        ...(actor.role === "ADMIN" ? {} : { ownerId: actor.id }),
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (!venue) {
+      throw new PaymentError(403, "Cơ sở sân cần được duyệt và đang hoạt động trước khi tạo tài khoản nhân viên.");
     }
+    const actualVenueId = venue.id;
 
     const cleanPhone = input.phone.trim();
     const cleanEmail = input.email ? input.email.trim().toLowerCase() : null;
@@ -1043,7 +1054,7 @@ export async function createVenueStaffAccount(
     const staff = await tx.venueStaff.create({
       data: {
         userId: newUser.id,
-        venueId,
+        venueId: actualVenueId,
         role,
         isActive: true,
       },
@@ -1056,7 +1067,7 @@ export async function createVenueStaffAccount(
         action: "CREATE_STAFF_ACCOUNT",
         entityId: newUser.id,
         reason: `Tạo tài khoản nhân viên mới ${newUser.name} tại cơ sở`,
-        details: { venueId, role, phone: newUser.phone, email: newUser.email },
+        details: { venueId: actualVenueId, role, phone: newUser.phone, email: newUser.email },
       },
     });
 
@@ -1083,16 +1094,19 @@ export async function setVenueStaffActive(
   reason?: string
 ) {
   return serializable(db, async (tx) => {
-    if (actor.role !== "ADMIN") {
-      const venue = await tx.venue.findFirst({
-        where: { id: venueId, ownerId: actor.id, status: "ACTIVE" },
-        select: { id: true },
-      });
-      if (!venue) throw new PaymentError(403, "Bạn không có quyền quản lý nhân viên cơ sở này hoặc cơ sở chưa hoạt động.");
-    }
+    const venue = await tx.venue.findFirst({
+      where: {
+        OR: [{ id: venueId }, { slug: venueId }],
+        ...(actor.role === "ADMIN" ? {} : { ownerId: actor.id }),
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (!venue) throw new PaymentError(403, "Bạn không có quyền quản lý nhân viên cơ sở này hoặc cơ sở chưa hoạt động.");
+    const actualVenueId = venue.id;
 
     const staff = await tx.venueStaff.findUnique({
-      where: { userId_venueId: { userId: targetUserId, venueId } },
+      where: { userId_venueId: { userId: targetUserId, venueId: actualVenueId } },
       include: { user: { select: { name: true, phone: true } } },
     });
 
@@ -1103,7 +1117,7 @@ export async function setVenueStaffActive(
     const beforeStatus = staff.isActive;
 
     await tx.venueStaff.update({
-      where: { userId_venueId: { userId: targetUserId, venueId } },
+      where: { userId_venueId: { userId: targetUserId, venueId: actualVenueId } },
       data: { isActive },
     });
 
@@ -1112,7 +1126,7 @@ export async function setVenueStaffActive(
       await tx.staffShift.updateMany({
         where: {
           userId: targetUserId,
-          venueId,
+          venueId: actualVenueId,
           endedAt: null,
         },
         data: {

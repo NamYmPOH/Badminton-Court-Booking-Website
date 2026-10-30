@@ -28,9 +28,16 @@ export default function LoginPage() {
     if (res.success) {
       toast.success("Đăng nhập thành công!");
       const next = new URLSearchParams(window.location.search).get("callbackUrl");
-      // Cho phép chuyển hướng an toàn về các relative path nội bộ (như /checkout, /groups), ngăn chặn Open Redirect
+      // Cho phép chuyển hướng an toàn về các relative path nội bộ, ngăn chặn Open Redirect
       const isSafePath = next && next.startsWith("/") && !next.startsWith("//") && !next.includes("://");
-      router.push(isSafePath ? next : "/");
+
+      if (res.user?.role === "STAFF") {
+        // STAFF luôn ưu tiên vào /venue-operations, chỉ nhận callbackUrl nếu bắt đầu bằng /venue-operations
+        const isOperationsPath = isSafePath && next.startsWith("/venue-operations");
+        router.push(isOperationsPath ? next : "/venue-operations");
+      } else {
+        router.push(isSafePath ? next : "/");
+      }
       router.refresh();
     } else {
       setErrorMsg(res.error || "Đăng nhập thất bại");

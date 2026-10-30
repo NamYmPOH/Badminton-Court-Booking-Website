@@ -18,6 +18,10 @@ interface CounterBookingModalProps {
   venueId: string;
   venueName: string;
   onSuccess: () => void;
+  initialCourtId?: string;
+  initialDate?: string;
+  initialStartMin?: number;
+  initialEndMin?: number;
 }
 
 export default function CounterBookingModal({
@@ -26,6 +30,10 @@ export default function CounterBookingModal({
   venueId,
   venueName,
   onSuccess,
+  initialCourtId,
+  initialDate,
+  initialStartMin,
+  initialEndMin,
 }: CounterBookingModalProps) {
   const [courts, setCourts] = useState<CourtOption[]>([]);
   const [loadingCourts, setLoadingCourts] = useState(false);
@@ -56,8 +64,8 @@ export default function CounterBookingModal({
           if (data.success && data.courts) {
             const activeCourts = data.courts.filter((c: CourtOption) => c.status === "ACTIVE");
             setCourts(activeCourts);
-            if (activeCourts.length > 0 && !courtId) {
-              setCourtId(activeCourts[0].id);
+            if (activeCourts.length > 0) {
+              setCourtId((prev) => prev || activeCourts[0].id);
             }
           }
         })

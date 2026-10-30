@@ -84,13 +84,55 @@ export default function VenueStaffModal({
       const res = await fetch(`/api/venue-staff?venueId=${venueId}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Không tải được dữ liệu nhân sự.");
-      setData(json.staff);
+
+      const rawStaff: Array<{
+        userId: string;
+        name: string;
+        phone?: string | null;
+        email?: string | null;
+        userRole?: string;
+        userStatus?: string;
+        role?: "RECEPTIONIST" | "STAFF";
+        isActive?: boolean;
+        createdAt?: string;
+        isOnShift?: boolean;
+      }> = Array.isArray(json.staff)
+        ? json.staff
+        : Array.isArray(json.staff?.staff)
+        ? json.staff.staff
+        : Array.isArray(json.staffMembers)
+        ? json.staffMembers
+        : [];
+
+      const venueInfo = json.venue || json.staff?.venue || {
+        id: venueId,
+        name: venueName,
+        status: "ACTIVE",
+        ownerId: "",
+        owner: null,
+      };
+
+      setData({
+        venue: venueInfo,
+        staffMembers: rawStaff.map((s) => ({
+          userId: s.userId,
+          name: s.name,
+          phone: s.phone || null,
+          email: s.email || null,
+          userRole: s.userRole || "STAFF",
+          userStatus: s.userStatus || "ACTIVE",
+          staffRole: s.role || "RECEPTIONIST",
+          isActive: s.isActive ?? true,
+          assignedAt: s.createdAt || new Date().toISOString(),
+          currentShift: s.isOnShift ? { id: "active", startedAt: new Date().toISOString(), note: null } : null,
+        })),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Có lỗi xảy ra.");
     } finally {
       setLoading(false);
     }
-  }, [venueId]);
+  }, [venueId, venueName]);
 
   useEffect(() => {
     if (isOpen && venueId) {

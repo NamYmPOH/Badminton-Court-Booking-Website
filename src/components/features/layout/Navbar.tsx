@@ -53,29 +53,45 @@ export function Navbar({ className }: NavbarProps) {
         {/* Logo + Brand */}
         <div className="flex items-center gap-8">
           <Link
-            href="/"
+            href={user?.role === "STAFF" ? "/venue-operations" : "/"}
             className="flex items-center gap-2 text-lg font-bold text-court-600"
           >
             {/* Biểu tượng cầu lông */}
             <span className="text-2xl">🏸</span>
             <span>{BRAND.name}</span>
+            {user?.role === "STAFF" && (
+              <span className="ml-1 rounded bg-court-100 px-2 py-0.5 text-xs font-semibold text-court-700 dark:bg-court-950 dark:text-court-300">
+                Lễ tân / Nhân viên sân
+              </span>
+            )}
           </Link>
 
           {/* Các mục điều hướng chính */}
           <div className="flex items-center gap-1">
-            <NavLink href="/venues">Sân cầu lông</NavLink>
-            <NavLink href="/venues?view=map">
-              <MapPin size={16} />
-              Bản đồ
-            </NavLink>
-            <NavLink href="/offers">Ưu đãi</NavLink>
+            {user?.role === "STAFF" ? (
+              <NavLink href="/venue-operations">
+                Quản lý & Bàn giao sân
+              </NavLink>
+            ) : (
+              <>
+                <NavLink href="/venues">Sân cầu lông</NavLink>
+                <NavLink href="/venues?view=map">
+                  <MapPin size={16} />
+                  Bản đồ
+                </NavLink>
+                <NavLink href="/offers">Ưu đãi</NavLink>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Thanh tìm kiếm nhanh ở giữa */}
-        <div className="mx-6 hidden md:flex flex-1 justify-center max-w-md xl:max-w-lg">
-          <NavbarSearch />
-        </div>
+        {/* Thanh tìm kiếm nhanh ở giữa (chỉ cho khách hàng & quản trị viên) */}
+        {user?.role !== "STAFF" && (
+          <div className="mx-6 hidden md:flex flex-1 justify-center max-w-md xl:max-w-lg">
+            <NavbarSearch />
+          </div>
+        )}
+        {user?.role === "STAFF" && <div className="flex-1" />}
 
         {/* Actions bên phải */}
         <div className="flex items-center gap-1">
@@ -112,11 +128,30 @@ export function Navbar({ className }: NavbarProps) {
                     <p className="text-[11px] text-muted truncate">
                       {user.phone || user.email}
                     </p>
+                    <span className="mt-1 inline-block rounded bg-court-100 px-1.5 py-0.5 text-[10px] font-semibold text-court-700 dark:bg-court-950 dark:text-court-300">
+                      Vai trò: {user.role}
+                    </span>
                   </div>
 
                   <div className="py-1">
-                    {user.role === "ADMIN" && <Link href="/admin" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-semibold text-court-500 hover:bg-court-500/10">Quản trị hệ thống</Link>}
-                    <Link href="/venues/register" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-500/10">Đăng ký cơ sở sân</Link>
+                    {user.role === "ADMIN" && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-semibold text-court-500 hover:bg-court-500/10"
+                      >
+                        Quản trị hệ thống
+                      </Link>
+                    )}
+                    {["ADMIN", "OWNER", "STAFF"].includes(user.role) && (
+                      <Link
+                        href="/venue-operations"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-semibold text-court-600 hover:bg-court-50 dark:hover:bg-court-950/40"
+                      >
+                        Quản lý & Bàn giao sân
+                      </Link>
+                    )}
                     <Link
                       href="/account"
                       onClick={() => setDropdownOpen(false)}
@@ -125,29 +160,41 @@ export function Navbar({ className }: NavbarProps) {
                       <User size={15} />
                       Tài khoản của tôi
                     </Link>
-                    <Link
-                      href="/bookings"
-                      onClick={() => setDropdownOpen(false)}
-                      className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-50 hover:text-ink dark:hover:bg-court-950/40"
-                    >
-                      <Calendar size={15} />
-                      Lịch đặt của tôi
-                    </Link>
-                    <Link
-                      href="/coach"
-                      onClick={() => setDropdownOpen(false)}
-                      className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink"
-                    >
-                      Cổng Huấn luyện viên
-                    </Link>
-                    <Link
-                      href="/partner"
-                      onClick={() => setDropdownOpen(false)}
-                      className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink"
-                    >
-                      Cổng Đối tác & Tài trợ
-                    </Link>
-                    {["ADMIN", "OWNER", "STAFF"].includes(user.role) && <Link href="/venue-operations" onClick={() => setDropdownOpen(false)} className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink">Quản lý đơn tại sân</Link>}
+
+                    {/* Chỉ hiển thị cho khách / chủ sân */}
+                    {user.role !== "STAFF" && (
+                      <>
+                        <Link
+                          href="/bookings"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-50 hover:text-ink dark:hover:bg-court-950/40"
+                        >
+                          <Calendar size={15} />
+                          Lịch đặt của tôi
+                        </Link>
+                        <Link
+                          href="/venues/register"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-500/10"
+                        >
+                          Đăng ký cơ sở sân
+                        </Link>
+                        <Link
+                          href="/coach"
+                          onClick={() => setDropdownOpen(false)}
+                          className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink"
+                        >
+                          Cổng Huấn luyện viên
+                        </Link>
+                        <Link
+                          href="/partner"
+                          onClick={() => setDropdownOpen(false)}
+                          className="block rounded-control px-3 py-2 text-xs font-medium text-muted hover:text-ink"
+                        >
+                          Cổng Đối tác & Tài trợ
+                        </Link>
+                      </>
+                    )}
                   </div>
 
                   <div className="border-t border-border/60 pt-1">

@@ -1,5 +1,9 @@
 import Link from "next/link";
 export const dynamic = "force-dynamic";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { AUTH_COOKIE, verifySessionToken } from "@/lib/auth-token";
+import { db } from "@/lib/db";
 import { BRAND } from "@/lib/config/brand";
 import { HeroSearch } from "@/components/features/home/HeroSearch";
 import { QuickFilters } from "@/components/features/home/QuickFilters";
@@ -7,6 +11,21 @@ import { VenueCard } from "@/components/features/venues/VenueCard";
 import { getFeaturedVenues, getTopRatedVenues } from "@/services/venue.service";
 
 export default async function HomePage() {
+  // Điều hướng mặc định cho STAFF: không đưa vào luồng khách hàng
+  const sessionCookie = cookies().get(AUTH_COOKIE.name)?.value;
+  if (sessionCookie) {
+    const userId = verifySessionToken(sessionCookie);
+    if (userId) {
+      const userRecord = await db.user.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      if (userRecord?.role === "STAFF") {
+        redirect("/venue-operations");
+      }
+    }
+  }
+
   const [featuredVenues, topRatedVenues] = await Promise.all([
     getFeaturedVenues(),
     getTopRatedVenues(),

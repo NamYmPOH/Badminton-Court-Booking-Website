@@ -1,14 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/lib/utils";
 import { formatHour } from "@/lib/booking";
-import { Clock, ShieldCheck, AlertTriangle, CheckCircle, UserCheck, UserX, UserPlus, RefreshCw, Plus, Settings } from "lucide-react";
+import {
+  Clock,
+  ShieldCheck,
+  AlertTriangle,
+  CheckCircle,
+  UserCheck,
+  UserX,
+  UserPlus,
+  RefreshCw,
+  Plus,
+  Settings,
+  CalendarDays,
+  Layers,
+  ListOrdered,
+  Printer,
+  ChevronRight,
+  Info,
+} from "lucide-react";
 import CounterBookingModal from "@/components/features/venue-operations/CounterBookingModal";
 import VenueCourtsModal from "@/components/features/venue-operations/VenueCourtsModal";
 import RefundModal from "@/components/features/venue-operations/RefundModal";
+import VenueScheduleTimeline from "@/components/features/venue-operations/VenueScheduleTimeline";
+import VenueAllBookingsSection, {
+  type BookingOrderItem,
+} from "@/components/features/venue-operations/VenueAllBookingsSection";
+import ReceiptPrintModal, {
+  type ReceiptOrder,
+  type ReceiptVenue,
+} from "@/components/features/venue-operations/ReceiptPrintModal";
+import type { TimelineSchedule, TimelineSlot } from "@/app/api/venue-operations/route";
 
 interface CourtInfo {
   id: string;
@@ -55,7 +81,14 @@ interface Order {
   refundAvailable: number;
   refundPending: number;
   refundNeedsReview: boolean;
-  refunds: Array<{ id: string; amount: number; completedAmount: number; remaining: number; txnRef: string; provider: string }>;
+  refunds: Array<{
+    id: string;
+    amount: number;
+    completedAmount: number;
+    remaining: number;
+    txnRef: string;
+    provider: string;
+  }>;
   refundCompletedAt?: string | null;
   source?: string;
   venue: { id: string; name: string; paymentMode: string };
@@ -87,16 +120,70 @@ interface VenueMeta {
   ownerId: string;
 }
 
+interface SelectedVenueDetailed extends ReceiptVenue {
+  slug: string;
+  openMin: number;
+  closeMin: number;
+  paymentMode: string;
+}
+
+const LAST_VENUE_KEY = "smashbook_last_venue_id";
+
+// Lấy ngày hiện tại theo giờ Việt Nam (UTC+7)
+function getTodayVN(): string {
+  const nowVN = new Date(Date.now() + 7 * 3600000);
+  return nowVN.toISOString().slice(0, 10);
+}
+
 export default function VenueOperationsPage() {
   const { user, isLoading } = useAuth();
+
+  // Tab view điều khiển
+  const [activeTab, setActiveTab] = useState<"OPERATIONS" | "TIMELINE" | "ALL_BOOKINGS">("OPERATIONS");
+
+  // Dữ liệu cơ sở & phiên trực tiếp
   const [orders, setOrders] = useState<Order[]>([]);
   const [venues, setVenues] = useState<VenueMeta[]>([]);
   const [selectedVenueId, setSelectedVenueId] = useState<string>("");
+  const [selectedVenueMeta, setSelectedVenueMeta] = useState<SelectedVenueDetailed | null>(null);
   const [courtsByVenue, setCourtsByVenue] = useState<Record<string, CourtInfo[]>>({});
   const [shiftsByVenue, setShiftsByVenue] = useState<Record<string, { myShiftId: string | null; hasActiveShift: boolean }>>({});
+
+  // Dữ liệu Timeline Lịch Sân
+  const [timelineDate, setTimelineDate] = useState<string>(getTodayVN());
+  const [timelineSchedule, setTimelineSchedule] = useState<TimelineSchedule | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+
+  // Dữ liệu Toàn Bộ Đơn Đặt Sân
+  const [allBookingsData, setAllBookingsData] = useState<{
+    items: BookingOrderItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }>({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 10,
+    totalPages: 1,
+  });
+  const [allBookingsPage, setAllBookingsPage] = useState<number>(1);
+  const [allStatusFilter, setAllStatusFilter] = useState<string>("");
+  const [allCourtFilter, setAllCourtFilter] = useState<string>("");
+  const [allDateFilter, setAllDateFilter] = useState<string>("");
+  const [allSearchInput, setAllSearchInput] = useState<string>("");
+  const [allSearchSubmitted, setAllSearchSubmitted] = useState<string>("");
+  const [allBookingsLoading, setAllBookingsLoading] = useState(false);
+
+  // Quản lý nhân viên
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [showStaffTab, setShowStaffTab] = useState(false);
   const [newStaffIdentifier, setNewStaffIdentifier] = useState("");
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffError, setStaffError] = useState("");
+
+  // Tìm kiếm danh sách phiên trực tiếp
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
@@ -104,13 +191,22 @@ export default function VenueOperationsPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
-  // Modals mới
+  // Modals
   const [showCounterModal, setShowCounterModal] = useState(false);
+  const [counterInitialData, setCounterInitialData] = useState<{
+    courtId?: string;
+    date?: string;
+    startMin?: number;
+    endMin?: number;
+  }>({});
   const [showCourtsModal, setShowCourtsModal] = useState(false);
   const [refundModal, setRefundModal] = useState<{
     booking: Order;
     mode: "APPROVE" | "RECORD";
   } | null>(null);
+
+  // Modal In Hóa Đơn Nhiệt 80mm
+  const [printOrder, setPrintOrder] = useState<ReceiptOrder | null>(null);
 
   // Modal Xác Nhận Thu Tiền Mặt (Bước 1)
   const [cashModal, setCashModal] = useState<{
@@ -132,27 +228,69 @@ export default function VenueOperationsPage() {
   const inFlight = useRef(false);
   const allowed = !!user && ["ADMIN", "OWNER", "STAFF"].includes(user.role);
 
+  // Tải dữ liệu tổng thể từ API
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       if (signal?.aborted) return;
       try {
-        const venueId = selectedVenueId || new URLSearchParams(window.location.search).get("venueId");
-        const params = new URLSearchParams({ q: filter });
-        if (venueId) params.set("venueId", venueId);
-        const response = await fetch(`/api/venue-operations?${params}`, {
+        const currentVenueParam =
+          selectedVenueId ||
+          (typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("venueId") ||
+              localStorage.getItem(LAST_VENUE_KEY)
+            : null);
+
+        const params = new URLSearchParams();
+        if (currentVenueParam) params.set("venueId", currentVenueParam);
+        if (filter) params.set("q", filter);
+        if (timelineDate) params.set("timelineDate", timelineDate);
+        params.set("allPage", String(allBookingsPage));
+        params.set("allPageSize", "10");
+        if (allStatusFilter) params.set("allStatus", allStatusFilter);
+        if (allCourtFilter) params.set("allCourtId", allCourtFilter);
+        if (allDateFilter) params.set("allDate", allDateFilter);
+        if (allSearchSubmitted) params.set("allQ", allSearchSubmitted);
+
+        const response = await fetch(`/api/venue-operations?${params.toString()}`, {
           cache: "no-store",
           signal,
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || "Không tải được danh sách.");
+
         if (!signal?.aborted) {
+          const returnedVenues: VenueMeta[] = data.venues || [];
+          setVenues(returnedVenues);
           setOrders(data.bookings || []);
-          setVenues(data.venues || []);
           setCourtsByVenue(data.courtsByVenue || {});
           setShiftsByVenue(data.shiftsByVenue || {});
-          if (!selectedVenueId && data.venues?.length) {
-            setSelectedVenueId(data.selectedVenueId || data.venues[0].id);
+
+          if (data.selectedVenue) {
+            setSelectedVenueMeta(data.selectedVenue);
           }
+          if (data.timelineSchedule) {
+            setTimelineSchedule(data.timelineSchedule);
+          }
+          if (data.allBookings) {
+            setAllBookingsData(data.allBookings);
+          }
+
+          // Xử lý lưu và chọn cơ sở ưu tiên
+          if (returnedVenues.length > 0) {
+            let activeId = selectedVenueId;
+            if (!activeId) {
+              const urlVenueId = new URLSearchParams(window.location.search).get("venueId");
+              const storedVenueId = localStorage.getItem(LAST_VENUE_KEY);
+              const matched =
+                returnedVenues.find((v) => v.id === urlVenueId || v.slug === urlVenueId) ||
+                returnedVenues.find((v) => v.id === storedVenueId || v.slug === storedVenueId);
+
+              activeId = matched ? matched.id : data.selectedVenueId || returnedVenues[0].id;
+              setSelectedVenueId(activeId);
+            }
+            localStorage.setItem(LAST_VENUE_KEY, activeId);
+          }
+
           setError("");
         }
       } catch (err) {
@@ -160,25 +298,67 @@ export default function VenueOperationsPage() {
           setError(err instanceof Error ? err.message : "Không tải được dữ liệu.");
         }
       } finally {
-        if (!signal?.aborted) setLoading(false);
+        if (!signal?.aborted) {
+          setLoading(false);
+          setTimelineLoading(false);
+          setAllBookingsLoading(false);
+        }
       }
     },
-    [filter, selectedVenueId]
+    [
+      filter,
+      selectedVenueId,
+      timelineDate,
+      allBookingsPage,
+      allStatusFilter,
+      allCourtFilter,
+      allDateFilter,
+      allSearchSubmitted,
+    ]
   );
 
+  // Đổi cơ sở
+  const handleVenueChange = (newVenueId: string) => {
+    setSelectedVenueId(newVenueId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LAST_VENUE_KEY, newVenueId);
+      const url = new URL(window.location.href);
+      url.searchParams.set("venueId", newVenueId);
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
+
+  // Tải danh sách nhân viên cơ sở (chuẩn hóa contract và xử lý an toàn)
   const refreshStaff = useCallback(async () => {
     if (!selectedVenueId || user?.role === "STAFF") return;
+    setStaffLoading(true);
+    setStaffError("");
     try {
-      const res = await fetch(`/api/venue-staff?venueId=${selectedVenueId}`, { cache: "no-store" });
+      const res = await fetch(`/api/venue-staff?venueId=${encodeURIComponent(selectedVenueId)}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (res.ok && data.success) {
-        setStaffList(data.staff || []);
+        const list = Array.isArray(data.staffMembers)
+          ? data.staffMembers
+          : Array.isArray(data.staff)
+          ? data.staff
+          : Array.isArray(data.staff?.staff)
+          ? data.staff.staff
+          : [];
+        setStaffList(list);
+      } else {
+        setStaffError(data.message || "Không tải được danh sách nhân viên.");
       }
     } catch (e) {
       console.error("Lỗi tải nhân viên:", e);
+      setStaffError("Lỗi kết nối khi tải danh sách nhân viên.");
+    } finally {
+      setStaffLoading(false);
     }
   }, [selectedVenueId, user?.role]);
 
+  // Polling chu kỳ 15 giây
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
@@ -186,7 +366,7 @@ export default function VenueOperationsPage() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
       await refresh(controller.signal);
-      if (!controller.signal.aborted) timer = setTimeout(poll, 10000);
+      if (!controller.signal.aborted) timer = setTimeout(poll, 15000);
     };
     void poll();
     return () => {
@@ -311,7 +491,7 @@ export default function VenueOperationsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Không thể thêm nhân viên.");
-      setNotice(`Đã thêm nhân viên ${data.staff.name} vào cụm sân!`);
+      setNotice(`Đã thêm nhân viên ${data.staff?.name || data.staffMembers?.[0]?.name || "mới"} vào cụm sân!`);
       setNewStaffIdentifier("");
       await refreshStaff();
     } catch (err) {
@@ -338,7 +518,11 @@ export default function VenueOperationsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Không thể đổi trạng thái nhân viên.");
-      setNotice(currentActive ? "Đã vô hiệu hóa quyền làm việc của nhân viên tại cụm sân." : "Đã kích hoạt lại quyền làm việc của nhân viên!");
+      setNotice(
+        currentActive
+          ? "Đã vô hiệu hóa quyền làm việc của nhân viên tại cụm sân."
+          : "Đã kích hoạt lại quyền làm việc của nhân viên!"
+      );
       await refreshStaff();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi khi cập nhật.");
@@ -347,14 +531,128 @@ export default function VenueOperationsPage() {
     }
   }
 
-  if (isLoading) return <p className="p-8">Đang kiểm tra quyền...</p>;
+  // Nhấp ô trống trên Timeline -> mở CounterBookingModal với thông tin điền sẵn
+  const handleCreateBookingFromTimeline = (
+    courtId: string,
+    _courtName: string,
+    date: string,
+    startMin: number,
+    endMin: number
+  ) => {
+    if (user?.role === "STAFF" && !isOnShift) {
+      setError("Bạn cần bấm 'Bắt đầu ca trực' trước khi tạo đơn tại quầy cho khách.");
+      return;
+    }
+    setCounterInitialData({ courtId, date, startMin, endMin });
+    setShowCounterModal(true);
+  };
+
+  // Nhấp ô đã đặt trên Timeline -> mở in hóa đơn hoặc xem chi tiết
+  const handleSelectSlotFromTimeline = (slot: TimelineSlot) => {
+    if (slot.bookingId) {
+      const matched =
+        orders.find((o) => o.id === slot.bookingId) ||
+        allBookingsData.items.find((b) => b.id === slot.bookingId);
+      if (matched) {
+        if (matched.remaining === 0) {
+          setPrintOrder(matched as ReceiptOrder);
+        } else {
+          setNotice(`Đơn ${matched.code} còn thiếu ${formatVND(matched.remaining)}. Hãy thu tiền mặt trước khi in hóa đơn.`);
+        }
+      }
+    }
+  };
+
+  // Xử lý action từ danh sách toàn bộ đơn
+  const handleActionFromAllBookings = (
+    booking: BookingOrderItem,
+    actionType: "CHECK_IN" | "CASH" | "COMPLETE" | "CANCEL" | "PRINT"
+  ) => {
+    if (actionType === "PRINT") {
+      if (booking.remaining > 0 || booking.status === "CANCELLED") {
+        setError(`Đơn ${booking.code} chưa hoàn tất thanh toán hoặc đã bị hủy, không thể in hóa đơn.`);
+        return;
+      }
+      setPrintOrder(booking as ReceiptOrder);
+      return;
+    }
+
+    if (actionType === "CASH") {
+      setCashModal({
+        orderId: booking.id,
+        orderCode: booking.code,
+        courtName: booking.items.map((i) => i.court.name).join(", "),
+        remaining: booking.remaining,
+      });
+      return;
+    }
+
+    if (actionType === "CHECK_IN") {
+      setActionModal({
+        id: booking.id,
+        action: "CHECK_IN",
+        title: `Xác nhận nhận sân cho đơn ${booking.code}`,
+      });
+      return;
+    }
+
+    if (actionType === "COMPLETE") {
+      setActionModal({
+        id: booking.id,
+        action: "COMPLETE",
+        title: `Xác nhận hoàn tất và bàn giao sân cho đơn ${booking.code}`,
+      });
+      return;
+    }
+
+    if (actionType === "CANCEL") {
+      setActionModal({
+        id: booking.id,
+        action: "CANCEL",
+        title: `Hủy đơn ${booking.code}`,
+      });
+      return;
+    }
+  };
+
+  if (isLoading) return <p className="p-8 text-center text-sm text-muted">Đang kiểm tra quyền...</p>;
+
   if (!allowed) {
     return (
-      <div className="p-8">
-        <h1 className="text-xl font-bold">Quản lý tại sân</h1>
-        <p className="my-4">Chỉ chủ sân, nhân viên được phân quyền và quản trị viên được truy cập.</p>
-        <Link href="/login" className="underline">Đăng nhập</Link>
+      <div className="mx-auto max-w-md p-8 text-center">
+        <h1 className="text-xl font-bold text-ink">Quản lý tại sân</h1>
+        <p className="my-4 text-sm text-muted">
+          Chỉ chủ sân, nhân viên được phân quyền và quản trị viên được truy cập khu vực này.
+        </p>
+        <Link href="/login" className="inline-block rounded-control bg-court-600 px-4 py-2 text-xs font-semibold text-white">
+          Đăng nhập lại
+        </Link>
       </div>
+    );
+  }
+
+  // Trường hợp STAFF chưa có cơ sở nào được gán
+  if (user?.role === "STAFF" && !loading && venues.length === 0) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-card border border-amber-300 bg-amber-50/60 p-8 dark:border-amber-900/60 dark:bg-amber-950/20 shadow-sm">
+          <ShieldCheck size={48} className="mx-auto text-amber-600 mb-3" />
+          <h1 className="text-xl font-bold text-ink">Chưa được phân công cơ sở</h1>
+          <p className="mt-3 text-sm text-ink leading-relaxed">
+            Tài khoản nhân viên <span className="font-semibold">{user.name}</span> ({user.phone || user.email}) hiện chưa được gán vào cơ sở nào trên SmashBook.
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            Vui lòng liên hệ Chủ sân hoặc Quản trị viên để được cấp quyền làm việc tại cơ sở.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className="mt-6 inline-flex items-center gap-1.5 rounded-control bg-court-600 px-4 py-2 text-xs font-semibold text-white hover:bg-court-700"
+          >
+            <RefreshCw size={13} /> Thử tải lại
+          </button>
+        </div>
+      </main>
     );
   }
 
@@ -362,13 +660,40 @@ export default function VenueOperationsPage() {
   const isOnShift = !!currentShiftMeta?.myShiftId;
   const venueCourts = courtsByVenue[selectedVenueId] || [];
 
+  // Danh sách các sân con dạng id, name phục vụ bộ lọc
+  const courtFilterOptions = venueCourts.map((c) => ({ id: c.id, name: c.name }));
+
+  // Venue metadata phục vụ in phiếu
+  const activeReceiptVenue: ReceiptVenue | null = selectedVenueMeta
+    ? {
+        id: selectedVenueMeta.id,
+        name: selectedVenueMeta.name,
+        address: selectedVenueMeta.address,
+        phone: selectedVenueMeta.phone,
+      }
+    : venues.find((v) => v.id === selectedVenueId)
+    ? {
+        id: selectedVenueId,
+        name: venues.find((v) => v.id === selectedVenueId)!.name,
+      }
+    : null;
+
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       {/* Header & Thanh chọn Cơ sở */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
         <div>
-          <h1 className="text-2xl font-bold">Quản lý & Bàn giao sân</h1>
-          <p className="text-sm text-muted">Theo dõi phiên sử dụng, thu tiền mặt và bàn giao sân chính xác theo thời gian thực.</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-ink">Quản lý & Bàn giao sân</h1>
+            {user?.role === "STAFF" && (
+              <span className="rounded bg-court-100 px-2 py-0.5 text-xs font-semibold text-court-700 dark:bg-court-950 dark:text-court-300">
+                Lễ tân
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-muted">
+            Theo dõi phiên sử dụng, thu tiền mặt, in hóa đơn và bàn giao sân chính xác theo thời gian thực.
+          </p>
         </div>
 
         {venues.length > 1 && (
@@ -376,8 +701,8 @@ export default function VenueOperationsPage() {
             <span className="text-xs font-semibold text-muted">Cụm sân:</span>
             <select
               value={selectedVenueId}
-              onChange={(e) => setSelectedVenueId(e.target.value)}
-              className="rounded-control border border-border bg-surface px-3 py-1.5 text-sm font-medium text-ink"
+              onChange={(e) => handleVenueChange(e.target.value)}
+              className="rounded-control border border-border bg-surface px-3 py-1.5 text-sm font-medium text-ink focus:border-court-500 focus:outline-none"
             >
               {venues.map((v) => (
                 <option key={v.id} value={v.id}>
@@ -391,22 +716,34 @@ export default function VenueOperationsPage() {
 
       {/* Thông báo trạng thái */}
       {error && (
-        <div role="alert" className="flex items-center gap-2 rounded-control bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-control bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+        >
           <AlertTriangle size={16} />
           <span>{error}</span>
         </div>
       )}
       {notice && (
-        <div role="status" className="flex items-center gap-2 rounded-control bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-control bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+        >
           <CheckCircle size={16} />
           <span>{notice}</span>
         </div>
       )}
 
-      {/* Thanh Ca Trực Lễ Tân */}
+      {/* Thanh Ca Trực Lễ Tân & Các Nút Thao Tác Nhanh */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-card border border-border bg-surface p-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-full ${isOnShift ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"}`}>
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-full ${
+              isOnShift
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+            }`}
+          >
             <Clock size={20} />
           </div>
           <div>
@@ -414,7 +751,11 @@ export default function VenueOperationsPage() {
               <span className="font-bold text-ink">
                 {isOnShift ? "Bạn đang đứng ca trực tại cụm sân này" : "Bạn chưa vào ca trực"}
               </span>
-              <span className={`inline-block h-2.5 w-2.5 rounded-full ${isOnShift ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"}`} />
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                  isOnShift ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
+                }`}
+              />
             </div>
             <p className="text-xs text-muted">
               {isOnShift
@@ -427,7 +768,7 @@ export default function VenueOperationsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Nút có nhãn chính xác: "Nhân viên tạo đơn" */}
+          {/* Nút "Nhân viên tạo đơn" */}
           <button
             type="button"
             onClick={() => {
@@ -435,6 +776,7 @@ export default function VenueOperationsPage() {
                 setError("Bạn cần bấm 'Bắt đầu ca trực' trước khi tạo đơn tại quầy cho khách.");
                 return;
               }
+              setCounterInitialData({});
               setShowCounterModal(true);
             }}
             className="rounded-control bg-court-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-court-700 shadow-sm inline-flex items-center gap-1.5"
@@ -493,7 +835,7 @@ export default function VenueOperationsPage() {
               onClick={() => void refreshStaff()}
               className="flex items-center gap-1 text-xs text-court-600 hover:underline"
             >
-              <RefreshCw size={12} /> Làm mới
+              <RefreshCw size={12} className={staffLoading ? "animate-spin" : ""} /> Làm mới
             </button>
           </div>
 
@@ -503,7 +845,7 @@ export default function VenueOperationsPage() {
               placeholder="Nhập số điện thoại hoặc email nhân viên..."
               value={newStaffIdentifier}
               onChange={(e) => setNewStaffIdentifier(e.target.value)}
-              className="min-w-[280px] flex-1 rounded-control border border-border bg-surface px-3 py-2 text-xs text-ink focus:border-court-500"
+              className="min-w-[280px] flex-1 rounded-control border border-border bg-surface px-3 py-2 text-xs text-ink focus:border-court-500 focus:outline-none"
               required
             />
             <button
@@ -515,8 +857,14 @@ export default function VenueOperationsPage() {
             </button>
           </form>
 
+          {staffError && (
+            <p className="text-xs font-semibold text-rose-600">{staffError}</p>
+          )}
+
           <div className="divide-y divide-border/60 text-xs">
-            {!staffList.length ? (
+            {staffLoading ? (
+              <p className="py-3 text-muted">Đang tải danh sách nhân viên...</p>
+            ) : !staffList.length ? (
               <p className="py-3 text-muted">Chưa có nhân viên nào được gán vào cụm sân này.</p>
             ) : (
               staffList.map((st) => (
@@ -540,7 +888,7 @@ export default function VenueOperationsPage() {
                     onClick={() => void handleToggleStaffActive(st.userId, st.isActive)}
                     className={`inline-flex items-center gap-1 rounded-control px-3 py-1 font-semibold ${
                       st.isActive
-                        ? "border border-rose-300 text-rose-700 hover:bg-rose-50"
+                        ? "border border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
                         : "bg-emerald-600 text-white hover:bg-emerald-700"
                     }`}
                   >
@@ -561,7 +909,7 @@ export default function VenueOperationsPage() {
         </section>
       )}
 
-      {/* Trạng Thái Sân Con Theo Thời Gian Thực */}
+      {/* Trạng Thái Sân Con Theo Thời Gian Thực (Quick overview) */}
       <section className="space-y-3">
         <h2 className="text-sm font-bold uppercase tracking-wider text-muted">
           Trạng thái sân theo thời gian thực
@@ -636,277 +984,414 @@ export default function VenueOperationsPage() {
         )}
       </section>
 
-      {/* Tìm kiếm đơn */}
-      <div className="flex gap-2">
-        <input
-          aria-label="Tìm mã đơn"
-          placeholder="Tìm mã đơn DATSAN, tên hoặc số điện thoại..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="min-w-0 flex-1 rounded-control border border-border bg-surface p-2.5 text-xs text-ink"
-        />
-        <button
-          onClick={() => setFilter(query.trim())}
-          className="rounded-control border border-border px-4 text-xs font-semibold hover:bg-court-50"
-        >
-          Tìm đơn
-        </button>
+      {/* Tabs Chuyển Đổi Khu Vực Quản Lý */}
+      <div className="flex border-b border-border/70">
         <button
           type="button"
-          onClick={() => void refresh()}
-          className="rounded-control border border-border px-4 text-xs font-semibold hover:bg-court-50"
+          onClick={() => setActiveTab("OPERATIONS")}
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+            activeTab === "OPERATIONS"
+              ? "border-court-600 text-court-600"
+              : "border-transparent text-muted hover:text-ink"
+          }`}
         >
-          Làm mới
+          <Layers size={16} />
+          <span>Phiên sử dụng & Chờ bàn giao</span>
+          <span className="rounded-full bg-court-100 px-2 py-0.5 text-xs font-semibold text-court-700 dark:bg-court-950 dark:text-court-300">
+            {orders.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("TIMELINE")}
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+            activeTab === "TIMELINE"
+              ? "border-court-600 text-court-600"
+              : "border-transparent text-muted hover:text-ink"
+          }`}
+        >
+          <CalendarDays size={16} />
+          <span>Lịch sân thời gian thực (Timeline)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("ALL_BOOKINGS")}
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+            activeTab === "ALL_BOOKINGS"
+              ? "border-court-600 text-court-600"
+              : "border-transparent text-muted hover:text-ink"
+          }`}
+        >
+          <ListOrdered size={16} />
+          <span>Danh sách đơn đặt sân</span>
+          <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+            {allBookingsData.total}
+          </span>
         </button>
       </div>
 
-      {/* Danh Sách Đơn / Phiên Sử Dụng */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-muted">
-          Danh sách phiên sử dụng & chờ bàn giao ({orders.length})
-        </h2>
+      {/* TAB 1: PHIÊN SỬ DỤNG & CHỜ BÀN GIAO */}
+      {activeTab === "OPERATIONS" && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted">
+              Danh sách phiên sử dụng & chờ bàn giao ({orders.length})
+            </h2>
 
-        {loading ? (
-          <p className="text-sm text-muted">Đang tải danh sách đơn...</p>
-        ) : !orders.length ? (
-          <p className="rounded-card border border-border bg-surface p-6 text-center text-sm text-muted">
-            Không có đơn nào cần xử lý tại cơ sở này.
-          </p>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {orders.map((order) => {
-              const courtNames = order.items.map((i) => i.court.name).join(", ");
-              const canComplete = order.isOverdue && order.remaining === 0;
+            {/* Tìm kiếm đơn */}
+            <div className="flex w-full sm:w-auto items-center gap-2">
+              <input
+                aria-label="Tìm mã đơn"
+                placeholder="Tìm mã đơn DATSAN, tên hoặc SĐT..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setFilter(query.trim());
+                }}
+                className="w-full sm:w-64 rounded-control border border-border bg-surface p-2 text-xs text-ink focus:border-court-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setFilter(query.trim())}
+                className="rounded-control border border-border px-3 py-2 text-xs font-semibold text-ink hover:bg-court-50"
+              >
+                Tìm
+              </button>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="rounded-control border border-border px-3 py-2 text-xs font-semibold text-ink hover:bg-court-50"
+              >
+                Làm mới
+              </button>
+            </div>
+          </div>
 
-              return (
-                <article
-                  key={order.id}
-                  className={`space-y-3 rounded-card border bg-surface p-5 shadow-sm transition-all ${
-                    order.sessionStatus === "OVERDUE_PENDING"
-                      ? "border-rose-400/80 bg-rose-50/20"
-                      : "border-border"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-bold text-ink">
-                        {order.code} · {courtNames}
-                      </h3>
-                      <p className="text-xs text-muted">
-                        {order.customerName} · {order.customerPhone}
-                      </p>
-                    </div>
+          {loading ? (
+            <p className="text-sm text-muted">Đang tải danh sách đơn...</p>
+          ) : !orders.length ? (
+            <div className="rounded-card border border-border bg-surface p-8 text-center text-sm text-muted">
+              Không có đơn nào đang trong phiên sử dụng hoặc chờ bàn giao tại cơ sở này.
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {orders.map((order) => {
+                const courtNames = order.items.map((i) => i.court.name).join(", ");
+                const canComplete = order.isOverdue && order.remaining === 0;
 
-                    <span
-                      className={`rounded px-2.5 py-1 text-xs font-bold ${
-                        order.sessionStatus === "OVERDUE_PENDING"
-                          ? "bg-rose-600 text-white"
+                return (
+                  <article
+                    key={order.id}
+                    className={`space-y-3 rounded-card border bg-surface p-5 shadow-sm transition-all ${
+                      order.sessionStatus === "OVERDUE_PENDING"
+                        ? "border-rose-400/80 bg-rose-50/20"
+                        : "border-border"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-ink">
+                          {order.code} · {courtNames}
+                        </h3>
+                        <p className="text-xs text-muted">
+                          {order.customerName} · {order.customerPhone}
+                        </p>
+                      </div>
+
+                      <span
+                        className={`rounded px-2.5 py-1 text-xs font-bold ${
+                          order.sessionStatus === "OVERDUE_PENDING"
+                            ? "bg-rose-600 text-white"
+                            : order.status === "CHECKED_IN"
+                            ? "bg-emerald-600 text-white"
+                            : "bg-court-600 text-white"
+                        }`}
+                      >
+                        {order.sessionStatus === "OVERDUE_PENDING"
+                          ? "Hết giờ – Chờ hoàn tất"
                           : order.status === "CHECKED_IN"
-                          ? "bg-emerald-600 text-white"
-                          : "bg-court-600 text-white"
-                      }`}
-                    >
-                      {order.sessionStatus === "OVERDUE_PENDING"
-                        ? "Hết giờ – Chờ hoàn tất"
-                        : order.status === "CHECKED_IN"
-                        ? "Đã nhận sân"
-                        : "Đã xác nhận"}
-                    </span>
-                  </div>
-
-                  {/* Lịch sân */}
-                  <div className="space-y-1 rounded bg-court-50/40 p-2.5 text-xs text-muted dark:bg-surface">
-                    {order.items.map((item, idx) => (
-                      <p key={idx}>
-                        {item.court.name} · {item.date.slice(0, 10)} · {formatHour(item.startMin)} – {formatHour(item.endMin)}
-                      </p>
-                    ))}
-                  </div>
-
-                  {/* Chi tiết tài chính & thanh toán */}
-                  <div className="flex flex-wrap items-center justify-between border-t border-border/60 pt-2 text-xs">
-                    <div>
-                      <p className="text-muted">Tổng tiền: <span className="font-bold text-ink">{formatVND(order.total)}</span></p>
-                      <p className="text-muted">Đã thu: <span className="font-semibold text-emerald-600">{formatVND(order.totalPaid)}</span></p>
-                    </div>
-
-                    <div className="text-right">
-                      {order.remaining > 0 ? (
-                        <p className="font-bold text-rose-600">
-                          Còn thiếu: {formatVND(order.remaining)}
-                        </p>
-                      ) : (
-                        <p className="font-bold text-emerald-600">
-                          Đã thanh toán đủ (100%)
-                        </p>
-                      )}
-                      <p className="text-[11px] text-muted">
-                        Phương thức: {order.paymentMethod || "Tiền mặt tại sân"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Thanh điều khiển thao tác */}
-                  <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
-                    {/* Duyệt đơn (CONFIRM) cho đơn chờ thanh toán / chờ duyệt */}
-                    {order.status === "PENDING_PAYMENT" && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          setActionModal({
-                            id: order.id,
-                            action: "CONFIRM",
-                            title: `Duyệt xác nhận đơn ${order.code}`,
-                          })
-                        }
-                        className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-court-700"
-                      >
-                        Duyệt đơn
-                      </button>
-                    )}
-
-                    {/* Bước 1: Thu tiền mặt nếu còn thiếu */}
-                    {order.remaining > 0 && order.status !== "CANCELLED" && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          setCashModal({
-                            orderId: order.id,
-                            orderCode: order.code,
-                            courtName: courtNames,
-                            remaining: order.remaining,
-                          })
-                        }
-                        className="rounded-control bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-                      >
-                        Đã thu tiền mặt ({formatVND(order.remaining)})
-                      </button>
-                    )}
-
-                    {/* Nhận sân: Cho phép check-in với đơn đã xác nhận (kể cả chưa trả tiền nếu là thanh toán tại sân) */}
-                    {order.status === "CONFIRMED" && (order.remaining === 0 || order.hasCashPayment || order.paymentMethod === "CASH") && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          setActionModal({
-                            id: order.id,
-                            action: "CHECK_IN",
-                            title: `Xác nhận nhận sân cho đơn ${order.code}`,
-                          })
-                        }
-                        className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-court-700"
-                      >
-                        Nhận sân
-                      </button>
-                    )}
-
-                    {/* Bước 2: Nút Hoàn tất & Bàn giao sân */}
-                    <button
-                      type="button"
-                      disabled={busy || !canComplete}
-                      onClick={() =>
-                        setActionModal({
-                          id: order.id,
-                          action: "COMPLETE",
-                          title: `Xác nhận hoàn tất và bàn giao sân cho đơn ${order.code}`,
-                        })
-                      }
-                      className={`rounded-control px-3.5 py-1.5 text-xs font-bold text-white transition-all ${
-                        canComplete
-                          ? "bg-emerald-600 hover:bg-emerald-700 shadow-sm"
-                          : "bg-zinc-400 cursor-not-allowed opacity-60"
-                      }`}
-                      title={
-                        !order.isOverdue
-                          ? "Chưa hết giờ thực tế của booking"
-                          : order.remaining > 0
-                          ? "Cần thu đủ tiền trước khi hoàn tất"
-                          : "Sẵn sàng bàn giao sân"
-                      }
-                    >
-                      Hoàn tất & Bàn giao sân
-                    </button>
-
-                    {order.refundNeedsReview && <span className="text-sm text-amber-700">Khoản hoàn cũ cần đối soát chứng từ trước khi chi tiền.</span>}
-                    {/* Quy trình hoàn tiền: Nếu đã được duyệt hoàn tiền -> Ghi nhận đã hoàn tiền */}
-                    {order.refundPending > 0 && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setRefundModal({ booking: order, mode: "RECORD" })}
-                        className="rounded-control bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm"
-                      >
-                        Ghi nhận hoàn tiền ({formatVND(order.refundPending)})
-                      </button>
-                    )}
-
-                    {/* Nếu có yêu cầu hủy chờ duyệt và là OWNER / ADMIN -> Phê duyệt hoàn tiền */}
-                    {order.cancelRequestedAt && ["PENDING_PAYMENT", "CONFIRMED"].includes(order.status) && !order.refundNeedsReview && !order.cancelApprovedAt && ["ADMIN", "OWNER"].includes(user.role) && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setRefundModal({ booking: order, mode: "APPROVE" })}
-                        className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-court-700 shadow-sm"
-                      >
-                        Duyệt hủy & hoàn tiền
-                      </button>
-                    )}
-
-                    {/* Nếu có yêu cầu hủy mà là STAFF -> badge thông báo */}
-                    {order.cancelRequestedAt && !order.cancelApprovedAt && user.role === "STAFF" && (
-                      <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                        Chờ chủ sân duyệt hủy
+                          ? "Đã nhận sân"
+                          : "Đã xác nhận"}
                       </span>
-                    )}
+                    </div>
 
-                    {/* Hủy đơn chưa thanh toán hoặc Gửi yêu cầu hủy đơn đã thanh toán */}
-                    {["PENDING_PAYMENT", "CONFIRMED"].includes(order.status) && !order.cancelRequestedAt && (
-                      order.totalPaid > 0 ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            if (["ADMIN", "OWNER"].includes(user.role)) {
-                              setRefundModal({ booking: order, mode: "APPROVE" });
-                            } else {
-                              setActionModal({
-                                id: order.id,
-                                action: "CANCEL_REQUEST",
-                                title: `Gửi yêu cầu hủy đơn đã thanh toán ${order.code}`,
-                              });
-                            }
-                          }}
-                          className="rounded-control border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                        >
-                          {["ADMIN", "OWNER"].includes(user.role) ? "Hủy & Duyệt hoàn tiền" : "Yêu cầu hủy"}
-                        </button>
-                      ) : (
+                    {/* Lịch sân */}
+                    <div className="space-y-1 rounded bg-court-50/40 p-2.5 text-xs text-muted dark:bg-surface">
+                      {order.items.map((item, idx) => (
+                        <p key={idx}>
+                          {item.court.name} · {item.date.slice(0, 10)} · {formatHour(item.startMin)} – {formatHour(item.endMin)}
+                        </p>
+                      ))}
+                    </div>
+
+                    {/* Chi tiết tài chính & thanh toán */}
+                    <div className="flex flex-wrap items-center justify-between border-t border-border/60 pt-2 text-xs">
+                      <div>
+                        <p className="text-muted">
+                          Tổng tiền: <span className="font-bold text-ink">{formatVND(order.total)}</span>
+                        </p>
+                        <p className="text-muted">
+                          Đã thu: <span className="font-semibold text-emerald-600">{formatVND(order.totalPaid)}</span>
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        {order.remaining > 0 ? (
+                          <p className="font-bold text-rose-600">
+                            Còn thiếu: {formatVND(order.remaining)}
+                          </p>
+                        ) : (
+                          <p className="font-bold text-emerald-600">
+                            Đã thanh toán đủ (100%)
+                          </p>
+                        )}
+                        <p className="text-[11px] text-muted">
+                          Phương thức: {order.paymentMethod || "Tiền mặt tại sân"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Thanh điều khiển thao tác */}
+                    <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+                      {/* Duyệt đơn (CONFIRM) cho đơn chờ thanh toán */}
+                      {order.status === "PENDING_PAYMENT" && (
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() =>
                             setActionModal({
                               id: order.id,
-                              action: "CANCEL",
-                              title: `Hủy đơn chưa thanh toán ${order.code}`,
+                              action: "CONFIRM",
+                              title: `Duyệt xác nhận đơn ${order.code}`,
                             })
                           }
-                          className="rounded-control border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                          className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-court-700"
                         >
-                          Hủy đơn
+                          Duyệt đơn
                         </button>
-                      )
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                      )}
+
+                      {/* Bước 1: Thu tiền mặt nếu còn thiếu */}
+                      {order.remaining > 0 && order.status !== "CANCELLED" && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            setCashModal({
+                              orderId: order.id,
+                              orderCode: order.code,
+                              courtName: courtNames,
+                              remaining: order.remaining,
+                            })
+                          }
+                          className="rounded-control bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          Đã thu tiền mặt ({formatVND(order.remaining)})
+                        </button>
+                      )}
+
+                      {/* Nhận sân */}
+                      {order.status === "CONFIRMED" &&
+                        (order.remaining === 0 || order.hasCashPayment || order.paymentMethod === "CASH") && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() =>
+                              setActionModal({
+                                id: order.id,
+                                action: "CHECK_IN",
+                                title: `Xác nhận nhận sân cho đơn ${order.code}`,
+                              })
+                            }
+                            className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-court-700"
+                          >
+                            Nhận sân
+                          </button>
+                        )}
+
+                      {/* Bước 2: Nút Hoàn tất & Bàn giao sân */}
+                      <button
+                        type="button"
+                        disabled={busy || !canComplete}
+                        onClick={() =>
+                          setActionModal({
+                            id: order.id,
+                            action: "COMPLETE",
+                            title: `Xác nhận hoàn tất và bàn giao sân cho đơn ${order.code}`,
+                          })
+                        }
+                        className={`rounded-control px-3.5 py-1.5 text-xs font-bold text-white transition-all ${
+                          canComplete
+                            ? "bg-emerald-600 hover:bg-emerald-700 shadow-sm"
+                            : "bg-zinc-400 cursor-not-allowed opacity-60"
+                        }`}
+                        title={
+                          !order.isOverdue
+                            ? "Chưa hết giờ thực tế của booking"
+                            : order.remaining > 0
+                            ? "Cần thu đủ tiền trước khi hoàn tất"
+                            : "Sẵn sàng bàn giao sân"
+                        }
+                      >
+                        Hoàn tất & Bàn giao sân
+                      </button>
+
+                      {/* In hóa đơn nhiệt 80mm nếu đã thanh toán đủ 100% */}
+                      {order.remaining === 0 && order.status !== "CANCELLED" && (
+                        <button
+                          type="button"
+                          onClick={() => setPrintOrder(order as unknown as ReceiptOrder)}
+                          className="inline-flex items-center gap-1 rounded-control border border-border px-3 py-1.5 text-xs font-semibold text-ink hover:bg-court-50"
+                          title="In hóa đơn nhiệt 80mm"
+                        >
+                          <Printer size={13} /> In phiếu
+                        </button>
+                      )}
+
+                      {order.refundNeedsReview && (
+                        <span className="text-xs text-amber-700">
+                          Khoản hoàn cũ cần đối soát chứng từ trước khi chi tiền.
+                        </span>
+                      )}
+
+                      {/* Quy trình hoàn tiền */}
+                      {order.refundPending > 0 && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setRefundModal({ booking: order, mode: "RECORD" })}
+                          className="rounded-control bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm"
+                        >
+                          Ghi nhận hoàn tiền ({formatVND(order.refundPending)})
+                        </button>
+                      )}
+
+                      {/* Nếu có yêu cầu hủy chờ duyệt và là OWNER / ADMIN */}
+                      {order.cancelRequestedAt &&
+                        ["PENDING_PAYMENT", "CONFIRMED"].includes(order.status) &&
+                        !order.refundNeedsReview &&
+                        !order.cancelApprovedAt &&
+                        ["ADMIN", "OWNER"].includes(user.role) && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setRefundModal({ booking: order, mode: "APPROVE" })}
+                            className="rounded-control bg-court-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-court-700 shadow-sm"
+                          >
+                            Duyệt hủy & hoàn tiền
+                          </button>
+                        )}
+
+                      {order.cancelRequestedAt && !order.cancelApprovedAt && user.role === "STAFF" && (
+                        <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                          Chờ chủ sân duyệt hủy
+                        </span>
+                      )}
+
+                      {/* Hủy đơn / Yêu cầu hủy */}
+                      {["PENDING_PAYMENT", "CONFIRMED"].includes(order.status) && !order.cancelRequestedAt && (
+                        order.totalPaid > 0 ? (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              if (["ADMIN", "OWNER"].includes(user.role)) {
+                                setRefundModal({ booking: order, mode: "APPROVE" });
+                              } else {
+                                setActionModal({
+                                  id: order.id,
+                                  action: "CANCEL_REQUEST",
+                                  title: `Gửi yêu cầu hủy đơn đã thanh toán ${order.code}`,
+                                });
+                              }
+                            }}
+                            className="rounded-control border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                          >
+                            {["ADMIN", "OWNER"].includes(user.role) ? "Hủy & Duyệt hoàn tiền" : "Yêu cầu hủy"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() =>
+                              setActionModal({
+                                id: order.id,
+                                action: "CANCEL",
+                                title: `Hủy đơn chưa thanh toán ${order.code}`,
+                              })
+                            }
+                            className="rounded-control border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                          >
+                            Hủy đơn
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB 2: LỊCH SÂN THỜI GIAN THỰC (TIMELINE GRID) */}
+      {activeTab === "TIMELINE" && (
+        <VenueScheduleTimeline
+          schedule={timelineSchedule}
+          selectedDate={timelineDate}
+          onSelectDate={(newDate) => {
+            setTimelineDate(newDate);
+            setTimelineLoading(true);
+          }}
+          onSelectSlot={handleSelectSlotFromTimeline}
+          onCreateBookingAtSlot={handleCreateBookingFromTimeline}
+          loading={timelineLoading}
+          onRefresh={() => void refresh()}
+        />
+      )}
+
+      {/* TAB 3: DANH SÁCH TOÀN BỘ ĐƠN ĐẶT SÂN */}
+      {activeTab === "ALL_BOOKINGS" && (
+        <VenueAllBookingsSection
+          bookings={allBookingsData.items}
+          total={allBookingsData.total}
+          page={allBookingsData.page}
+          pageSize={allBookingsData.pageSize}
+          totalPages={allBookingsData.totalPages}
+          onPageChange={(p) => {
+            setAllBookingsPage(p);
+            setAllBookingsLoading(true);
+          }}
+          courts={courtFilterOptions}
+          statusFilter={allStatusFilter}
+          onStatusFilterChange={(s) => {
+            setAllStatusFilter(s);
+            setAllBookingsPage(1);
+          }}
+          courtFilter={allCourtFilter}
+          onCourtFilterChange={(c) => {
+            setAllCourtFilter(c);
+            setAllBookingsPage(1);
+          }}
+          dateFilter={allDateFilter}
+          onDateFilterChange={(d) => {
+            setAllDateFilter(d);
+            setAllBookingsPage(1);
+          }}
+          searchQuery={allSearchInput}
+          onSearchQueryChange={(q) => setAllSearchInput(q)}
+          onSearchSubmit={(e) => {
+            e.preventDefault();
+            setAllSearchSubmitted(allSearchInput.trim());
+            setAllBookingsPage(1);
+          }}
+          loading={allBookingsLoading}
+          onAction={handleActionFromAllBookings}
+        />
+      )}
 
       {/* MODAL BƯỚC 1: XÁC NHẬN THU TIỀN MẶT */}
       {cashModal && (
@@ -927,7 +1412,7 @@ export default function VenueOperationsPage() {
                   type="text"
                   value={cashNote}
                   onChange={(e) => setCashNote(e.target.value)}
-                  className="mt-1 w-full rounded-control border border-border bg-surface p-2.5 text-xs text-ink"
+                  className="mt-1 w-full rounded-control border border-border bg-surface p-2.5 text-xs text-ink focus:border-court-500 focus:outline-none"
                 />
               </label>
 
@@ -974,7 +1459,7 @@ export default function VenueOperationsPage() {
                   value={actionReason}
                   onChange={(e) => setActionReason(e.target.value)}
                   placeholder="Ghi rõ lý do hoặc biên bản bàn giao (tối thiểu 5 ký tự)..."
-                  className="mt-1 w-full rounded-control border border-border bg-surface p-2.5 text-xs text-ink"
+                  className="mt-1 w-full rounded-control border border-border bg-surface p-2.5 text-xs text-ink focus:border-court-500 focus:outline-none"
                 />
               </label>
 
@@ -1003,9 +1488,16 @@ export default function VenueOperationsPage() {
       {/* Modal Nhân viên tạo đơn tại quầy */}
       <CounterBookingModal
         isOpen={showCounterModal}
-        onClose={() => setShowCounterModal(false)}
+        onClose={() => {
+          setShowCounterModal(false);
+          setCounterInitialData({});
+        }}
         venueId={selectedVenueId}
         venueName={venues.find((v) => v.id === selectedVenueId)?.name || "Cụm sân"}
+        initialCourtId={counterInitialData.courtId}
+        initialDate={counterInitialData.date}
+        initialStartMin={counterInitialData.startMin}
+        initialEndMin={counterInitialData.endMin}
         onSuccess={() => {
           setNotice("Đã tạo đơn tại quầy cho khách thành công!");
           void refresh();
@@ -1034,6 +1526,15 @@ export default function VenueOperationsPage() {
           setNotice("Đã cập nhật trạng thái hủy và hoàn tiền thành công!");
           void refresh();
         }}
+      />
+
+      {/* Modal In Hóa Đơn Nhiệt 80mm */}
+      <ReceiptPrintModal
+        isOpen={Boolean(printOrder)}
+        onClose={() => setPrintOrder(null)}
+        booking={printOrder}
+        venue={activeReceiptVenue}
+        staffName={user?.name || "Lễ tân SmashBook"}
       />
     </main>
   );
