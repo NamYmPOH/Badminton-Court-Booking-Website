@@ -1,3 +1,4 @@
+const { fixture, actors } = require("./helpers/refund-db.cjs");
 const fs = require("node:fs");
 const ts = require("typescript");
 const assert = require("node:assert/strict");
@@ -329,8 +330,8 @@ test("HLV chưa duyệt hoặc bị tạm ngừng không thể mở ca rảnh", 
 
   const futureSlot = {
     venueId: "venue-1",
-    startsAt: "2026-10-28T10:00:00.000Z",
-    endsAt: "2026-10-28T12:00:00.000Z",
+    startsAt: new Date(Date.now() + 86400000).toISOString(),
+    endsAt: new Date(Date.now() + 93600000).toISOString(),
   };
 
   // HLV bị SUSPENDED -> 403
@@ -448,199 +449,33 @@ test("Phân quyền duyệt liên kết cơ sở: người không có quyền b�
 });
 
 test("Retry cancelCoachBookingByCoach không tạo khoản hoàn trùng (Idempotent)", async () => {
-  let paymentCreatedCount = 0;
-  const coachProfile = { id: "cp-1", userId: "user-coach" };
-  const booking = {
-    id: "b-paid",
-    code: "DATSAN-IDEMPOTENT",
-    userId: "cust-1",
-    paymentStatus: "PAID",
-    total: 300000,
-    subtotal: 300000,
-  };
-  const coachBooking = {
-    id: "cb-idem",
-    coachId: "cp-1",
-    fee: 150000,
-    status: "CONFIRMED",
-    bookingItem: { booking },
-  };
-
-  const payments = [];
-  const mockDb = {
-    $transaction: async (work) =>
-      work({
-        coachProfile: { findUnique: async () => coachProfile },
-        coachBooking: {
-          findUnique: async () => coachBooking,
-          update: async ({ data }) => Object.assign(coachBooking, data),
-        },
-        payment: {
-          findUnique: async ({ where }) => payments.find((p) => p.txnRef === where.txnRef) || null,
-          create: async ({ data }) => {
-            paymentCreatedCount++;
-            payments.push(data);
-            return { id: "p-1", ...data };
-          },
-        },
-        booking: { update: async ({ data }) => Object.assign(booking, data) },
-        bookingPriceLine: {
-          findFirst: async () => null,
-          create: async () => ({ id: "bpl-1" }),
-        },
-        notification: { create: async () => ({ id: "notif-1" }) },
-      }),
-  };
-
-  // Lần gọi 1: hủy thành công, tạo 1 bản ghi hoàn tiền
-  const res1 = await cancelCoachBookingByCoach(mockDb, "user-coach", "cb-idem", "HLV bận đột xuất");
-  assert.equal(res1.success, true);
-  assert.equal(res1.refundedFee, 150000);
-  assert.equal(paymentCreatedCount, 1);
-  assert.equal(booking.paymentStatus, "PAID", "Giữ nguyên PAID để nhận sân");
-
-  // Lần gọi 2 (retry mạng): trả về thành công lũy thừa, KHÔNG tạo thêm bản ghi hoàn tiền
-  const res2 = await cancelCoachBookingByCoach(mockDb, "user-coach", "cb-idem", "HLV bận đột xuất");
-  assert.equal(res2.success, true);
-  assert.equal(res2.alreadyCancelled, true);
-  assert.equal(paymentCreatedCount, 1, "Không được tạo bản ghi hoàn tiền lần 2");
+  const db = fixture({ total: 300000, fee: 150000, amounts: [300000] });
+  await cancelCoachBookingByCoach(db, "coach-user", "cb", "Bận việc đột xuất");
+  const second = await cancelCoachBookingByCoach(db, "coach-user", "cb", "Bận việc đột xuất");
+  assert.equal(second.alreadyCancelled, true);
+  assert.equal(db.state.refunds.length, 1);
+  assert.equal(db.state.refunds[0].amount, 150000);
+  assert.equal(db.state.payments.length, 1);
+  assert.equal(db.state.booking.paymentStatus, 'PAID');
 });
 
 test("HLV hủy đơn nhóm đã trả một phần: bảo toàn tính nhất quán giữa booking.total, GroupShare và tiền thực trả", async () => {
-  // Đơn nhóm: Sân 200k + HLV 200k = 400k. Chia 4 người (mỗi người 100k)
-  const booking = {
-    id: "b-group-1",
-    code: "DATSAN-GROUP",
-    userId: "leader-1",
-    paymentStatus: "PARTIALLY_PAID",
-    subtotal: 400000,
-    total: 400000,
-  };
-
-  const shares = [
-    { id: "s-1", position: 1, amount: 100000, paymentId: "p-share-1" }, // Đã trả 100k
-    { id: "s-2", position: 2, amount: 100000, paymentId: null },        // Chưa trả
-    { id: "s-3", position: 3, amount: 100000, paymentId: null },        // Chưa trả
-    { id: "s-4", position: 4, amount: 100000, paymentId: null },        // Chưa trả
-  ];
-
-  const coachBooking = {
-    id: "cb-grp",
-    coachId: "coach-grp",
-    fee: 200000,
-    status: "CONFIRMED",
-    bookingItem: { booking },
-  };
-
-  const mockDb = {
-    $transaction: async (work) =>
-      work({
-        coachProfile: { findUnique: async () => ({ id: "coach-grp", userId: "coach-user" }) },
-        coachBooking: {
-          findUnique: async () => coachBooking,
-          update: async ({ data }) => Object.assign(coachBooking, data),
-        },
-        booking: {
-          update: async ({ data }) => Object.assign(booking, data),
-        },
-        bookingPriceLine: {
-          deleteMany: async () => {},
-        },
-        bookingGroup: {
-          findUnique: async () => ({ id: "grp-1", bookingId: booking.id, shares }),
-        },
-        groupShare: {
-          update: async ({ where, data }) => {
-            const s = shares.find((item) => item.id === where.id);
-            if (s) Object.assign(s, data);
-            return s;
-          },
-        },
-        groupPaymentIntent: {
-          updateMany: async () => ({ count: 1 }),
-        },
-        notification: { create: async () => ({ id: "n-1" }) },
-      }),
-  };
-
-  // HLV hủy buổi dạy phí 200k
-  const res = await cancelCoachBookingByCoach(mockDb, "coach-user", "cb-grp", "Lý do cá nhân");
-  assert.equal(res.success, true);
-  assert.equal(res.refundedFee, 200000);
-
-  // 1. Tổng đơn mới = 400k - 200k = 200k
-  assert.equal(booking.total, 200000);
-  assert.equal(booking.subtotal, 200000);
-
-  // 2. Bảng chia mới: Share 1 đã trả 100k giữ nguyên. 3 share còn lại chia 100k (34k, 33k, 33k)
-  const sumShares = shares.reduce((sum, s) => sum + s.amount, 0);
-  assert.equal(sumShares, 200000, "Tổng các phần trong bảng chia phải bằng chính xác booking.total");
-  assert.equal(shares[0].amount, 100000);
-  assert.equal(shares[1].amount, 33334);
-  assert.equal(shares[2].amount, 33333);
-  assert.equal(shares[3].amount, 33333);
-
-  // 3. Tiến hành đồng bộ (sync): không bị văng lỗi 'Bảng chia không khớp tổng đơn'
-  const groupPayload = {
-    id: "grp-1",
-    bookingId: booking.id,
-    booking,
-    shares,
-    intents: [],
-  };
-  const mockSyncTx = {
-    bookingGroup: { findUniqueOrThrow: async () => groupPayload },
-    booking: { update: async ({ data }) => Object.assign(booking, data) },
-    bookingItem: { updateMany: async () => ({ count: 1 }) },
-    coachBooking: { updateMany: async () => ({ count: 1 }) },
-  };
-
-  // Gọi sync thành công
-  await sync(mockSyncTx, "grp-1");
-  assert.equal(booking.paymentStatus, "PARTIALLY_PAID");
+  const db = fixture({ total: 400000, fee: 200000, status: 'PENDING_PAYMENT', paymentStatus: 'PARTIALLY_PAID', amounts: Array(1).fill(100000), shares: Array.from({ length: 4 }, (_, i) => ({ amount: 100000, paymentId: i < 1 ? 'p' + i : null })) });
+  await cancelCoachBookingByCoach(db, "coach-user", "cb", "Bận việc đột xuất");
+  assert.equal(db.state.booking.total, 200000);
+  assert.deepEqual(db.state.shares.map((s) => s.amount), [100000, 33334, 33333, 33333]);
+  await db.$transaction((tx) => sync(tx, 'g'), { isolationLevel: 'Serializable' });
+  assert.equal(db.state.booking.paymentStatus, 'PARTIALLY_PAID');
 });
 
 test("Đơn nhóm trả đủ đồng bộ xác nhận lịch HLV và đơn hết hạn giải phóng cả sân và HLV", async () => {
-  let coachBookingConfirmed = false;
-  let coachBookingCancelled = false;
-
-  const booking = { id: "b-g", total: 200000, paymentStatus: "PAID", status: "CONFIRMED", items: [] };
-  const shares = [{ id: "s-1", amount: 200000, paymentId: "p-1", cashApprovedAt: null }];
-
-  const mockTx = {
-    bookingGroup: {
-      findUniqueOrThrow: async () => ({
-        id: "g-1",
-        bookingId: "b-g",
-        booking,
-        shares,
-        intents: [],
-      }),
-      update: async () => ({}),
-    },
-    booking: { update: async () => ({}) },
-    bookingItem: { updateMany: async () => ({ count: 1 }) },
-    coachBooking: {
-      updateMany: async ({ data }) => {
-        if (data.status === "CONFIRMED" && data.expiresAt === null) {
-          coachBookingConfirmed = true;
-        }
-        if (data.status === "CANCELLED") {
-          coachBookingCancelled = true;
-        }
-        return { count: 1 };
-      },
-    },
-    payment: { findMany: async () => [] },
-    groupPaymentIntent: { updateMany: async () => ({ count: 1 }) },
-  };
-
-  // 1. Trả đủ -> xác nhận HLV
-  await sync(mockTx, "g-1");
-  assert.equal(coachBookingConfirmed, true, "CoachBooking phải được CONFIRMED khi nhóm trả đủ");
-
-  // 2. Nhóm hết hạn -> giải phóng HLV (CANCELLED)
-  await closeGroup(mockTx, "g-1", true, "Hết hạn giữ chỗ");
-  assert.equal(coachBookingCancelled, true, "CoachBooking phải được CANCELLED khi nhóm hết hạn");
+  const paid = fixture({ total: 200000, amounts: [200000], shares: [{ amount: 200000, paymentId: 'p0' }] });
+  paid.state.coaches[0].status = 'HELD';
+  await paid.$transaction((tx) => sync(tx, 'g'), { isolationLevel: 'Serializable' });
+  assert.equal(paid.state.coaches[0].status, 'CONFIRMED');
+  const unpaid = fixture({ amounts: [], status: 'PENDING_PAYMENT', paymentStatus: 'PENDING', shares: [{ amount: 400000, paymentId: null }] });
+  await unpaid.$transaction((tx) => closeGroup(tx, 'g', true, 'Hết hạn giữ chỗ'), { isolationLevel: 'Serializable' });
+  assert.equal(unpaid.state.coaches[0].status, 'CANCELLED');
+  assert.equal(unpaid.state.items[0].status, 'EXPIRED');
 });
 

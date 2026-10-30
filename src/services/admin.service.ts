@@ -1,3 +1,4 @@
+import { approveCancellationInTransaction, refundLedger } from "./refund.service";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   assertAdmin,
@@ -82,6 +83,17 @@ export async function performAdminAction(
             where: { id: venue.ownerId },
             data: { role: "OWNER" },
           });
+      } else if (input.status === "SUSPENDED") {
+        // Đóng toàn bộ ca trực đang mở tại cơ sở khi bị đình chỉ
+        if (tx.staffShift) {
+          await tx.staffShift.updateMany({
+            where: { venueId: venue.id, endedAt: null },
+            data: {
+              endedAt: now,
+              note: "Đóng ca do cơ sở bị đình chỉ hoạt động",
+            },
+          });
+        }
       }
       await tx.venue.update({
         where: { id: venue.id },
@@ -278,9 +290,23 @@ export async function performAdminAction(
         include: { venue: true, items: true, group: true },
       });
       if (!booking) throw new PaymentError(404, "Không tìm thấy đơn đặt sân.");
+      let isOwnerOrAdmin = actor!.role === "ADMIN";
       if (actor!.role !== "ADMIN") {
-        const allowed = await tx.venue.findFirst({ where: { id: booking.venueId, ...operatorVenueScope(actor!) }, select: { id: true } });
+        const allowed = await tx.venue.findFirst({ where: { id: booking.venueId, ...operatorVenueScope(actor!) }, select: { id: true, ownerId: true } });
         if (!allowed) throw new PaymentError(403, "Bạn không được phân quyền tại sân này.");
+        if (allowed.ownerId === actor!.id) {
+          isOwnerOrAdmin = true;
+        } else {
+          // Là STAFF: bắt buộc phải có ca trực đang mở tại cơ sở
+          if (tx.staffShift) {
+            const activeShift = await tx.staffShift.findFirst({
+              where: { userId: actor!.id, venueId: booking.venueId, endedAt: null },
+            });
+            if (!activeShift) {
+              throw new PaymentError(403, "Nhân viên phải bắt đầu ca trực để thực hiện thao tác này tại sân.");
+            }
+          }
+        }
       }
       if (booking.group && input.action !== "COMPLETE") throw new PaymentError(409, "Đơn nhóm: dùng màn hình quản lý nhóm để xử lý từng phần và vé cá nhân.");
       checkBookingAction(booking, input.action, now);
@@ -310,10 +336,14 @@ export async function performAdminAction(
           });
         }
       }
-      if (input.action === "CHECK_IN") update.status = "CHECKED_IN";
+      if (input.action === "CHECK_IN") {
+        update.status = "CHECKED_IN";
+        update.checkedInById = actor!.id;
+      }
       if (input.action === "COMPLETE") {
         update.status = "COMPLETED";
         update.sessionStatus = "COMPLETED";
+        update.completedById = actor!.id;
         if (tx.coachBooking) {
           await tx.coachBooking.updateMany({
             where: {
@@ -325,39 +355,13 @@ export async function performAdminAction(
         }
       }
       if (input.action === "CANCEL") {
+        const ledger = await refundLedger(tx, booking.id);
+        if ((ledger.received > 0 || ["PAID", "PARTIALLY_PAID", "REFUND_PENDING", "REFUNDED"].includes(booking.paymentStatus)) && !isOwnerOrAdmin) {
+          throw new PaymentError(403, "Nhân viên chỉ được gửi yêu cầu hủy đơn có tiền thu để chủ sân phê duyệt.");
+        }
+        const after = await approveCancellationInTransaction(tx, booking, ledger.available, input.reason, now);
         update.status = "CANCELLED";
-        update.cancelledAt = now;
-        update.cancelReason = input.reason;
-        update.expiresAt = null;
-        if (booking.paymentStatus === "PAID") {
-          update.paymentStatus = "REFUND_PENDING";
-          await tx.payment.updateMany({
-            where: { bookingId: booking.id, status: "PAID" },
-            data: { status: "REFUND_PENDING" },
-          });
-        }
-        await tx.bookingItem.updateMany({
-          where: {
-            bookingId: booking.id,
-            status: { in: ["HELD", "CONFIRMED"] },
-          },
-          data: { status: "CANCELLED" },
-        });
-        if (tx.coachBooking) {
-          await tx.coachBooking.updateMany({
-            where: {
-              bookingItem: { bookingId: booking.id },
-              status: { in: ["HELD", "CONFIRMED"] },
-            },
-            data: { status: "CANCELLED", cancelledAt: now, cancelReason: input.reason },
-          });
-        }
-        if (tx.offerUsage) {
-          await tx.offerUsage.updateMany({
-            where: { bookingId: booking.id, state: "RESERVED" },
-            data: { state: "RELEASED" },
-          });
-        }
+        update.paymentStatus = after.pending > 0 ? "REFUND_PENDING" : after.completed > 0 ? "REFUNDED" : booking.paymentStatus;
       }
       if (input.action === "CASH_PAID") {
         await tx.payment.create({

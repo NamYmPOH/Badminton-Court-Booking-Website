@@ -402,6 +402,14 @@ model Booking {
   overdueNotifiedAt       DateTime?
   hasCashPayment          Boolean       @default(false)
   manualHandoverRequired  Boolean       @default(false)
+  createdByStaffId        String?
+  checkedInById           String?
+  completedById           String?
+  cancelRequestedAt       DateTime?
+  cancelApprovedAt        DateTime?
+  refundAmountApproved    Int?
+  refundCompletedAt       DateTime?
+  refundCompletedById     String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -419,6 +427,8 @@ model Booking {
   @@index([userId, createdAt])
   @@index([venueId, status])
   @@index([status, expiresAt])
+  @@index([createdByStaffId])
+  @@index([source])
 }
 
 model BookingItem {
@@ -515,14 +525,29 @@ model GroupRefund {
   id          String   @id @default(cuid())
   paymentId   String   @unique
   amount      Int
+  completedAmount Int @default(0)
   reason      String
   status      String   @default("PENDING")
   reference   String?
   completedAt DateTime?
   createdAt   DateTime @default(now())
   payment     Payment  @relation(fields: [paymentId], references: [id])
+  disbursements RefundDisbursement[]
 
   @@index([status, createdAt])
+}
+
+// Một chứng từ chi chỉ được ghi nhận một lần, kể cả khi API bị gửi lại.
+model RefundDisbursement {
+  id          String @id @default(cuid())
+  reference   String @unique
+  refundId    String
+  amount      Int
+  actorId     String
+  createdAt   DateTime @default(now())
+  refund      GroupRefund @relation(fields: [refundId], references: [id])
+
+  @@index([refundId])
 }
 
 // Lưu cả giao dịch không khớp đơn để chủ sân đối soát; không xóa khi xóa booking.

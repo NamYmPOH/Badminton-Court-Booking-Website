@@ -150,7 +150,7 @@ async function recordSingleVoucherUsage(
   }
 
   const markerKey = `${bookingId}:${voucherId}`;
-  if (inMemoryVoucherRecordings.has(markerKey)) {
+  if (!safeTx.voucherUsage && inMemoryVoucherRecordings.has(markerKey)) {
     return { recorded: false, reason: "ALREADY_RECORDED" };
   }
 
@@ -158,51 +158,20 @@ async function recordSingleVoucherUsage(
 
   // Trường hợp 1: Có bảng VoucherUsage (DB thật hoặc mock hỗ trợ VoucherUsage)
   if (safeTx.voucherUsage && typeof safeTx.voucherUsage.create === "function") {
-    let newlyCreated = false;
-    try {
-      await safeTx.voucherUsage.create({
-        data: { voucherId, bookingId },
-      });
-      newlyCreated = true;
-    } catch (err: unknown) {
-      const isUniqueConflict =
-        Boolean(err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002");
-      if (!isUniqueConflict && typeof safeTx.voucherUsage.findUnique === "function") {
-        const existing = await safeTx.voucherUsage.findUnique({
-          where: { voucherId_bookingId: { voucherId, bookingId } },
-        });
-        if (!existing) {
-          throw err;
-        }
-      }
-    }
-
-    if (newlyCreated) {
-      inMemoryVoucherRecordings.add(markerKey);
-      if (typeof safeTx.voucher.update === "function") {
-        await safeTx.voucher.update({
-          where: { id: voucherId },
-          data: { usedCount: { increment: 1 } },
-        });
-      }
-
-      if (typeof safeTx.adminAudit?.create === "function") {
-        await safeTx.adminAudit.create({
-          data: {
-            actorId: actorId || "system",
-            actorName: actorName || "Hệ thống Thanh toán",
-            action: "VOUCHER_CONSUMED",
-            entityId: auditMarker,
-            reason: `Ghi nhận sử dụng voucher cho đơn ${bookingId}`,
-            details: { bookingId, voucherId },
-          },
-        });
-      }
-      return { recorded: true, reason: "VOUCHER_USAGE_CREATED" };
-    }
-
-    inMemoryVoucherRecordings.add(markerKey);
-    return { recorded: false, reason: "ALREADY_RECORDED" };
+    const existing = await safeTx.voucherUsage.findUnique?.({
+      where: { voucherId_bookingId: { voucherId, bookingId } },
+    });
+    if (existing) return { recorded: false, reason: "ALREADY_RECORDED" };
+    // Chứng từ và bộ đếm cùng commit/rollback. Không ghi dấu vào bộ nhớ trước commit.
+    // Nếu hai transaction cùng tạo, để P2002 thoát ra cho serializable retry toàn bộ.
+    await safeTx.voucherUsage.create({ data: { voucherId, bookingId } });
+    await safeTx.voucher.update?.({ where: { id: voucherId }, data: { usedCount: { increment: 1 } } });
+    await safeTx.adminAudit?.create?.({ data: {
+      actorId: actorId || "system", actorName: actorName || "Hệ thống Thanh toán",
+      action: "VOUCHER_CONSUMED", entityId: auditMarker,
+      reason: `Ghi nhận sử dụng voucher cho đơn ${bookingId}`, details: { bookingId, voucherId },
+    } });
+    return { recorded: true, reason: "VOUCHER_USAGE_CREATED" };
   }
 
   // Trường hợp 2: Mock hoặc DB chưa có tx.voucherUsage -> Sử dụng AdminAudit marker

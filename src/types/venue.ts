@@ -47,6 +47,8 @@ export interface Venue {
   courts: Court[];
   pricingRules: PricingRule[];
   reviews: Review[];
+  ownerId?: string;
+  status?: string;
 }
 
 export interface VenueFilterParams {

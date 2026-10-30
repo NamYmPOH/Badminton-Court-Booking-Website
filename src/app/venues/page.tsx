@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { getVenues } from "@/services/venue.service";
 import { VenueCard } from "@/components/features/venues/VenueCard";
 import { VenuesMap } from "@/components/features/venues/VenuesMap";
 import { VenueSearchFilter } from "@/components/features/venues/VenueSearchFilter";
+import { AUTH_COOKIE, verifySessionToken } from "@/lib/auth-token";
 
 interface VenuesPageProps {
   searchParams: {
@@ -29,16 +31,23 @@ export default async function VenuesPage({ searchParams }: VenuesPageProps) {
   const maxPrice = searchParams.maxPrice ? parseInt(searchParams.maxPrice, 10) : undefined;
   const amenities = searchParams.amenity ? [searchParams.amenity] : undefined;
 
-  const venues = await getVenues({
-    q: query,
-    district: district !== "all" ? district : undefined,
-    sort,
-    hasSlotTonight,
-    isOpenNow,
-    minPrice,
-    maxPrice,
-    amenities,
-  });
+  const cookieStore = cookies();
+  const token = cookieStore.get(AUTH_COOKIE.name)?.value;
+  const currentUserId = token ? verifySessionToken(token) : undefined;
+
+  const venues = await getVenues(
+    {
+      q: query,
+      district: district !== "all" ? district : undefined,
+      sort,
+      hasSlotTonight,
+      isOpenNow,
+      minPrice,
+      maxPrice,
+      amenities,
+    },
+    currentUserId || undefined
+  );
 
   return (
     <div className="mx-auto max-w-content px-4 py-8 sm:px-6">

@@ -12,6 +12,16 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const userId = await requirePaymentUser();
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { role: true, status: true },
+    });
+    if (!user || user.status !== "ACTIVE") {
+      throw new PaymentError(403, "Tài khoản không hoạt động.");
+    }
+    if (user.role === "STAFF") {
+      throw new PaymentError(403, "Tài khoản nhân viên không sử dụng luồng đặt sân online cá nhân.");
+    }
     const raw = await readPaymentBody(request, 16384);
     let body: unknown;
     try { body = JSON.parse(raw.toString("utf8")); } catch { throw new PaymentError(400, "JSON không hợp lệ."); }

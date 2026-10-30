@@ -51,8 +51,9 @@ export const groupActionSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("REFUND_DONE"),
-      refundId: z.string().max(100),
-      reference: z.string().trim().min(5).max(200),
+      refundId: z.string().min(1).max(100),
+      amount: z.number().int().positive(),
+      reference: z.string().trim().min(5).max(160),
       reason,
     })
     .strict(),
@@ -111,7 +112,7 @@ export function groupTotals(
     total,
     received,
     remaining: total - received,
-    canConfirm: shares.every((s) => s.paymentId || s.cashApprovedAt),
+    canConfirm: shares.every((s) => s.amount === 0 || s.paymentId || s.cashApprovedAt),
   };
 }
 

@@ -1,3 +1,4 @@
+import { completeRefund, refundLedger, reserveRefund } from "./refund.service";
 import { randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import QRCode from "qrcode";
@@ -91,7 +92,7 @@ function selected(group: Group, ids: string[]) {
   if (
     !ids.length ||
     shares.length !== ids.length ||
-    shares.some((s) => s.paymentId)
+    shares.some((s) => s.paymentId || s.amount <= 0)
   )
     throw new PaymentError(
       409,
@@ -242,6 +243,9 @@ export async function closeGroup(
     include,
   });
   if (g.closedAt) return;
+  if (!["PENDING_PAYMENT", "CONFIRMED"].includes(g.booking.status)) {
+    throw new PaymentError(409, "Đơn không còn cho phép hủy hoặc hoàn tiền tự động.");
+  }
   const now = new Date();
   const items = g.booking.items ?? [];
   const start = items.length > 0 ? Math.min(...items.map((i) => slotTime(i))) : now.getTime();
@@ -252,43 +256,11 @@ export async function closeGroup(
       : hours >= 12
         ? 0.5
         : 0;
-  const payments = await tx.payment.findMany({
-    where: { bookingId: g.bookingId, status: { in: ["PAID", "REFUND_PENDING"] } },
-    orderBy: { id: "asc" },
-  });
-  let hasPendingRefund = false;
-  for (let i = 0; i < payments.length; i++) {
-    const p = payments[i];
-    const targetRefund = Math.floor(p.amount * rate);
-    if (targetRefund > 0) {
-      hasPendingRefund = true;
-      const existingRefund = typeof tx.groupRefund?.findUnique === "function"
-        ? await tx.groupRefund.findUnique({ where: { paymentId: p.id } })
-        : null;
-
-      if (existingRefund) {
-        if (targetRefund > existingRefund.amount) {
-          await tx.groupRefund.update({
-            where: { id: existingRefund.id },
-            data: {
-              amount: targetRefund,
-              reason: `${existingRefund.reason}; ${reason}`,
-            },
-          });
-        }
-      } else {
-        await tx.groupRefund.create({
-          data: { paymentId: p.id, amount: targetRefund, reason },
-        });
-      }
-      if (p.status !== "REFUND_PENDING") {
-        await tx.payment.update({
-          where: { id: p.id },
-          data: { status: "REFUND_PENDING" },
-        });
-      }
-    }
+  const before = await refundLedger(tx, g.bookingId);
+  if (before.received === 0 && ["PAID", "PARTIALLY_PAID", "REFUND_PENDING", "REFUNDED"].includes(g.booking.paymentStatus)) {
+    throw new PaymentError(409, "Thiếu chứng từ thu của nhóm. Cần đối soát trước khi hủy.");
   }
+  const ledger = await reserveRefund(tx, g.bookingId, Math.floor(before.available * rate), reason);
   await tx.groupPaymentIntent.updateMany({
     where: { groupId, status: "OPEN" },
     data: { status: "CLOSED" },
@@ -321,7 +293,11 @@ export async function closeGroup(
       cancelledAt: expired ? null : now,
       cancelReason: reason,
       paymentStatus:
-        hasPendingRefund ? "REFUND_PENDING" : g.booking.paymentStatus,
+        ledger.pending > 0 ? "REFUND_PENDING" : ledger.completed > 0 ? "REFUNDED" : g.booking.paymentStatus,
+      refundAmountApproved: ledger.approved,
+      cancelApprovedAt: now,
+      refundCompletedAt: ledger.approved > 0 && ledger.pending === 0 ? now : null,
+      ...(ledger.pending > 0 ? { refundCompletedById: null } : {}),
     },
   });
 }
@@ -577,6 +553,13 @@ export async function groupAction(
         shareId: share.id,
       });
     } else if (input.action === "CANCEL") {
+      if (!leader) {
+        const actor = await activeUser(tx, userId);
+        const ledger = await refundLedger(tx, g.bookingId);
+        if (ledger.received > 0 && actor.role !== "ADMIN" && g.booking.venue.ownerId !== userId) {
+          throw new PaymentError(403, "Nhân viên phải gửi yêu cầu hủy để chủ sân phê duyệt.");
+        }
+      }
       if (
         g.closedAt ||
         !["PENDING_PAYMENT", "CONFIRMED"].includes(g.booking.status)
@@ -588,40 +571,9 @@ export async function groupAction(
       await closeGroup(tx, g.id, expired, input.reason);
       await audit(tx, userId, g, input.action, input.reason, {});
     } else if (input.action === "REFUND_DONE") {
-      const refund = await tx.groupRefund.findFirst({
-        where: {
-          id: input.refundId,
-          status: "PENDING",
-          payment: { bookingId: g.bookingId },
-        },
-      });
-      if (!refund)
-        throw new PaymentError(409, "Không còn yêu cầu hoàn tiền này.");
-      await tx.groupRefund.update({
-        where: { id: refund.id },
-        data: {
-          status: "COMPLETED",
-          completedAt: new Date(),
-          reference: input.reference,
-        },
-      });
-      await tx.payment.update({
-        where: { id: refund.paymentId },
-        data: { status: "REFUNDED" },
-      });
-      if (
-        !(await tx.groupRefund.count({
-          where: { status: "PENDING", payment: { bookingId: g.bookingId } },
-        }))
-      )
-        await tx.booking.update({
-          where: { id: g.bookingId },
-          data: { paymentStatus: "REFUNDED" },
-        });
-      await audit(tx, userId, g, input.action, input.reason, {
-        refundId: refund.id,
-        amount: refund.amount,
-        reference: input.reference,
+      const result = await completeRefund(tx, g.bookingId, input.refundId, input.amount, input.reference, userId);
+      if (!result.duplicate) await audit(tx, userId, g, input.action, input.reason, {
+        refundId: input.refundId, amount: input.amount, reference: input.reference.trim().toUpperCase(),
       });
     }
     return { success: true };
@@ -816,6 +768,8 @@ export async function getGroupView(
         .map((r) => ({
           id: r.id,
           amount: r.amount,
+          completedAmount: r.completedAmount,
+          remaining: r.amount - r.completedAmount,
           status: r.status,
           reference: r.reference,
           txnRef: privileged ? r.payment.txnRef : undefined,

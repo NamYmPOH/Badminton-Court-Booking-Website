@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import VenueStaffModal from "./VenueStaffModal";
 
 const tabs = [
   ["overview", "Tổng quan", LayoutDashboard],
@@ -48,6 +49,7 @@ type Row = {
   total?: number;
   amount?: number;
   txnRef?: string;
+  groupRefund?: { amount: number; completedAmount: number; status: string } | null;
   provider?: string;
   result?: string;
   content?: string;
@@ -176,6 +178,7 @@ export default function AdminDashboard() {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [selectedStaffVenue, setSelectedStaffVenue] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => {
     const abort = new AbortController();
     setLoading(true);
@@ -488,6 +491,13 @@ export default function AdminDashboard() {
                           Mở đặt sân ↗
                         </Link>
                       )}
+                      <button
+                        type="button"
+                        className="rounded-lg border border-court-200 bg-court-50/60 px-3 py-1.5 text-xs font-semibold text-court-700 hover:bg-court-100 dark:border-court-800 dark:bg-court-950/40 dark:text-court-300"
+                        onClick={() => setSelectedStaffVenue({ id: r.id, name: r.name || "" })}
+                      >
+                        Tài khoản & quyền
+                      </button>
                     </div>
                   </>
                 )}
@@ -681,6 +691,11 @@ export default function AdminDashboard() {
                       <p className="mt-1 break-all text-xs text-muted">
                         {r.txnRef} · {date(r.paidAt)}
                       </p>
+                      {r.groupRefund && <p className="mt-1 text-sm text-muted">
+                        Đã duyệt hoàn {money(r.groupRefund.amount)}
+                        {r.groupRefund.status !== "REVIEW_REQUIRED" && <> · Đã chi {money(r.groupRefund.completedAmount)} · Còn {money(r.groupRefund.amount - r.groupRefund.completedAmount)}</>}
+                        {r.groupRefund.status === "REVIEW_REQUIRED" ? " · Cần đối soát chứng từ cũ" : ""}
+                      </p>}
                     </div>
                     <Badge value={r.status} />
                   </div>
@@ -917,6 +932,14 @@ export default function AdminDashboard() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
+      {/* Modal Quản lý Tài khoản & Quyền cơ sở sân */}
+      <VenueStaffModal
+        venueId={selectedStaffVenue?.id || null}
+        venueName={selectedStaffVenue?.name || ""}
+        isOpen={Boolean(selectedStaffVenue)}
+        onClose={() => setSelectedStaffVenue(null)}
+      />
     </main>
   );
 }

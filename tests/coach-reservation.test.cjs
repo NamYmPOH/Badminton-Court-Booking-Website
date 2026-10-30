@@ -1,3 +1,4 @@
+const { fixture, actors } = require("./helpers/refund-db.cjs");
 const fs = require("node:fs");
 const ts = require("typescript");
 const assert = require("node:assert/strict");
@@ -182,80 +183,15 @@ test("createReservation rejects coach conflict across venues (double-booking pre
 });
 
 test("cancelCoachBookingByCoach refunds 100% coach fee to customer and notifies", async () => {
-  let createdPriceLine = null;
-  let createdNotification = null;
-  let updatedBooking = null;
-
-  const coachBookingPaid = {
-    id: "cb-paid",
-    coachId: "coach-1",
-    fee: 200000,
-    status: "CONFIRMED",
-    bookingItem: {
-      booking: {
-        id: "b-paid",
-        code: "DATSAN9999",
-        userId: "cust-1",
-        total: 350000,
-        subtotal: 350000,
-        paymentStatus: "PAID",
-      },
-    },
-  };
-
-  const mockDb = {
-    $transaction: async (work) =>
-      work({
-        coachProfile: { findUnique: async () => ({ id: "coach-1", userId: "coach-user" }) },
-        coachBooking: {
-          findUnique: async () => coachBookingPaid,
-          update: async ({ data }) => Object.assign(coachBookingPaid, data),
-        },
-        booking: {
-          update: async ({ data }) => {
-            updatedBooking = data;
-            return data;
-          },
-        },
-        bookingPriceLine: {
-          create: async ({ data }) => {
-            createdPriceLine = data;
-            return data;
-          },
-          deleteMany: async () => {},
-        },
-        notification: {
-          create: async ({ data }) => {
-            createdNotification = data;
-            return data;
-          },
-        },
-      }),
-  };
-
-  const result = await cancelCoachBookingByCoach(
-    mockDb,
-    "coach-user",
-    "cb-paid",
-    "Huấn luyện viên bị sốt đột xuất"
-  );
-
-  // 1. Result acknowledges 100% refunded fee
-  assert.equal(result.success, true);
-  assert.equal(result.refundedFee, 200000);
-
-  // 2. CoachBooking marked CANCELLED
-  assert.equal(coachBookingPaid.status, "CANCELLED");
-  assert.equal(coachBookingPaid.cancelReason, "Huấn luyện viên bị sốt đột xuất");
-
-  // 3. 100% discount price line created for refund
-  assert.equal(createdPriceLine.type, "DISCOUNT");
-  assert.equal(createdPriceLine.amount, 200000);
-  assert.ok(createdPriceLine.label.includes("Hoàn 100% phí HLV"));
-
-  // 4. Customer notified
-  assert.equal(createdNotification.userId, "cust-1");
-  assert.ok(createdNotification.body.includes("100% phí HLV"));
+  const db = fixture({ total: 350000, fee: 200000, amounts: [350000] });
+  await cancelCoachBookingByCoach(db, "coach-user", "cb", "Bận việc đột xuất");
+  assert.equal(db.state.coaches[0].status, 'CANCELLED');
+  assert.equal(db.state.booking.total, 150000);
+  assert.equal(db.state.refunds[0].amount, 200000);
+  assert.equal(db.state.refunds[0].paymentId, 'p0');
+  assert.equal(db.state.booking.paymentStatus, 'PAID');
+  assert.equal(db.state.notifications[0].userId, 'customer');
+  assert.match(db.state.notifications[0].body, /chờ hoàn/);
 });
 
 test("Hai khách tranh cùng giờ HLV: khách đầu tiên tạo lịch thành công, khách thứ hai bị từ chối 409 conflict", async () => {

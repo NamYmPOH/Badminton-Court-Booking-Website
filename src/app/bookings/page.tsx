@@ -33,6 +33,7 @@ function BookingsContent() {
     code: string;
     venueName: string;
   } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -57,7 +58,7 @@ function BookingsContent() {
     return () => {
       isMounted = false;
     };
-  }, [currentTab]);
+  }, [currentTab, refreshKey]);
 
   const formatHour = (min: number): string => {
     const h = Math.floor(min / 60);
@@ -157,6 +158,9 @@ function BookingsContent() {
         bookingCode={cancelModalData?.code || ""}
         venueName={cancelModalData?.venueName || ""}
         onClose={() => setCancelModalData(null)}
+        onCancelled={() => {
+          setRefreshKey((k) => k + 1);
+        }}
       />
 
       {/* Tiêu đề & Nút đặt sân mới */}

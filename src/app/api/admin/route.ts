@@ -48,6 +48,7 @@ export async function GET(request: Request) {
         refundPending,
         users,
         revenue,
+        refundedFromPaidReceipts,
       ] = await Promise.all([
         db.venue.count({ where: { status: "ACTIVE" } }),
         db.venue.count({ where: { status: "PENDING" } }),
@@ -60,12 +61,13 @@ export async function GET(request: Request) {
           },
         }),
         db.sepayReceipt.count({ where: { result: { startsWith: "REVIEW_" } } }),
-        db.booking.count({ where: { paymentStatus: "REFUND_PENDING" } }),
+        db.booking.count({ where: { OR: [{ paymentStatus: "REFUND_PENDING" }, { payments: { some: { groupRefund: { is: { status: { in: ["PENDING", "REVIEW_REQUIRED"] } } } } } }] } }),
         db.user.count(),
         db.payment.aggregate({
-          where: { status: "PAID" },
+          where: { status: "PAID", NOT: { txnRef: { startsWith: "REFUND-" } } },
           _sum: { amount: true },
         }),
+        db.groupRefund.aggregate({ where: { payment: { status: "PAID", NOT: { txnRef: { startsWith: "REFUND-" } } } }, _sum: { completedAmount: true } }),
       ]);
       return NextResponse.json(
         {
@@ -77,7 +79,7 @@ export async function GET(request: Request) {
             reviewPayments,
             refundPending,
             users,
-            revenue: revenue._sum.amount || 0,
+            revenue: (revenue._sum.amount || 0) - (refundedFromPaidReceipts._sum.completedAmount || 0),
           },
         },
         { headers: { "Cache-Control": "no-store" } },
@@ -144,13 +146,14 @@ export async function GET(request: Request) {
       rows = await db.payment.findMany({
         ...window,
         where: {
-          ...(pending === "true" ? { status: "REFUND_PENDING" } : {}),
+          ...(pending === "true" ? { AND: [{ OR: [{ status: "REFUND_PENDING" as const }, { groupRefund: { is: { status: { in: ["PENDING", "REVIEW_REQUIRED"] } } } }] }] } : {}),
           OR: [{ txnRef: search }, { booking: { code: search } }],
         },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         select: {
           id: true,
           txnRef: true,
+          groupRefund: { select: { amount: true, completedAmount: true, status: true } },
           provider: true,
           status: true,
           amount: true,

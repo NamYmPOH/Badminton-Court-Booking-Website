@@ -1,3 +1,4 @@
+const { fixture, actors } = require("./helpers/refund-db.cjs");
 const fs = require('node:fs');
 const ts = require('typescript');
 const assert = require('node:assert/strict');
@@ -288,64 +289,14 @@ test('5. Thu tiền mặt (CASH_PAID) tiêu thụ suất và tăng usedCount c�
   assert.ok(voucherIncremented, 'voucher usedCount must increment');
 });
 
-test('6. Hủy HLV cho đơn đã thanh toán tạo quy trình hoàn tiền (REFUND_PENDING)', async () => {
-  let refundPaymentCreated = false;
-  const coachProfile = { id: 'cp-1', userId: 'user-coach' };
-  const booking = {
-    id: 'b-with-coach',
-    code: 'DATSAN-COACH',
-    userId: 'customer-1',
-    paymentStatus: 'PAID',
-    subtotal: 300000,
-    total: 300000,
-  };
-  const coachBooking = {
-    id: 'cb-1',
-    coachId: 'cp-1',
-    fee: 150000,
-    status: 'CONFIRMED',
-    bookingItem: {
-      booking,
-    },
-  };
-
-  const db = {
-    $transaction: async (fn) => {
-      return fn({
-        coachProfile: {
-          findUnique: async () => coachProfile,
-        },
-        coachBooking: {
-          findUnique: async () => coachBooking,
-          update: async ({ data }) => Object.assign(coachBooking, data),
-        },
-        payment: {
-          create: async ({ data }) => {
-            if (data.status === 'REFUND_PENDING' && data.amount === 150000) {
-              refundPaymentCreated = true;
-            }
-            return { id: 'p-refund', ...data };
-          },
-        },
-        booking: {
-          update: async ({ data }) => Object.assign(booking, data),
-        },
-        bookingPriceLine: {
-          create: async () => ({ id: 'bpl-1' }),
-        },
-        notification: {
-          create: async () => ({ id: 'notif-1' }),
-        },
-      });
-    },
-  };
-
-  const res = await cancelCoachBookingByCoach(db, 'user-coach', 'cb-1', 'HLV bị ốm đột xuất');
-  assert.equal(res.success, true);
-  assert.equal(res.refundedFee, 150000);
-  assert.equal(coachBooking.status, 'CANCELLED');
-  assert.equal(booking.paymentStatus, 'PAID', 'Đơn giữ nguyên trạng thái PAID để khách nhận sân hợp lệ');
-  assert.ok(refundPaymentCreated, 'Payment record with REFUND_PENDING status must be created');
+test("6. Hủy HLV cho đơn đã thanh toán tạo quy trình hoàn tiền (REFUND_PENDING)", async () => {
+  const db = fixture({ total: 300000, fee: 150000, amounts: [300000] });
+  await cancelCoachBookingByCoach(db, "coach-user", "cb", "Bận việc đột xuất");
+  assert.equal(db.state.coaches[0].status, 'CANCELLED');
+  assert.equal(db.state.booking.paymentStatus, 'PAID');
+  assert.equal(db.state.refunds[0].amount, 150000);
+  assert.equal(db.state.refunds[0].status, 'PENDING');
+  assert.equal(db.state.payments.length, 1, 'Không tạo chứng từ thu giả cho khoản hoàn');
 });
 
 test('7. Lịch HLV tính đúng múi giờ Việt Nam UTC+7', async () => {
