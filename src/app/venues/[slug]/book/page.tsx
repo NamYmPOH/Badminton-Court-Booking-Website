@@ -316,7 +316,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
   const isTodayExpired = isToday && venue ? currentMin >= venue.closeMin : false;
 
   return (
-    <div className="min-h-screen bg-bg pb-44 lg:pb-32">
+    <div className="min-h-screen bg-bg pb-[calc(10rem+env(safe-area-inset-bottom,0px))] lg:pb-32">
       {/* Modal xác nhận chuyển đổi sân / đổi ngày */}
       <CourtSwitchConfirmModal
         isOpen={pendingSwitch !== null}
@@ -602,7 +602,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
       </div>
 
       {/* Thanh tóm tắt và hành động cố định dưới đáy */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 p-4 shadow-2xl backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 px-4 pt-3 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] shadow-2xl backdrop-blur">
         <div className="mx-auto flex max-w-content flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Thông tin tóm tắt lựa chọn */}
           <div className="flex flex-col gap-1">

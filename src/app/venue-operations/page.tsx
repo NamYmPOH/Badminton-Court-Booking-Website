@@ -22,11 +22,13 @@ import {
   Printer,
   ChevronRight,
   Info,
+  Building2,
 } from "lucide-react";
 import CounterBookingModal from "@/components/features/venue-operations/CounterBookingModal";
 import VenueCourtsModal from "@/components/features/venue-operations/VenueCourtsModal";
 import RefundModal from "@/components/features/venue-operations/RefundModal";
 import VenueScheduleTimeline from "@/components/features/venue-operations/VenueScheduleTimeline";
+import VenueInfoManageTab from "@/components/features/venue-operations/VenueInfoManageTab";
 import VenueAllBookingsSection, {
   type BookingOrderItem,
 } from "@/components/features/venue-operations/VenueAllBookingsSection";
@@ -139,7 +141,7 @@ export default function VenueOperationsPage() {
   const { user, isLoading } = useAuth();
 
   // Tab view điều khiển
-  const [activeTab, setActiveTab] = useState<"OPERATIONS" | "TIMELINE" | "ALL_BOOKINGS">("OPERATIONS");
+  const [activeTab, setActiveTab] = useState<"OPERATIONS" | "TIMELINE" | "ALL_BOOKINGS" | "VENUE_INFO">("OPERATIONS");
 
   // Dữ liệu cơ sở & phiên trực tiếp
   const [orders, setOrders] = useState<Order[]>([]);
@@ -226,12 +228,14 @@ export default function VenueOperationsPage() {
   const [actionReason, setActionReason] = useState("");
 
   const inFlight = useRef(false);
+  const requestSeqRef = useRef(0);
   const allowed = !!user && ["ADMIN", "OWNER", "STAFF"].includes(user.role);
 
   // Tải dữ liệu tổng thể từ API
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       if (signal?.aborted) return;
+      const seq = ++requestSeqRef.current;
       try {
         const currentVenueParam =
           selectedVenueId ||
@@ -243,7 +247,11 @@ export default function VenueOperationsPage() {
         const params = new URLSearchParams();
         if (currentVenueParam) params.set("venueId", currentVenueParam);
         if (filter) params.set("q", filter);
-        if (timelineDate) params.set("timelineDate", timelineDate);
+        const effectiveTimelineDate = user?.role === "STAFF" ? getTodayVN() : timelineDate;
+        if (effectiveTimelineDate) {
+          params.set("timelineDate", effectiveTimelineDate);
+          params.set("scheduleDate", effectiveTimelineDate);
+        }
         params.set("allPage", String(allBookingsPage));
         params.set("allPageSize", "10");
         if (allStatusFilter) params.set("allStatus", allStatusFilter);
@@ -257,6 +265,9 @@ export default function VenueOperationsPage() {
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || "Không tải được danh sách.");
+
+        // Nếu có request mới hơn đã gửi đi, bỏ qua kết quả của request cũ tránh ghi đè dữ liệu
+        if (seq !== requestSeqRef.current) return;
 
         if (!signal?.aborted) {
           const returnedVenues: VenueMeta[] = data.venues || [];
@@ -294,11 +305,11 @@ export default function VenueOperationsPage() {
           setError("");
         }
       } catch (err) {
-        if (!signal?.aborted) {
+        if (!signal?.aborted && seq === requestSeqRef.current) {
           setError(err instanceof Error ? err.message : "Không tải được dữ liệu.");
         }
       } finally {
-        if (!signal?.aborted) {
+        if (!signal?.aborted && seq === requestSeqRef.current) {
           setLoading(false);
           setTimelineLoading(false);
           setAllBookingsLoading(false);
@@ -309,6 +320,7 @@ export default function VenueOperationsPage() {
       filter,
       selectedVenueId,
       timelineDate,
+      user?.role,
       allBookingsPage,
       allStatusFilter,
       allCourtFilter,
@@ -1030,6 +1042,21 @@ export default function VenueOperationsPage() {
             {allBookingsData.total}
           </span>
         </button>
+
+        {user?.role !== "STAFF" && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("VENUE_INFO")}
+            className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+              activeTab === "VENUE_INFO"
+                ? "border-court-600 text-court-600"
+                : "border-transparent text-muted hover:text-ink"
+            }`}
+          >
+            <Building2 size={16} />
+            <span>Thông tin & Tiện ích cơ sở</span>
+          </button>
+        )}
       </div>
 
       {/* TAB 1: PHIÊN SỬ DỤNG & CHỜ BÀN GIAO */}
@@ -1350,6 +1377,7 @@ export default function VenueOperationsPage() {
           onCreateBookingAtSlot={handleCreateBookingFromTimeline}
           loading={timelineLoading}
           onRefresh={() => void refresh()}
+          isStaff={user?.role === "STAFF"}
         />
       )}
 
@@ -1390,6 +1418,15 @@ export default function VenueOperationsPage() {
           }}
           loading={allBookingsLoading}
           onAction={handleActionFromAllBookings}
+        />
+      )}
+
+      {/* TAB 4: THÔNG TIN & TIỆN ÍCH CƠ SỞ (ADMIN & OWNER) */}
+      {activeTab === "VENUE_INFO" && user?.role !== "STAFF" && (
+        <VenueInfoManageTab
+          venueId={selectedVenueId}
+          venueName={selectedVenueMeta?.name || ""}
+          onUpdated={() => void refresh()}
         />
       )}
 

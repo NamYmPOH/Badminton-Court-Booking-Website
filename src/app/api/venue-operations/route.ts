@@ -303,7 +303,12 @@ export async function GET(request: Request) {
     const bookings = rawBookings.map((b) => formatBookingForOperation(b, now));
 
     // B. Lịch sân theo thời gian thực (Timeline Schedule)
-    const scheduleDateStr = params.get("scheduleDate") || params.get("date");
+    const nowVN = new Date(now.getTime() + 7 * 3600000);
+    const todayVNStr = nowVN.toISOString().slice(0, 10);
+    const scheduleDateStr =
+      actor.role === "STAFF"
+        ? todayVNStr
+        : params.get("timelineDate") || params.get("scheduleDate") || params.get("date") || todayVNStr;
     let timelineSchedule: TimelineSchedule | null = null;
 
     if (selectedVenue && scheduleDateStr && /^\d{4}-\d{2}-\d{2}$/.test(scheduleDateStr)) {
@@ -350,8 +355,7 @@ export async function GET(request: Request) {
           : [],
       ]);
 
-      const nowVN = new Date(now.getTime() + 7 * 3600000);
-      const isToday = scheduleDateStr === nowVN.toISOString().slice(0, 10);
+      const isToday = scheduleDateStr === todayVNStr;
       const currentMin = isToday ? nowVN.getUTCHours() * 60 + nowVN.getUTCMinutes() : -1;
 
       const slots: TimelineSlot[] = [];
@@ -398,7 +402,7 @@ export async function GET(request: Request) {
 
       timelineSchedule = {
         date: scheduleDateStr,
-        openMin: (selectedVenue as any).openMin ?? 360,
+        openMin: (selectedVenue as any).openMin ?? 300,
         closeMin: (selectedVenue as any).closeMin ?? 1320,
         courts: venueCourts,
         slots,

@@ -13,20 +13,20 @@ import {
   Coffee,
   Droplets,
   Layers,
+  Lock,
+  ShoppingBag,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Venue } from "@/types/venue";
 import { formatVND } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useFavorites } from "@/context/FavoritesContext";
 
 interface VenueCardProps {
   venue: Venue;
   className?: string;
 }
-
-// Key lưu trữ danh sách id cơ sở yêu thích trong localStorage để duy trì trạng thái khi người dùng tải lại trang
-const FAVORITES_STORAGE_KEY = "smashbook_favorite_venues";
 
 // Bản đồ ánh xạ tiện ích sang nhãn ngắn và icon tương ứng để hiển thị trực quan trên thẻ
 interface AmenityMeta {
@@ -41,53 +41,25 @@ const AMENITY_MAP: Record<string, AmenityMeta> = {
   WIFI: { label: "Wi-Fi", icon: Wifi },
   CANTEEN: { label: "Căng-tin", icon: Coffee },
   SHOWER: { label: "Phòng tắm", icon: Droplets },
+  RACKET_RENTAL: { label: "Thuê vợt", icon: Layers },
+  SHUTTLE_SALE: { label: "Bán cầu", icon: ShoppingBag },
+  LOCKER: { label: "Tủ đồ", icon: Lock },
 };
 
 export function VenueCard({ venue, className = "" }: VenueCardProps) {
   const { user } = useAuth();
-  const [isFavorite, setIsFavorite] = useState<boolean>(false);
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const fav = isFavorite(venue.id);
   const isMyVenue = !!user && (user.role === "ADMIN" || (user.role === "OWNER" && venue.ownerId === user.id));
   const [imgSrc, setImgSrc] = useState<string>(
     venue.images?.[0] || "/images/courts/court-1.svg"
   );
   const [imageError, setImageError] = useState<boolean>(false);
 
-  // Đồng bộ trạng thái yêu thích từ localStorage sau khi mount phía client để tránh Hydration Mismatch
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
-      if (stored) {
-        const parsed: string[] = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.includes(venue.id)) {
-          setIsFavorite(true);
-        }
-      }
-    } catch {
-      // Bỏ qua lỗi parsing nếu localStorage bị tắt hoặc dữ liệu không hợp lệ
-    }
-  }, [venue.id]);
-
-  const handleToggleFavorite = (e: React.MouseEvent<HTMLButtonElement>): void => {
+  const handleToggleFavorite = async (e: React.MouseEvent<HTMLButtonElement>): Promise<void> => {
     e.preventDefault();
     e.stopPropagation();
-
-    const nextState = !isFavorite;
-    setIsFavorite(nextState);
-
-    try {
-      const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
-      let list: string[] = stored ? JSON.parse(stored) : [];
-      if (!Array.isArray(list)) list = [];
-
-      if (nextState) {
-        if (!list.includes(venue.id)) list.push(venue.id);
-      } else {
-        list = list.filter((id) => id !== venue.id);
-      }
-      localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(list));
-    } catch {
-      // Xử lý an toàn nếu localStorage gặp sự cố hạn ngạch bộ nhớ
-    }
+    await toggleFavorite(venue.id, venue.name);
   };
 
   // Định dạng phút sang chuỗi giờ chuẩn HH:MM theo quy chuẩn 24h tại Việt Nam
@@ -150,18 +122,19 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
           </div>
         )}
 
-        {/* Nút lưu yêu thích cục bộ */}
+        {/* Nút lưu yêu thích */}
         <button
           type="button"
           onClick={handleToggleFavorite}
           className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur transition hover:scale-110 active:scale-95 dark:bg-surface/85"
-          aria-label={isFavorite ? `Bỏ lưu ${venue.name}` : `Lưu ${venue.name} vào danh sách yêu thích`}
-          title={isFavorite ? "Bỏ yêu thích" : "Lưu vào yêu thích"}
+          aria-label={fav ? `Bỏ lưu ${venue.name}` : `Lưu ${venue.name} vào danh sách yêu thích`}
+          aria-pressed={fav}
+          title={fav ? "Bỏ yêu thích" : "Lưu vào yêu thích"}
         >
           <Heart
             size={17}
             className={
-              isFavorite
+              fav
                 ? "fill-rose-500 text-rose-500 transition-colors"
                 : "text-muted transition-colors hover:text-rose-500"
             }
