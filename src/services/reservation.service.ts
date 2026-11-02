@@ -4,6 +4,7 @@ import { type BookingRequest, priceBooking } from "../lib/booking-request";
 import { buildVietQrPayload, createVietQrUrl, PaymentError, type SepayConfig } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { canPayBooking } from "../lib/booking-payment";
+import { HOLD_TTL_SECONDS } from "../lib/config/constants";
 
 export const bookingDetails = {
   venue: true,
@@ -344,9 +345,8 @@ export async function createReservation(db: PrismaClient, userId: string, input:
     const finalDiscount = voucherDiscountAmount;
     const finalTotal = Math.max(0, courtTotal - finalDiscount + coachFee);
 
-    // Giữ chỗ 5 phút theo quyết định chốt Mục 11
-    const holdDurationMinutes = 5;
-    const expiresAt = new Date(Math.min(now.getTime() + holdDurationMinutes * 60 * 1000, startTime.getTime()));
+    // Giữ chỗ tối đa theo cấu hình HOLD_TTL_SECONDS (5 phút), không vượt quá giờ bắt đầu chơi
+    const expiresAt = new Date(Math.min(now.getTime() + HOLD_TTL_SECONDS * 1000, startTime.getTime()));
 
     return tx.booking.create({
       data: {
