@@ -7,6 +7,7 @@ const publicUser = {
   name: true,
   phone: true,
   email: true,
+  emailVerified: true,
   role: true,
   status: true,
   loyaltyPoints: true,
@@ -31,7 +32,14 @@ export async function registerUser(
       },
       select: publicUser,
     });
-    return { success: true, data: { ...user, phone: user.phone || "" } };
+    return {
+      success: true,
+      data: {
+        ...user,
+        phone: user.phone || "",
+        emailVerified: user.emailVerified ? user.emailVerified.toISOString() : null,
+      },
+    };
   } catch (error) {
     if ((error as { code?: string }).code === "P2002")
       return {
@@ -79,6 +87,7 @@ export async function loginUser(
         name: user.name,
         phone: user.phone || "",
         email: user.email,
+        emailVerified: user.emailVerified ? user.emailVerified.toISOString() : null,
         role: user.role,
         status: user.status,
         loyaltyPoints: user.loyaltyPoints,
@@ -97,7 +106,10 @@ export async function loginUser(
 
 export async function getUserById(id: string): Promise<AuthUser | null> {
   const user = await db.user.findUnique({ where: { id }, select: publicUser });
-  return user?.status === "ACTIVE"
-    ? { ...user, phone: user.phone || "" }
-    : null;
+  if (!user || user.status !== "ACTIVE") return null;
+  return {
+    ...user,
+    phone: user.phone || "",
+    emailVerified: user.emailVerified ? user.emailVerified.toISOString() : null,
+  };
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { processOverdueAndCompletions } from "@/services/venue-session.service";
+import { cleanupExpiredBookings } from "@/services/booking-cleanup.service";
 import { paymentErrorResponse } from "@/lib/sepay";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +19,17 @@ export async function GET(request: Request) {
       }
     }
 
-    const result = await processOverdueAndCompletions(db);
-    return NextResponse.json({ success: true, ...result, timestamp: new Date().toISOString() });
+    const [sessionResult, cleanupResult] = await Promise.all([
+      processOverdueAndCompletions(db),
+      cleanupExpiredBookings(db),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      ...sessionResult,
+      cleanup: cleanupResult,
+      timestamp: new Date().toISOString(),
+    });
   } catch (error) {
     return paymentErrorResponse(error);
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,6 +12,7 @@ import {
   Info,
   ChevronRight,
   AlertCircle,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Venue } from "@/types/venue";
@@ -27,6 +28,14 @@ import {
   type SelectedSlot,
 } from "@/lib/booking";
 import { CourtSwitchConfirmModal } from "@/components/features/booking/CourtSwitchConfirmModal";
+
+export interface BusySlotItem {
+  courtId: string;
+  startMin: number;
+  endMin: number;
+  status: "HELD" | "BOOKED" | "BLOCKED";
+  expiresAt: string | null;
+}
 
 interface BookPageProps {
   params: {
@@ -60,43 +69,117 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([]);
   const [error, setError] = useState<string>("");
   const [busy, setBusy] = useState<{ courtId: string; startMin: number; endMin: number }[]>([]);
+  const [busySlots, setBusySlots] = useState<BusySlotItem[]>([]);
+  const [serverTimeOffset, setServerTimeOffset] = useState<number>(0);
   const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch>(null);
 
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
-  // Tải danh mục sân và trạng thái khung giờ đã đặt từ API
-  useEffect(() => {
-    if (!selectedDate) return;
-    const controller = new AbortController();
-    setCatalogLoading(true);
-    fetch(
-      `/api/booking-catalog?slug=${encodeURIComponent(params.slug)}&date=${selectedDate}`,
-      { signal: controller.signal, cache: "no-store" }
-    )
-      .then(async (response) => {
+  // Tải danh mục sân và trạng thái khung giờ đã đặt / giữ chỗ từ API
+  const fetchAvailability = useCallback(
+    async (isSilent = false, signal?: AbortSignal) => {
+      if (!selectedDate || !params.slug) return;
+      if (!isSilent) setCatalogLoading(true);
+
+      try {
+        const response = await fetch(
+          `/api/booking-catalog?slug=${encodeURIComponent(params.slug)}&date=${selectedDate}`,
+          { signal, cache: "no-store" }
+        );
         const data = await response.json();
-        if (!response.ok) throw new Error(data.message);
-        return data;
-      })
-      .then((data) => {
+        if (!response.ok) throw new Error(data.message || "Lỗi tải lịch sân.");
+
         setVenue(data.venue);
         setBusy(data.busy || []);
-      })
-      .catch((err) => {
-        if (!controller.signal.aborted) {
-          setVenue(null);
-          setError(err.message || "Không tải được lịch sân.");
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setCatalogLoading(false);
-      });
-    return () => controller.abort();
-  }, [params.slug, selectedDate]);
 
-  // Cập nhật mốc thời gian thực hiện tại mỗi 30 giây để khóa giờ đã qua
+        const newBusySlots: BusySlotItem[] = data.busySlots || [];
+        setBusySlots(newBusySlots);
+
+        if (data.serverTime) {
+          const serverEpoch = new Date(data.serverTime).getTime();
+          if (!isNaN(serverEpoch)) {
+            setServerTimeOffset(serverEpoch - Date.now());
+          }
+        }
+
+        // Tự động đối chiếu (reconcile) nếu ô đang chọn bị người khác giữ chỗ hoặc đặt trước
+        setSelectedSlots((prev) => {
+          if (!prev.length) return prev;
+          const contested = prev.filter((s) =>
+            newBusySlots.some(
+              (b) => b.courtId === s.courtId && b.startMin < s.endMin && b.endMin > s.startMin
+            )
+          );
+          if (contested.length > 0) {
+            const contestedHours = contested.map((s) => formatHour(s.startMin)).join(", ");
+            toast.error(
+              `Khung giờ ${contestedHours} vừa có khách khác giữ chỗ hoặc đã được đặt. Lựa chọn của bạn đã được cập nhật.`
+            );
+            return prev.filter(
+              (s) => !contested.some((c) => c.courtId === s.courtId && c.startMin === s.startMin)
+            );
+          }
+          return prev;
+        });
+      } catch (err) {
+        if (signal?.aborted) return;
+        if (!isSilent) {
+          setVenue(null);
+          setError(err instanceof Error ? err.message : "Không tải được lịch sân.");
+        }
+      } finally {
+        if (!signal?.aborted && !isSilent) {
+          setCatalogLoading(false);
+        }
+      }
+    },
+    [params.slug, selectedDate]
+  );
+
+  // Khởi tạo và thiết lập polling ngầm 2.5s khi tab đang hiển thị
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 30000);
+    if (!selectedDate || !params.slug) return;
+
+    let isFetching = false;
+    const initialController = new AbortController();
+
+    // Lần tải đầu tiên (có loading UI)
+    fetchAvailability(false, initialController.signal);
+
+    // Polling ngầm mỗi 2.5 giây khi tab đang active
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (isFetching) return;
+      isFetching = true;
+      fetchAvailability(true).finally(() => {
+        isFetching = false;
+      });
+    }, 2500);
+
+    // Lắng nghe sự kiện chuyển tab và focus để đồng bộ ngay lập tức
+    const handleSync = () => {
+      if (document.visibilityState === "visible" && !isFetching) {
+        isFetching = true;
+        fetchAvailability(true).finally(() => {
+          isFetching = false;
+        });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleSync);
+    window.addEventListener("focus", handleSync);
+
+    return () => {
+      initialController.abort();
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
+  }, [fetchAvailability, params.slug, selectedDate]);
+
+  // Cập nhật mốc thời gian thực hiện tại mỗi 1 giây để đếm ngược giữ chỗ mượt mà
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -166,12 +249,26 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
       return;
     }
 
+    // 2. Kiểm tra chi tiết trạng thái ô trong busySlots
+    const slotStatusObj = busySlots.find(
+      (b) => b.courtId === courtId && b.startMin < endMin && b.endMin > startMin
+    );
+
+    if (slotStatusObj?.status === "HELD") {
+      toast.warning("Khung giờ này đang được khách khác giữ chỗ. Vui lòng chọn giờ khác hoặc thử lại sau.");
+      return;
+    }
+
     if (
-      busy.some(
-        (b) => b.courtId === courtId && b.startMin < endMin && b.endMin > startMin
-      )
+      slotStatusObj?.status === "BOOKED" ||
+      busy.some((b) => b.courtId === courtId && b.startMin < endMin && b.endMin > startMin)
     ) {
       toast.error(`Khung giờ ${formatHour(startMin)} trên sân này đã có người đặt trước.`);
+      return;
+    }
+
+    if (slotStatusObj?.status === "BLOCKED") {
+      toast.error(`Khung giờ ${formatHour(startMin)} đang tạm khóa hoặc bảo trì.`);
       return;
     }
 
@@ -437,6 +534,12 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
             <span className="font-semibold text-court-600 dark:text-court-400">Đang chọn</span>
           </div>
           <div className="flex items-center gap-1.5">
+            <div className="flex h-4 w-4 items-center justify-center rounded border border-amber-300 bg-amber-50 text-[10px] text-amber-600 dark:border-amber-800 dark:bg-amber-950/60">
+              <Clock size={10} />
+            </div>
+            <span className="font-semibold text-amber-700 dark:text-amber-400">Đang giữ chỗ</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <div className="h-4 w-4 rounded border border-rose-300 bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/60" />
             <span className="text-muted">Đã có người đặt</span>
           </div>
@@ -529,12 +632,23 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
 
                     {/* Các ô giờ 30 phút */}
                     {timeSlots.map((ts) => {
-                      const isBooked = busy.some(
+                      const slotStatusObj = busySlots.find(
                         (b) =>
                           b.courtId === court.id &&
                           b.startMin < ts.endMin &&
                           b.endMin > ts.startMin
                       );
+                      const isHeld = slotStatusObj?.status === "HELD";
+                      const isBooked =
+                        slotStatusObj?.status === "BOOKED" ||
+                        (!slotStatusObj &&
+                          busy.some(
+                            (b) =>
+                              b.courtId === court.id &&
+                              b.startMin < ts.endMin &&
+                              b.endMin > ts.startMin
+                          ));
+                      const isBlocked = slotStatusObj?.status === "BLOCKED";
                       const isPast = isPastSlot(selectedDate, ts.startMin, now);
                       const price = slotPrice(
                         venue,
@@ -542,11 +656,19 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                         ts.startMin,
                         ts.endMin
                       );
-                      const isUnavailable = isPast || price === null;
+                      const isUnavailable = isPast || price === null || isBlocked;
                       const isSelected = selectedSlots.some(
                         (s) =>
                           s.courtId === court.id && s.startMin === ts.startMin
                       );
+
+                      // Tính số giây còn giữ chỗ nếu đang là HELD
+                      let remSec = 0;
+                      if (isHeld && slotStatusObj?.expiresAt) {
+                        const expiryEpoch = new Date(slotStatusObj.expiresAt).getTime();
+                        const currentServerEpoch = Date.now() + serverTimeOffset;
+                        remSec = Math.max(0, Math.floor((expiryEpoch - currentServerEpoch) / 1000));
+                      }
 
                       return (
                         <td key={ts.startMin} className="p-1">
@@ -563,8 +685,12 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                               )
                             }
                             title={
-                              isBooked
+                              isHeld
+                                ? `${court.name}: ${ts.label} - Đang được khách khác giữ chỗ (còn ${Math.floor(remSec / 60)}p ${remSec % 60}s)`
+                                : isBooked
                                 ? `${court.name}: ${ts.label} - Đã có người đặt`
+                                : isBlocked
+                                ? `${court.name}: ${ts.label} - Khung giờ bảo trì / tạm khóa`
                                 : isPast
                                 ? `${court.name}: ${ts.label} - Giờ chơi đã qua`
                                 : price === null
@@ -574,17 +700,33 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                                 : `${court.name}: ${ts.label} - Trống (${formatVND(price)}/30ph)`
                             }
                             className={`h-11 w-full rounded-slot border text-xs font-medium transition flex items-center justify-center active:scale-95 ${
-                              isBooked
+                              isSelected
+                                ? "border-court-600 bg-court-600 font-bold text-white shadow-sm ring-2 ring-court-600/30"
+                                : isHeld
+                                ? "border-amber-300 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300 cursor-pointer shadow-xs"
+                                : isBooked
                                 ? "cursor-not-allowed border-rose-200 bg-rose-50 text-rose-400 dark:border-rose-900/50 dark:bg-rose-950/40"
                                 : isUnavailable
                                 ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-500"
-                                : isSelected
-                                ? "border-court-600 bg-court-600 font-bold text-white shadow-sm ring-2 ring-court-600/30"
                                 : "border-border bg-white text-ink hover:border-court-400 hover:bg-court-50 dark:bg-surface"
                             }`}
                           >
                             {isSelected ? (
                               <Check size={14} strokeWidth={3} />
+                            ) : isHeld ? (
+                              <div className="flex flex-col items-center justify-center leading-none">
+                                <div className="flex items-center gap-0.5">
+                                  <Clock size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-200">
+                                    {remSec > 0
+                                      ? `${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, "0")}`
+                                      : "0:00"}
+                                  </span>
+                                </div>
+                                <span className="text-[8px] text-amber-600 dark:text-amber-400 font-medium">
+                                  Giữ chỗ
+                                </span>
+                              </div>
                             ) : isBooked ? (
                               <span className="text-[11px] select-none text-rose-400">▨</span>
                             ) : isUnavailable ? (

@@ -30,6 +30,7 @@ interface CoachItem {
   hourlyRate: number;
   experienceYears: number;
   specialties: string[];
+  isDemo?: boolean;
 }
 
 const CHECKOUT_DRAFT_KEY = "smashbook_checkout_draft";
@@ -491,6 +492,7 @@ function CheckoutContent() {
                     <option value="">Không thuê Huấn luyện viên</option>
                     {coaches.map((c) => (
                       <option key={c.id} value={c.id}>
+                        {c.isDemo || c.hourlyRate === 2000 ? "[Demo] " : ""}
                         {c.name} — {formatVND(c.hourlyRate)}/giờ ({c.experienceYears} năm KN)
                       </option>
                     ))}
@@ -498,13 +500,25 @@ function CheckoutContent() {
 
                   {selectedCoach && (
                     <div className="rounded-control bg-court-50 p-3 text-xs text-court-900 dark:bg-court-950/40 dark:text-court-200">
-                      <p className="font-semibold">{selectedCoach.name}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold">{selectedCoach.name}</p>
+                        {(selectedCoach.isDemo || selectedCoach.hourlyRate === 2000) && (
+                          <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                            Demo Thử Nghiệm
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-0.5 text-muted">
                         Chuyên môn: {selectedCoach.specialties.join(", ") || "Tổng hợp"} · {durationHours} giờ hướng dẫn
                       </p>
                       <p className="mt-1 text-court-700 font-bold dark:text-court-300">
-                        Phí HLV: +{formatVND(coachFee)} (không trừ vào ưu đãi voucher)
+                        Phí HLV: +{formatVND(coachFee)} (tính riêng theo thời lượng: {durationMin} phút, không trừ voucher)
                       </p>
+                      {(selectedCoach.isDemo || selectedCoach.hourlyRate === 2000) && (
+                        <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                          * Dữ liệu huấn luyện viên phục vụ thử nghiệm hệ thống, không phải dịch vụ thực tế.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -680,7 +694,15 @@ function CheckoutContent() {
 
             {selectedCoach && (
               <div className="flex justify-between text-muted">
-                <span>Huấn luyện viên ({selectedCoach.name}):</span>
+                <span>
+                  Huấn luyện viên ({selectedCoach.name})
+                  {(selectedCoach.isDemo || selectedCoach.hourlyRate === 2000) && (
+                    <span className="ml-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                      (Demo)
+                    </span>
+                  )}
+                  :
+                </span>
                 <span className="font-semibold text-ink">+{formatVND(coachFee)}</span>
               </div>
             )}

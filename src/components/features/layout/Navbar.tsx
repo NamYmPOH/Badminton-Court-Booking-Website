@@ -102,6 +102,7 @@ export function Navbar({ className }: NavbarProps) {
             ) : (
               <>
                 <NavLink href="/venues">Sân cầu lông</NavLink>
+                <NavLink href="/coaches">Huấn luyện viên</NavLink>
                 <NavLink href="/venues?view=map">
                   <MapPin size={16} />
                   Bản đồ

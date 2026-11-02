@@ -8,6 +8,11 @@ import {
   coachVenueApprovalSchema,
   assertCoachActive,
   assertCoachOwner,
+  isDemoCoach,
+  DEMO_COACH_HOURLY_RATE,
+  COACH_SPECIALTY_ALIASES,
+  normalizeCoachSpecialty,
+  normalizeCoachSpecialties,
   type CoachProfileInput,
   type CoachCertificateInput,
   type CoachAvailabilityInput,
@@ -38,6 +43,7 @@ export interface PublicCoachListItem {
   specialties: string[];
   experienceYears: number;
   hourlyRate: number;
+  isDemo: boolean;
   venues: Array<{
     id: string;
     name: string;
@@ -75,7 +81,16 @@ export async function getPublicCoaches(
   }
 
   if (params.specialty && params.specialty.trim()) {
-    where.specialties = { has: params.specialty.trim() };
+    const rawSpec = params.specialty.trim();
+    const norm = normalizeCoachSpecialty(rawSpec);
+    const variants = new Set<string>([rawSpec, norm]);
+    for (const [alias, canonical] of Object.entries(COACH_SPECIALTY_ALIASES)) {
+      if (canonical.toLowerCase() === norm.toLowerCase() || alias.toLowerCase() === rawSpec.toLowerCase()) {
+        variants.add(alias);
+        variants.add(canonical);
+      }
+    }
+    where.specialties = { hasSome: Array.from(variants) };
   }
 
   if (params.minRate !== undefined || params.maxRate !== undefined) {
@@ -150,6 +165,7 @@ export async function getPublicCoaches(
     specialties: r.specialties,
     experienceYears: r.experienceYears,
     hourlyRate: r.hourlyRate,
+    isDemo: isDemoCoach({ id: r.id, userId: r.userId, name: r.user.name }),
     venues: r.venues.map((v) => ({
       id: v.venue.id,
       name: v.venue.name,
@@ -224,6 +240,7 @@ export async function getPublicCoachById(database: PrismaClient = db, coachId: s
     specialties: coach.specialties,
     experienceYears: coach.experienceYears,
     hourlyRate: coach.hourlyRate,
+    isDemo: isDemoCoach({ id: coach.id, userId: coach.userId, name: coach.user.name }),
     createdAt: coach.createdAt.toISOString(),
     certificates: coach.certificates.map((c) => ({
       id: c.id,
@@ -395,6 +412,13 @@ export async function upsertMyCoachProfile(
 ) {
   const input = coachProfileInputSchema.parse(rawInput);
 
+  // Chặn client tự đặt giá demo 2.000đ/giờ nếu không phải tài khoản demo
+  if (input.hourlyRate === DEMO_COACH_HOURLY_RATE && !isDemoCoach(userId)) {
+    throw new PaymentError(400, "Mức học phí 2.000đ/giờ chỉ dành riêng cho tài khoản HLV Demo thử nghiệm.");
+  }
+
+  const cleanSpecialties = normalizeCoachSpecialties(input.specialties);
+
   return serializable(database, async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
@@ -411,7 +435,7 @@ export async function upsertMyCoachProfile(
         data: {
           userId,
           bio: input.bio,
-          specialties: input.specialties,
+          specialties: cleanSpecialties,
           experienceYears: input.experienceYears,
           hourlyRate: input.hourlyRate,
           status: "PENDING",
@@ -426,7 +450,7 @@ export async function upsertMyCoachProfile(
       where: { id: existing.id },
       data: {
         bio: input.bio,
-        specialties: input.specialties,
+        specialties: cleanSpecialties,
         experienceYears: input.experienceYears,
         hourlyRate: input.hourlyRate,
         status: nextStatus,

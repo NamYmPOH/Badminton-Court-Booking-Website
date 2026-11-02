@@ -538,11 +538,12 @@ test("10. Đơn tiền mặt không tự hoàn tất khi hết giờ nếu chưa
 test("11. Khóa khung giờ (CourtBlock) ngăn chặn đặt sân trùng lặp", async () => {
   const db = createMockDb();
   const ownerA = { id: "owner_a", role: "OWNER", status: "ACTIVE", name: "Chủ Sân A" };
+  const futureDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 
-  // Khóa khung giờ 08:00 - 10:00 (480 - 600) ngày 2026-10-31
+  // Khóa khung giờ 08:00 - 10:00 (480 - 600)
   await createCourtBlock(db, ownerA, {
     courtId: "court_a1",
-    date: "2026-10-31",
+    date: futureDate,
     startMin: 480,
     endMin: 600,
     reason: "Bảo trì định kỳ",
@@ -554,7 +555,7 @@ test("11. Khóa khung giờ (CourtBlock) ngăn chặn đặt sân trùng lặp",
       await createCounterBooking(db, ownerA, {
         venueId: "venue_a",
         courtId: "court_a1",
-        date: "2026-10-31",
+        date: futureDate,
         startMin: 500,
         endMin: 560,
         customerName: "Khách Test",
