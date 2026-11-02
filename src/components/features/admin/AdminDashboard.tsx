@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import VenueStaffModal from "./VenueStaffModal";
+import CoachManageModal from "./CoachManageModal";
 
 const tabs = [
   ["overview", "Tổng quan", LayoutDashboard],
@@ -178,6 +179,7 @@ export default function AdminDashboard() {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null);
   const [selectedStaffVenue, setSelectedStaffVenue] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => {
     const abort = new AbortController();
@@ -546,6 +548,7 @@ export default function AdminDashboard() {
                           id: r.id,
                           status: "ACTIVE",
                         })}
+                      <button type="button" className={button} onClick={() => setSelectedCoachId(r.id)}>Quản lý</button>
                     </div>
                   </>
                 )}
@@ -934,6 +937,7 @@ export default function AdminDashboard() {
       </Dialog.Root>
 
       {/* Modal Quản lý Tài khoản & Quyền cơ sở sân */}
+      {selectedCoachId && <CoachManageModal key={selectedCoachId} coachId={selectedCoachId} onClose={() => { setSelectedCoachId(null); setRefresh(v => v + 1); }} />}
       <VenueStaffModal
         venueId={selectedStaffVenue?.id || null}
         venueName={selectedStaffVenue?.name || ""}
