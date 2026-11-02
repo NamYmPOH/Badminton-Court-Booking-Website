@@ -1,10 +1,77 @@
 import { z } from "zod";
-import { PaymentError } from "./sepay";
+import { PaymentError } from "./payment-error";
 
 export const MIN_HOURLY_RATE = 50_000;      // 50,000 VND / giờ
 export const MAX_HOURLY_RATE = 5_000_000;   // 5,000,000 VND / giờ
 export const MIN_SLOT_MINUTES = 30;
 export const MAX_SLOT_MINUTES = 480;        // Tối đa 8 tiếng 1 ca
+
+// Hằng số nhận diện hồ sơ HLV Demo thử nghiệm
+export const DEMO_COACH_ID = "smashbook-demo-2000-coach";
+export const DEMO_COACH_USER_ID = "smashbook-demo-2000-coach-user";
+export const DEMO_COACH_NAME = "HLV Demo SmashBook — 2.000đ/giờ";
+export const DEMO_COACH_HOURLY_RATE = 2_000; // 2,000 VND / giờ
+
+/**
+ * Kiểm tra xem một đối tượng hoặc ID có phải là HLV Demo được hệ thống bảo chứng không
+ */
+export function isDemoCoach(coach: { id?: string; userId?: string; name?: string } | string | null | undefined): boolean {
+  if (!coach) return false;
+  if (typeof coach === "string") {
+    return coach === DEMO_COACH_ID || coach === DEMO_COACH_USER_ID;
+  }
+  return coach.id === DEMO_COACH_ID || coach.userId === DEMO_COACH_USER_ID || (!!coach.name && coach.name.includes("HLV Demo SmashBook"));
+}
+
+/** Danh mục 7 chuyên môn huấn luyện chuẩn dùng chung toàn hệ thống */
+export const COACH_SPECIALTIES = [
+  "Kỹ thuật cơ bản",
+  "Nâng cao & Chiến thuật",
+  "Đơn nam / Đơn nữ",
+  "Đôi nam / Đôi nữ",
+  "Đôi nam nữ phối hợp",
+  "Rèn luyện thể lực",
+  "Đào tạo thiếu nhi & thanh thiếu niên",
+] as const;
+
+export type CoachSpecialty = (typeof COACH_SPECIALTIES)[number];
+
+export const COACH_SPECIALTY_ALIASES: Record<string, CoachSpecialty> = {
+  "cơ bản": "Kỹ thuật cơ bản",
+  "kỹ thuật cơ bản": "Kỹ thuật cơ bản",
+  "nâng cao": "Nâng cao & Chiến thuật",
+  "chiến thuật": "Nâng cao & Chiến thuật",
+  "nâng cao & chiến thuật": "Nâng cao & Chiến thuật",
+  "đơn nam": "Đơn nam / Đơn nữ",
+  "đơn nữ": "Đơn nam / Đơn nữ",
+  "đơn nam / đơn nữ": "Đơn nam / Đơn nữ",
+  "đôi nam": "Đôi nam / Đôi nữ",
+  "đôi nữ": "Đôi nam / Đôi nữ",
+  "đôi nam / đôi nữ": "Đôi nam / Đôi nữ",
+  "đôi nam nữ": "Đôi nam nữ phối hợp",
+  "đôi nam nữ phối hợp": "Đôi nam nữ phối hợp",
+  "thể lực": "Rèn luyện thể lực",
+  "rèn luyện thể lực": "Rèn luyện thể lực",
+  "thiếu nhi": "Đào tạo thiếu nhi & thanh thiếu niên",
+  "thanh thiếu niên": "Đào tạo thiếu nhi & thanh thiếu niên",
+  "đào tạo thiếu nhi & thanh thiếu niên": "Đào tạo thiếu nhi & thanh thiếu niên",
+};
+
+export function normalizeCoachSpecialty(item: string): string {
+  if (!item || typeof item !== "string") return "";
+  const clean = item.trim().toLowerCase();
+  return COACH_SPECIALTY_ALIASES[clean] || item.trim();
+}
+
+export function normalizeCoachSpecialties(rawList: string[]): string[] {
+  if (!Array.isArray(rawList)) return [];
+  const set = new Set<string>();
+  for (const s of rawList) {
+    const norm = normalizeCoachSpecialty(s);
+    if (norm) set.add(norm);
+  }
+  return Array.from(set);
+}
 
 export const coachProfileInputSchema = z.object({
   bio: z.string().trim().max(2000, "Giới thiệu tối đa 2000 ký tự.").optional().nullable(),
@@ -20,8 +87,10 @@ export const coachProfileInputSchema = z.object({
   hourlyRate: z
     .number()
     .int("Giá theo giờ phải là số nguyên.")
-    .min(MIN_HOURLY_RATE, `Giá tối thiểu ${MIN_HOURLY_RATE.toLocaleString("vi-VN")}đ/giờ.`)
-    .max(MAX_HOURLY_RATE, `Giá tối đa ${MAX_HOURLY_RATE.toLocaleString("vi-VN")}đ/giờ.`),
+    .refine(
+      (val) => val === DEMO_COACH_HOURLY_RATE || (val >= MIN_HOURLY_RATE && val <= MAX_HOURLY_RATE),
+      `Giá theo giờ phải từ ${MIN_HOURLY_RATE.toLocaleString("vi-VN")}đ đến ${MAX_HOURLY_RATE.toLocaleString("vi-VN")}đ/giờ (hoặc ${DEMO_COACH_HOURLY_RATE.toLocaleString("vi-VN")}đ cho tài khoản Demo).`
+    ),
 }).strict();
 
 export type CoachProfileInput = z.infer<typeof coachProfileInputSchema>;

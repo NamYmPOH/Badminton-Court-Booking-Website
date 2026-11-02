@@ -6,6 +6,7 @@ export interface AuthUser {
   name: string;
   phone: string;
   email: string | null;
+  emailVerified?: string | null;
   role: UserRole;
   status: UserStatus;
   loyaltyPoints: number;

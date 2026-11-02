@@ -55,6 +55,7 @@ export interface CoachProfile {
   updatedAt: string;
   venues?: CoachVenueInfo[];
   certificates?: CoachCertificate[];
+  isDemo?: boolean;
 }
 
 export interface CoachBookingDetail {

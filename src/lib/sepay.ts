@@ -1,9 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-export class PaymentError extends Error {
-  constructor(public status: number, message: string) { super(message); }
-}
+import { PaymentError } from "./payment-error";
+export { PaymentError };
 
 export function getSepayConfig(env = process.env) {
   const schema = z.object({

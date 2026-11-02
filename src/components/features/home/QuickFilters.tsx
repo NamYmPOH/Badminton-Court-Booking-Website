@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Navigation, Sparkles, Tag, Wind, Car } from "lucide-react";
+import { Navigation, Sparkles, Tag, Wind, Car, GraduationCap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface FilterItem {
@@ -11,6 +11,7 @@ interface FilterItem {
 }
 
 const FILTERS: FilterItem[] = [
+  { label: "Huấn luyện viên", href: "/coaches", icon: GraduationCap },
   { label: "Gần tôi", href: "/venues?sort=distance", icon: Navigation },
   { label: "Còn trống tối nay", href: "/venues?hasSlotTonight=true", icon: Sparkles },
   { label: "Dưới 80.000 ₫", href: "/venues?maxPrice=80000", icon: Tag },
