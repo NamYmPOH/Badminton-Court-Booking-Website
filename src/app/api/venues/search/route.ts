@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 const searchSchema = z.object({
   q: z.string().min(1, "Từ khóa tìm kiếm tối thiểu 1 ký tự").max(100),
   limit: z.coerce.number().min(1).max(20).default(6),
+  priority: z.enum(["district", "venue"]).default("venue"),
 });
 
 export async function GET(request: NextRequest) {
@@ -14,6 +15,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q") || "";
     const limitParam = searchParams.get("limit") || "6";
+    const priorityParam = searchParams.get("priority") || "venue";
 
     if (!q.trim()) {
       return NextResponse.json({
@@ -22,7 +24,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const validation = searchSchema.safeParse({ q, limit: limitParam });
+    const validation = searchSchema.safeParse({ q, limit: limitParam, priority: priorityParam });
 
     if (!validation.success) {
       return NextResponse.json(
@@ -37,8 +39,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { q: validQ, limit: validLimit } = validation.data;
-    const suggestions = await searchVenueSuggestions(validQ, validLimit);
+    const { q: validQ, limit: validLimit, priority: validPriority } = validation.data;
+    const suggestions = await searchVenueSuggestions(validQ, validLimit, validPriority);
 
     return NextResponse.json(
       {

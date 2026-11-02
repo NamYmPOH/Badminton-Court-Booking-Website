@@ -76,9 +76,9 @@ export function Navbar({ className }: NavbarProps) {
         className
       )}
     >
-      <nav className="mx-auto flex h-16 max-w-content items-center justify-between px-6">
+      <nav className="mx-auto flex h-16 w-full max-w-[88rem] flex-nowrap items-center px-4 xl:px-6 transition-[max-width] duration-300 ease-out has-[[data-navbar-search]:focus-within]:max-w-[96rem] motion-reduce:transition-none">
         {/* Logo + Brand */}
-        <div className="flex items-center gap-8">
+        <div className="flex shrink-0 items-center gap-2 xl:gap-4">
           <Link
             href={user?.role === "STAFF" ? "/venue-operations" : "/"}
             className="flex items-center gap-2 text-lg font-bold text-court-600"
@@ -93,6 +93,10 @@ export function Navbar({ className }: NavbarProps) {
             )}
           </Link>
 
+        </div>
+
+        {/* Cụm điều hướng và tìm kiếm căn giữa khoảng logo và tài khoản */}
+        <div className="mx-3 flex min-w-0 flex-1 items-center justify-center">
           {/* Các mục điều hướng chính */}
           <div className="flex items-center gap-1">
             {user?.role === "STAFF" ? (
@@ -111,18 +115,17 @@ export function Navbar({ className }: NavbarProps) {
               </>
             )}
           </div>
-        </div>
 
         {/* Thanh tìm kiếm nhanh ở giữa (chỉ cho khách hàng & quản trị viên) */}
         {user?.role !== "STAFF" && (
-          <div className="mx-6 hidden md:flex flex-1 justify-center max-w-md xl:max-w-lg">
+          <div className="mx-3 min-w-24 w-36 shrink transition-[width] duration-300 ease-out focus-within:w-80 motion-reduce:transition-none">
             <NavbarSearch />
           </div>
         )}
-        {user?.role === "STAFF" && <div className="flex-1" />}
+        </div>
 
         {/* Actions bên phải */}
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <ThemeToggle />
 
           {/* Nút Yêu thích cạnh Thông báo */}
@@ -268,17 +271,17 @@ export function Navbar({ className }: NavbarProps) {
               )}
             </div>
           ) : (
-            <div className="ml-2 flex items-center gap-2">
+            <div className="ml-1 flex items-center gap-1 xl:ml-2 xl:gap-2">
               <Link
                 href="/login"
-                className="inline-flex h-10 items-center gap-2 rounded-control px-4 text-sm font-medium text-muted transition-colors hover:bg-court-50 dark:hover:bg-surface"
+                className="inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-control px-2 xl:px-4 text-sm font-medium text-muted transition-colors hover:bg-court-50 dark:hover:bg-surface"
               >
                 <LogIn size={16} />
                 Đăng nhập
               </Link>
               <Link
                 href="/register"
-                className="inline-flex h-10 items-center rounded-control bg-court-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-court-700"
+                className="inline-flex h-10 items-center whitespace-nowrap rounded-control bg-court-600 px-2 xl:px-4 text-sm font-semibold text-white transition-colors hover:bg-court-700"
               >
                 Đăng ký
               </Link>
@@ -300,7 +303,7 @@ function NavLink({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 rounded-control px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-court-50 hover:text-ink dark:hover:bg-surface"
+      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-control px-2 py-2 text-xs xl:px-3 xl:text-sm font-medium text-muted transition-colors hover:bg-court-50 hover:text-ink dark:hover:bg-surface"
     >
       {children}
     </Link>

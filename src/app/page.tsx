@@ -32,28 +32,29 @@ export default async function HomePage() {
   ]);
 
   return (
-    <div className="relative overflow-hidden pb-16">
+    <div className="relative pb-16">
       {/* Hero section — nền court-700 với vạch sân SVG (§12.4) */}
       <section className="relative flex min-h-[480px] items-center bg-court-700">
-        {/* SVG vạch sân — lệch phải, cắt mép, opacity 20% */}
-        <svg
-          viewBox="0 0 1340 610"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          className="pointer-events-none absolute -right-20 top-1/2 h-[400px] w-auto -translate-y-1/2 opacity-20 lg:h-[500px]"
-          aria-hidden="true"
-        >
-          <rect x="0" y="0" width="1340" height="610" stroke="white" strokeWidth="6" />
-          <line x1="670" y1="0" x2="670" y2="610" stroke="white" strokeWidth="6" />
-          <line x1="0" y1="46" x2="1340" y2="46" stroke="white" strokeWidth="6" />
-          <line x1="0" y1="564" x2="1340" y2="564" stroke="white" strokeWidth="6" />
-          <line x1="472" y1="0" x2="472" y2="610" stroke="white" strokeWidth="6" />
-          <line x1="868" y1="0" x2="868" y2="610" stroke="white" strokeWidth="6" />
-          <line x1="76" y1="0" x2="76" y2="610" stroke="white" strokeWidth="6" />
-          <line x1="1264" y1="0" x2="1264" y2="610" stroke="white" strokeWidth="6" />
-          <line x1="0" y1="305" x2="472" y2="305" stroke="white" strokeWidth="6" />
-          <line x1="868" y1="305" x2="1340" y2="305" stroke="white" strokeWidth="6" />
-        </svg>
+        {/* SVG vạch sân — lệch phải, cắt mép trong container overflow-hidden riêng */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+          <svg
+            viewBox="0 0 1340 610"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="absolute -right-20 top-1/2 h-[400px] w-auto -translate-y-1/2 opacity-20 lg:h-[500px]"
+          >
+            <rect x="0" y="0" width="1340" height="610" stroke="white" strokeWidth="6" />
+            <line x1="670" y1="0" x2="670" y2="610" stroke="white" strokeWidth="6" />
+            <line x1="0" y1="46" x2="1340" y2="46" stroke="white" strokeWidth="6" />
+            <line x1="0" y1="564" x2="1340" y2="564" stroke="white" strokeWidth="6" />
+            <line x1="472" y1="0" x2="472" y2="610" stroke="white" strokeWidth="6" />
+            <line x1="868" y1="0" x2="868" y2="610" stroke="white" strokeWidth="6" />
+            <line x1="76" y1="0" x2="76" y2="610" stroke="white" strokeWidth="6" />
+            <line x1="1264" y1="0" x2="1264" y2="610" stroke="white" strokeWidth="6" />
+            <line x1="0" y1="305" x2="472" y2="305" stroke="white" strokeWidth="6" />
+            <line x1="868" y1="305" x2="1340" y2="305" stroke="white" strokeWidth="6" />
+          </svg>
+        </div>
 
         <div className="relative z-10 mx-auto w-full max-w-content px-6 py-16">
           <h1 className="max-w-xl text-4xl font-bold leading-tight tracking-tight text-white lg:text-5xl">

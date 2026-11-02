@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, Calendar, Clock, X } from "lucide-react";
+import { MapPin, Calendar, Clock, X, Loader2 } from "lucide-react";
 import { VenueSearchSuggestions } from "@/components/features/venues/VenueSearchSuggestions";
 import type { VenueSearchSuggestion } from "@/types/venue";
 
@@ -15,35 +15,67 @@ export function HeroSearch() {
 
   const [suggestions, setSuggestions] = useState<VenueSearchSuggestion[]>([]);
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Debounced autocomplete fetch
+  const containerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Debounced autocomplete fetch với AbortController hủy request cũ
   useEffect(() => {
-    if (!query.trim() || query.trim().length < 2) {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) {
       setSuggestions([]);
       setIsSuggestionsOpen(false);
+      setIsLoading(false);
+      setErrorMessage(null);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       return;
     }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setIsLoading(true);
+    setErrorMessage(null);
 
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(
-          `/api/venues/search?q=${encodeURIComponent(query.trim())}&limit=5`
+          `/api/venues/search?q=${encodeURIComponent(trimmed)}&limit=6&priority=district`,
+          { signal: controller.signal }
         );
         if (res.ok) {
           const json = await res.json();
           if (json.success && Array.isArray(json.data)) {
             setSuggestions(json.data);
             setIsSuggestionsOpen(true);
+            setActiveIndex(-1);
           }
+        } else {
+          setErrorMessage("Không thể tải gợi ý lúc này.");
         }
-      } catch (err) {
-        console.error("Hero search suggestions error:", err);
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          return; // Bỏ qua nếu bị abort
+        }
+        setErrorMessage("Lỗi kết nối khi tìm kiếm.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     }, 250);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [query]);
 
   // Click outside listener
@@ -60,6 +92,23 @@ export function HeroSearch() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Xử lý chọn gợi ý: Phân biệt rõ Khu vực vs Sân và giữ filter ngày/giờ
+  const handleSelectSuggestion = useCallback(
+    (item: VenueSearchSuggestion) => {
+      setIsSuggestionsOpen(false);
+      if (item.type === "district") {
+        const params = new URLSearchParams();
+        params.set("district", item.district);
+        if (date !== "today") params.set("date", date);
+        if (fromHour !== "now") params.set("fromMin", fromHour);
+        router.push(`/venues?${params.toString()}`);
+      } else {
+        router.push(`/venues/${item.slug}`);
+      }
+    },
+    [date, fromHour, router]
+  );
+
   const handleSearch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSuggestionsOpen(false);
@@ -73,7 +122,12 @@ export function HeroSearch() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!isSuggestionsOpen || suggestions.length === 0) return;
+    if (!isSuggestionsOpen || suggestions.length === 0) {
+      if (e.key === "Enter") {
+        handleSearch(e);
+      }
+      return;
+    }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -81,12 +135,12 @@ export function HeroSearch() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1));
-    } else if (e.key === "Enter" && activeIndex >= 0) {
+    } else if (e.key === "Enter") {
       e.preventDefault();
-      const selected = suggestions[activeIndex];
-      if (selected) {
-        setIsSuggestionsOpen(false);
-        router.push(`/venues/${selected.slug}`);
+      if (activeIndex >= 0 && suggestions[activeIndex]) {
+        handleSelectSuggestion(suggestions[activeIndex]);
+      } else {
+        handleSearch();
       }
     } else if (e.key === "Escape") {
       setIsSuggestionsOpen(false);
@@ -96,11 +150,16 @@ export function HeroSearch() {
   return (
     <form
       onSubmit={handleSearch}
-      className="mt-8 flex max-w-3xl flex-col gap-3 rounded-card bg-surface/95 p-3.5 shadow-lg backdrop-blur dark:bg-surface/95 sm:flex-row sm:items-center"
+      className={`mt-8 flex w-full max-w-4xl flex-col gap-3 rounded-card bg-surface/95 p-3.5 shadow-lg backdrop-blur transition-[max-width] duration-300 ease-out motion-reduce:transition-none dark:bg-surface/95 sm:flex-row sm:flex-wrap sm:items-center has-[[data-area-search]:focus-within]:max-w-6xl relative ${
+        isSuggestionsOpen ? "z-40" : "z-20"
+      }`}
     >
       {/* Ô tìm kiếm khu vực / tên sân */}
       <div
-        className="relative flex flex-1 items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white"
+        data-area-search
+        className={`relative flex min-w-0 items-center sm:w-36 sm:shrink-0 sm:grow sm:focus-within:w-80 transition-[width] duration-300 ease-out motion-reduce:transition-none gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white ${
+          isSuggestionsOpen ? "z-50 ring-2 ring-court-500/30" : "z-10"
+        }`}
         ref={containerRef}
       >
         <MapPin size={18} className="shrink-0 text-court-500" />
@@ -109,20 +168,29 @@ export function HeroSearch() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => {
-            if (suggestions.length > 0) setIsSuggestionsOpen(true);
+            if (suggestions.length > 0 || isLoading || query.trim().length >= 2) {
+              setIsSuggestionsOpen(true);
+            }
           }}
           onKeyDown={handleKeyDown}
           placeholder="Khu vực / tên sân (ví dụ: Thanh Xuân, Sân 1...)"
-          className="w-full bg-transparent text-sm text-black font-medium outline-none placeholder:text-gray-500"
+          aria-label="Tìm khu vực hoặc tên sân"
+          className="min-w-0 w-full bg-transparent text-sm text-black font-medium outline-none placeholder:text-gray-500"
         />
-        {query && (
+
+        {isLoading && (
+          <Loader2 size={15} className="animate-spin text-court-500 shrink-0" />
+        )}
+
+        {query && !isLoading && (
           <button
             type="button"
             onClick={() => {
               setQuery("");
+              setSuggestions([]);
               setIsSuggestionsOpen(false);
             }}
-            className="rounded-full p-0.5 text-gray-500 hover:text-black"
+            className="rounded-full p-0.5 text-gray-500 hover:text-black shrink-0"
             aria-label="Xóa"
           >
             <X size={15} />
@@ -133,14 +201,16 @@ export function HeroSearch() {
           suggestions={suggestions}
           keyword={query}
           isOpen={isSuggestionsOpen}
+          isLoading={isLoading}
+          errorMessage={errorMessage}
           activeIndex={activeIndex}
-          onSelect={() => setIsSuggestionsOpen(false)}
+          onSelect={handleSelectSuggestion}
           onViewAll={handleSearch}
         />
       </div>
 
       {/* Chọn quận / huyện nhanh */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-40">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-40 sm:shrink-0">
         <select
           value={district}
           onChange={(e) => setDistrict(e.target.value)}
@@ -161,7 +231,7 @@ export function HeroSearch() {
       </div>
 
       {/* Chọn ngày */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-36">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-36 sm:shrink-0">
         <Calendar size={18} className="shrink-0 text-court-500" />
         <select
           value={date}
@@ -175,7 +245,7 @@ export function HeroSearch() {
       </div>
 
       {/* Chọn giờ bắt đầu */}
-      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-32">
+      <div className="flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2.5 text-sm text-black dark:border-gray-200 dark:bg-white sm:w-32 sm:shrink-0">
         <Clock size={18} className="shrink-0 text-court-500" />
         <select
           value={fromHour}
@@ -193,7 +263,7 @@ export function HeroSearch() {
       {/* Nút tìm kiếm */}
       <button
         type="submit"
-        className="rounded-control bg-racket-500 px-6 py-2.5 text-sm font-semibold text-court-900 transition-colors hover:bg-racket-600 sm:w-auto"
+        className="rounded-control bg-racket-500 px-6 py-2.5 text-sm font-semibold text-court-900 transition-colors hover:bg-racket-600 sm:w-auto sm:shrink-0"
       >
         Tìm sân trống
       </button>

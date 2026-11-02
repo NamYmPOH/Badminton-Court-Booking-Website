@@ -64,6 +64,8 @@ export interface VenueFilterParams {
   fromMin?: number;
 }
 
+export type SuggestionType = "district" | "venue";
+
 export interface VenueSearchSuggestion {
   id: string;
   name: string;
@@ -73,4 +75,6 @@ export interface VenueSearchSuggestion {
   priceFrom: number;
   ratingAvg: number;
   images: string[];
+  type?: SuggestionType;
+  venueCount?: number;
 }

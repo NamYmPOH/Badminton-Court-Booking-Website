@@ -1,6 +1,7 @@
 import type { Venue, VenueFilterParams, VenueSearchSuggestion } from "@/types/venue";
 import { db } from "@/lib/db";
 import { matchesVietnamese } from "@/lib/utils/vietnamese";
+import { calculateMatchScore } from "@/lib/utils/search-ranker";
 import { MOCK_VENUES } from "@/data/venues.data";
 
 /**
@@ -133,25 +134,103 @@ export async function getVenues(params?: VenueFilterParams, ownerUserId?: string
 
 /**
  * Gợi ý tìm kiếm nhanh (Autocomplete Suggestions) cho ô search
+ * Hỗ trợ tìm kiếm gần đúng (Fuzzy), không phân biệt hoa/thường, dấu/không dấu,
+ * xếp hạng theo độ liên quan và phân biệt ưu tiên khu vực (district) vs tên sân (venue).
  */
 export async function searchVenueSuggestions(
   keyword: string,
   limit: number = 6,
+  priority: "district" | "venue" = "venue"
 ): Promise<VenueSearchSuggestion[]> {
   if (!keyword || !keyword.trim()) return [];
 
-  const venues = await getVenues({ q: keyword.trim() });
+  const trimmedQuery = keyword.trim();
+  const allVenues = await loadVenues();
 
-  return venues.slice(0, limit).map((v) => ({
-    id: v.id,
-    name: v.name,
-    slug: v.slug,
-    address: v.address,
-    district: v.district,
-    priceFrom: v.priceFrom,
-    ratingAvg: v.ratingAvg,
-    images: v.images,
-  }));
+  // 1. Tập hợp các khu vực quận/huyện độc nhất và thống kê số sân
+  const districtMap = new Map<string, { count: number; sampleImage: string }>();
+  for (const v of allVenues) {
+    if (!v.district) continue;
+    const existing = districtMap.get(v.district);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      districtMap.set(v.district, {
+        count: 1,
+        sampleImage: v.images[0] || "/images/courts/court-1.svg",
+      });
+    }
+  }
+
+  type ScoredSuggestion = VenueSearchSuggestion & { _score: number };
+  const candidates: ScoredSuggestion[] = [];
+
+  // 2. Tính điểm độ liên quan cho các khu vực (districts)
+  for (const [districtName, meta] of Array.from(districtMap.entries())) {
+    const match = calculateMatchScore(districtName, trimmedQuery);
+    if (match.matched && match.score >= 150) {
+      // Nếu ưu tiên khu vực (HeroSearch), tăng trọng số để khu vực nổi lên đầu
+      const priorityBonus = priority === "district" ? 400 : 0;
+      candidates.push({
+        type: "district",
+        id: `district-${districtName}`,
+        name: `Khu vực ${districtName}`,
+        slug: `district-${encodeURIComponent(districtName)}`,
+        address: `${meta.count} cơ sở sân cầu lông đang hoạt động`,
+        district: districtName,
+        priceFrom: 0,
+        ratingAvg: 0,
+        images: [meta.sampleImage],
+        venueCount: meta.count,
+        _score: match.score + priorityBonus,
+      });
+    }
+  }
+
+  // 3. Tính điểm độ liên quan cho từng sân (venues)
+  for (const v of allVenues) {
+    const nameMatch = calculateMatchScore(v.name, trimmedQuery);
+    const districtMatch = calculateMatchScore(v.district, trimmedQuery);
+    const addressMatch = calculateMatchScore(v.address, trimmedQuery);
+
+    let bestScore = 0;
+    if (nameMatch.matched) {
+      bestScore = Math.max(bestScore, nameMatch.score);
+    }
+    if (districtMatch.matched) {
+      bestScore = Math.max(bestScore, districtMatch.score * 0.85);
+    }
+    if (addressMatch.matched) {
+      bestScore = Math.max(bestScore, addressMatch.score * 0.7);
+    }
+
+    if (bestScore >= 150) {
+      // Nếu ưu tiên tên sân (NavbarSearch), cộng điểm thưởng lớn khi khớp tên sân
+      const priorityBonus = priority === "venue" && nameMatch.matched ? 450 : 0;
+      candidates.push({
+        type: "venue",
+        id: v.id,
+        name: v.name,
+        slug: v.slug,
+        address: v.address,
+        district: v.district,
+        priceFrom: v.priceFrom,
+        ratingAvg: v.ratingAvg,
+        images: v.images,
+        _score: bestScore + priorityBonus,
+      });
+    }
+  }
+
+  // 4. Xếp hạng toàn bộ theo điểm độ liên quan giảm dần (Exact -> Prefix -> Substring -> Fuzzy)
+  candidates.sort((a, b) => {
+    if (b._score !== a._score) {
+      return b._score - a._score;
+    }
+    return (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0);
+  });
+
+  return candidates.slice(0, limit).map(({ _score, ...item }) => item);
 }
 
 export async function getVenueBySlug(slug: string): Promise<Venue | null> {

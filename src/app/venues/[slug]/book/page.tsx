@@ -35,6 +35,7 @@ export interface BusySlotItem {
   endMin: number;
   status: "HELD" | "BOOKED" | "BLOCKED";
   expiresAt: string | null;
+  resumePaymentUrl?: string | null;
 }
 
 interface BookPageProps {
@@ -255,6 +256,15 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
     );
 
     if (slotStatusObj?.status === "HELD") {
+      if (slotStatusObj.resumePaymentUrl) {
+        if (!slotStatusObj.expiresAt || new Date(slotStatusObj.expiresAt).getTime() <= Date.now() + serverTimeOffset) {
+          toast.warning("Đơn giữ chỗ đã hết hạn. Đang cập nhật lại lịch sân.");
+          void fetchAvailability(true);
+          return;
+        }
+        router.push(slotStatusObj.resumePaymentUrl);
+        return;
+      }
       toast.warning("Khung giờ này đang được khách khác giữ chỗ. Vui lòng chọn giờ khác hoặc thử lại sau.");
       return;
     }
@@ -537,7 +547,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
             <div className="flex h-4 w-4 items-center justify-center rounded border border-amber-300 bg-amber-50 text-[10px] text-amber-600 dark:border-amber-800 dark:bg-amber-950/60">
               <Clock size={10} />
             </div>
-            <span className="font-semibold text-amber-700 dark:text-amber-400">Đang giữ chỗ</span>
+            <span className="font-semibold text-amber-700 dark:text-amber-400">Đang giữ chỗ (bấm ô của bạn để thanh toán tiếp)</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-4 w-4 rounded border border-rose-300 bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/60" />
@@ -639,6 +649,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                           b.endMin > ts.startMin
                       );
                       const isHeld = slotStatusObj?.status === "HELD";
+                      const isOwnHold = isHeld && Boolean(slotStatusObj?.resumePaymentUrl);
                       const isBooked =
                         slotStatusObj?.status === "BOOKED" ||
                         (!slotStatusObj &&
@@ -674,7 +685,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                         <td key={ts.startMin} className="p-1">
                           <button
                             type="button"
-                            aria-label={`${court.name}, ${ts.label} – ${formatHour(ts.endMin)}`}
+                            aria-label={`${court.name}, ${ts.label} – ${formatHour(ts.endMin)}${isOwnHold ? ", Giữ chỗ của bạn, tiếp tục thanh toán" : ""}`}
                             aria-pressed={isSelected}
                             onClick={() =>
                               toggleSlot(
@@ -685,7 +696,9 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                               )
                             }
                             title={
-                              isHeld
+                              isOwnHold
+                                ? `${court.name}: ${ts.label} - Giữ chỗ của bạn. Bấm để tiếp tục thanh toán`
+                                : isHeld
                                 ? `${court.name}: ${ts.label} - Đang được khách khác giữ chỗ (còn ${Math.floor(remSec / 60)}p ${remSec % 60}s)`
                                 : isBooked
                                 ? `${court.name}: ${ts.label} - Đã có người đặt`
@@ -724,7 +737,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                                   </span>
                                 </div>
                                 <span className="text-[8px] text-amber-600 dark:text-amber-400 font-medium">
-                                  Giữ chỗ
+                                  {isOwnHold ? "Thanh toán tiếp" : "Giữ chỗ"}
                                 </span>
                               </div>
                             ) : isBooked ? (

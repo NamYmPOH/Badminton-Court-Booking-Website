@@ -1,3 +1,5 @@
+import { requirePaymentUser } from "@/lib/payment-session";
+import { heldBookingPaymentUrl } from "@/lib/held-booking";
 import { db } from "@/lib/db";
 import { PaymentError, paymentErrorResponse } from "@/lib/sepay";
 
@@ -21,6 +23,7 @@ export async function GET(request: Request) {
       endMin: number;
       status: "HELD" | "BOOKED" | "BLOCKED";
       expiresAt: string | null;
+      resumePaymentUrl?: string | null;
     }[] = [];
 
     if (dateText) {
@@ -33,6 +36,10 @@ export async function GET(request: Request) {
         throw new PaymentError(400, "Ngày không hợp lệ.");
       }
 
+      let viewerId: string | null = null;
+      try { viewerId = await requirePaymentUser(); } catch (error) {
+        if (!(error instanceof PaymentError) || ![401, 503].includes(error.status)) throw error;
+      }
       const [items, blocks] = await Promise.all([
         db.bookingItem.findMany({
           where: {
@@ -55,6 +62,9 @@ export async function GET(request: Request) {
               select: {
                 status: true,
                 expiresAt: true,
+                userId: true,
+                code: true,
+                group: { select: { inviteToken: true, closedAt: true } },
               },
             },
           },
@@ -90,6 +100,7 @@ export async function GET(request: Request) {
           endMin: item.endMin,
           status: slotStatus,
           expiresAt: expiresAtStr,
+          resumePaymentUrl: heldBookingPaymentUrl(item.booking, viewerId, now),
         });
       }
 
@@ -145,7 +156,7 @@ export async function GET(request: Request) {
           reviews: [],
         },
       },
-      { headers: { "Cache-Control": "no-store" } }
+      { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
     );
   } catch (error) { return paymentErrorResponse(error); }
 }
