@@ -351,6 +351,7 @@ test("1. CUSTOMER không thể quản lý nhân viên dù sở hữu hồ sơ PE
 test("2. STAFF tạo đơn tại quầy thành công khi có ca trực mở; thất bại khi chưa vào ca", async () => {
   const db = createMockDb();
   const staff = { id: "staff_a", role: "STAFF", status: "ACTIVE", name: "Nhân viên A" };
+  const todayVn = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
 
   // Chưa vào ca -> Báo lỗi cần ca trực
   await assert.rejects(
@@ -358,7 +359,7 @@ test("2. STAFF tạo đơn tại quầy thành công khi có ca trực mở; th�
       await createCounterBooking(db, staff, {
         venueId: "venue_a",
         courtId: "court_a1",
-        date: "2026-10-30",
+        date: todayVn,
         startMin: 480,
         endMin: 540,
         customerName: "Khách Vãng Lai",
@@ -376,7 +377,7 @@ test("2. STAFF tạo đơn tại quầy thành công khi có ca trực mở; th�
   const res = await createCounterBooking(db, staff, {
     venueId: "venue_a",
     courtId: "court_a1",
-    date: "2026-10-30",
+    date: todayVn,
     startMin: 480,
     endMin: 540,
     customerName: "Khách Vãng Lai",
@@ -466,10 +467,11 @@ test("7. Chống trùng đơn khi gửi lại request với requestId (Idempoten
   const db = createMockDb();
   const ownerA = { id: "owner_a", role: "OWNER", status: "ACTIVE", name: "Chủ Sân A" };
 
+  const todayVn = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
   const input = {
     venueId: "venue_a",
     courtId: "court_a1",
-    date: "2026-10-30",
+    date: todayVn,
     startMin: 600,
     endMin: 660,
     customerName: "Khách VIP",

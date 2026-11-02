@@ -56,7 +56,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
     : ["/images/courts/court-1.svg"];
 
   return (
-    <div className="mx-auto max-w-content px-4 py-8 pb-28 sm:px-6 md:pb-12">
+    <div className="mx-auto max-w-content px-4 py-8 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] sm:px-6 md:pb-12">
       {/* Breadcrumb điều hướng phân cấp */}
       <nav className="mb-5 flex items-center gap-2 text-xs text-muted" aria-label="Breadcrumb">
         <Link href="/" className="hover:text-ink">
@@ -366,12 +366,12 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
       </div>
 
       {/* Thanh neo điều hướng phía dưới dành riêng cho điện thoại (Mobile Sticky Bottom Bar) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-surface/95 px-4 py-3 shadow-lg backdrop-blur lg:hidden">
-        <div className="mx-auto flex max-w-content items-center justify-between gap-4">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-surface/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-xl backdrop-blur lg:hidden">
+        <div className="mx-auto flex max-w-content items-center justify-between gap-3">
           <div>
-            <span className="text-[11px] text-muted">Giá thuê từ</span>
-            <div className="flex items-baseline gap-0.5">
-              <span className="text-base font-bold text-court-600 dark:text-court-400">
+            <span className="text-[11px] text-muted block leading-none">Giá thuê từ</span>
+            <div className="flex items-baseline gap-0.5 mt-0.5">
+              <span className="text-base font-extrabold text-court-600 dark:text-court-400">
                 {formatVND(venue.priceFrom)}
               </span>
               <span className="text-xs text-muted">/h</span>
@@ -379,11 +379,12 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
           </div>
 
           <Link
+            id="mobile-book-now-button"
             href={`/venues/${venue.slug}/book`}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-control bg-racket-500 px-5 py-2.5 text-xs font-bold text-court-950 shadow-sm transition-all hover:bg-racket-600 active:scale-95 sm:flex-initial"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-control bg-racket-500 py-3 px-5 text-xs font-bold text-court-950 shadow-md transition-all hover:bg-racket-600 active:scale-95 sm:flex-initial"
           >
-            <Calendar size={15} />
-            <span>Xem lịch & đặt</span>
+            <Calendar size={16} />
+            <span>Xem lịch & đặt sân</span>
           </Link>
         </div>
       </div>

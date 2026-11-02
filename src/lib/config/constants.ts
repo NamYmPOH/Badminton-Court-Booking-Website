@@ -30,7 +30,7 @@ export const PHONE_VN_REGEX = /^(0|\+84)(3|5|7|8|9)\d{8}$/;
 /** Bcrypt cost — §10.1 */
 export const BCRYPT_COST = 12;
 
-/** Tiện ích cơ sở */
+/** Danh mục mã tiện ích chuẩn hóa của cơ sở */
 export const AMENITIES = [
   "PARKING",
   "SHOWER",
@@ -44,14 +44,51 @@ export const AMENITIES = [
 
 export type Amenity = (typeof AMENITIES)[number];
 
-/** Nhãn tiện ích tiếng Việt */
+/** Nhãn tiếng Việt hiển thị thống nhất */
 export const AMENITY_LABELS: Record<Amenity, string> = {
-  PARKING: "Chỗ đậu xe",
+  PARKING: "Bãi xe",
   SHOWER: "Phòng tắm",
-  WIFI: "WiFi",
+  WIFI: "Wi-Fi",
   CANTEEN: "Căng-tin",
   RACKET_RENTAL: "Cho thuê vợt",
   SHUTTLE_SALE: "Bán cầu",
   AIRCON: "Điều hoà",
-  LOCKER: "Tủ khoá",
+  LOCKER: "Tủ đồ cá nhân",
 };
+
+/** Bản đồ alias xử lý dữ liệu cũ để tránh mất mát (ví dụ AC -> AIRCON) */
+export const AMENITY_ALIASES: Record<string, Amenity> = {
+  AC: "AIRCON",
+  AIRCON: "AIRCON",
+  AIR_CONDITIONING: "AIRCON",
+  PARKING: "PARKING",
+  CAR_PARKING: "PARKING",
+  SHOWER: "SHOWER",
+  WIFI: "WIFI",
+  WI_FI: "WIFI",
+  FREE_WIFI: "WIFI",
+  CANTEEN: "CANTEEN",
+  CAFE: "CANTEEN",
+  RACKET_RENTAL: "RACKET_RENTAL",
+  RACKET: "RACKET_RENTAL",
+  SHUTTLE_SALE: "SHUTTLE_SALE",
+  SHUTTLE: "SHUTTLE_SALE",
+  LOCKER: "LOCKER",
+  LOCKERS: "LOCKER",
+};
+
+export function normalizeAmenity(code: string): Amenity | null {
+  if (!code) return null;
+  const key = code.trim().toUpperCase().replace(/[-\s]+/g, "_");
+  return AMENITY_ALIASES[key] ?? null;
+}
+
+export function normalizeAmenities(codes: string[]): Amenity[] {
+  if (!Array.isArray(codes)) return [];
+  const set = new Set<Amenity>();
+  for (const c of codes) {
+    const norm = normalizeAmenity(c);
+    if (norm) set.add(norm);
+  }
+  return Array.from(set);
+}

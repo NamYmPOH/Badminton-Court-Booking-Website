@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MapPin, Bell, User, LogIn, LogOut, Calendar, ChevronDown } from "lucide-react";
+import { MapPin, Bell, User, LogIn, LogOut, Calendar, ChevronDown, Heart } from "lucide-react";
 import { BRAND } from "@/lib/config/brand";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
+import { useFavorites } from "@/context/FavoritesContext";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { NavbarSearch } from "./NavbarSearch";
@@ -18,8 +19,34 @@ interface NavbarProps {
 export function Navbar({ className }: NavbarProps) {
   const router = useRouter();
   const { user, isLoading, logout } = useAuth();
+  const { favoriteIds } = useFavorites();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Tải số thông báo chưa đọc định kỳ khi đăng nhập
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+    let active = true;
+    async function checkUnread() {
+      try {
+        const res = await fetch("/api/notifications?pageSize=1", { cache: "no-store" });
+        const json = await res.json();
+        if (active && res.ok && json.success) {
+          setUnreadCount(json.unreadCount || 0);
+        }
+      } catch {}
+    }
+    void checkUnread();
+    const interval = setInterval(checkUnread, 60000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [user]);
 
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
@@ -97,12 +124,33 @@ export function Navbar({ className }: NavbarProps) {
         <div className="flex items-center gap-1">
           <ThemeToggle />
 
+          {/* Nút Yêu thích cạnh Thông báo */}
+          <Link
+            href="/favorites"
+            className="relative inline-flex h-10 w-10 items-center justify-center rounded-control text-muted transition-colors hover:bg-court-50 hover:text-rose-500 dark:hover:bg-surface"
+            aria-label="Danh sách sân yêu thích"
+            title="Sân yêu thích"
+          >
+            <Heart size={20} className={favoriteIds.length > 0 ? "fill-rose-500 text-rose-500" : ""} />
+            {favoriteIds.length > 0 && (
+              <span className="absolute top-1 right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs">
+                {favoriteIds.length}
+              </span>
+            )}
+          </Link>
+
           <Link
             href="/notifications"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-control text-muted transition-colors hover:bg-court-50 dark:hover:bg-surface"
+            className="relative inline-flex h-10 w-10 items-center justify-center rounded-control text-muted transition-colors hover:bg-court-50 hover:text-ink dark:hover:bg-surface"
             aria-label="Thông báo"
+            title="Thông báo"
           >
             <Bell size={20} />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-court-600 px-1 text-[10px] font-bold text-white shadow-xs">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
           </Link>
 
           {/* Trạng thái xác thực */}
@@ -171,6 +219,14 @@ export function Navbar({ className }: NavbarProps) {
                         >
                           <Calendar size={15} />
                           Lịch đặt của tôi
+                        </Link>
+                        <Link
+                          href="/favorites"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 rounded-control px-3 py-2 text-xs font-medium text-muted hover:bg-court-50 hover:text-ink dark:hover:bg-court-950/40"
+                        >
+                          <Heart size={15} className="text-rose-500" />
+                          Sân yêu thích ({favoriteIds.length})
                         </Link>
                         <Link
                           href="/venues/register"

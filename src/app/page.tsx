@@ -118,27 +118,6 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-surface">
-        <div className="mx-auto flex max-w-content flex-col gap-4 px-6 py-8 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2026 {BRAND.name}. Tất cả quyền được bảo lưu.</p>
-          <div className="flex flex-wrap gap-6">
-            <Link href="/venues" className="hover:text-ink">
-              Danh sách sân
-            </Link>
-            <Link href="/venues?view=map" className="hover:text-ink">
-              Bản đồ sân
-            </Link>
-            <Link href="/account" className="hover:text-ink">
-              Hỗ trợ
-            </Link>
-            <Link href="/login" className="hover:text-ink">
-              Dành cho chủ sân
-            </Link>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

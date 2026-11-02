@@ -1194,29 +1194,41 @@ export async function sendVenueNotification(
     recipientIds.delete(excludeUserId);
   }
 
+  const eventTag = (data.tag || data.eventType || "SYSTEM") as string;
+  const bookingId = data.bookingId as string | undefined;
+
   const idList = Array.from(recipientIds);
   for (const userId of idList) {
-    const bookingId = data.bookingId as string | undefined;
-
-    // Chống gửi trùng lặp nếu thông báo cùng bookingId đã tạo trong 5 phút
-    if (bookingId) {
+    // Chống gửi trùng lặp thông minh: CHỈ bỏ qua nếu CÙNG bookingId và CÙNG eventTag trong 5 phút (chống retry)
+    // Các sự kiện khác nhau trên cùng đơn (ví dụ COUNTER_BOOKING -> CASH_PAID -> CANCEL_REQUEST) vẫn được ghi nhận riêng
+    if (bookingId && eventTag) {
       const existing = await tx.notification.findFirst({
         where: {
           userId,
-          type: "SYSTEM",
           data: {
             path: ["bookingId"],
             equals: bookingId,
           },
         },
-        select: { id: true, createdAt: true },
+        select: { id: true, createdAt: true, data: true },
         orderBy: { createdAt: "desc" },
       });
 
-      if (existing && Date.now() - existing.createdAt.getTime() < 300000) {
-        continue;
+      if (existing) {
+        const existingData = existing.data as Record<string, unknown> | null;
+        const existingTag = (existingData?.tag || existingData?.eventType) as string | undefined;
+        if (existingTag === eventTag && Date.now() - existing.createdAt.getTime() < 300000) {
+          continue;
+        }
       }
     }
+
+    const payloadData = {
+      ...data,
+      venueId,
+      tag: eventTag,
+      url: data.url || (bookingId ? `/venue-operations?bookingId=${bookingId}&venueId=${venueId}` : `/venue-operations?venueId=${venueId}`),
+    };
 
     await tx.notification.create({
       data: {
@@ -1224,7 +1236,7 @@ export async function sendVenueNotification(
         type: "SYSTEM",
         title,
         body,
-        data: data as Prisma.InputJsonValue,
+        data: payloadData as Prisma.InputJsonValue,
       },
     });
   }

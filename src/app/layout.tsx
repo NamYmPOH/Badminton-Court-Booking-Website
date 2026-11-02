@@ -4,6 +4,7 @@ import { BRAND } from "@/lib/config/brand";
 import { Providers } from "@/components/Providers";
 import { Navbar } from "@/components/features/layout/Navbar";
 import { MobileTabBar } from "@/components/features/layout/MobileTabBar";
+import { Footer } from "@/components/features/layout/Footer";
 import { Analytics } from "@vercel/analytics/next";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
@@ -46,6 +47,7 @@ export default function RootLayout({
         <Providers>
           <Navbar />
           <main className="min-h-screen pb-20 lg:pb-0">{process.env.GROUP_TRIAL_MODE === "true" && <p role="status" className="bg-amber-100 px-4 py-3 text-center text-sm font-semibold text-amber-950">Bản thử nghiệm · Dữ liệu riêng · Không chuyển tiền thật vào mã QR</p>}{children}</main>
+          <Footer />
           <MobileTabBar />
         </Providers>
         <Analytics />
