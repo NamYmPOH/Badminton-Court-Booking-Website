@@ -88,7 +88,7 @@ export async function approveCancellationInTransaction(
   tx: Tx, booking: { id: string; status: string; paymentStatus: string; cancelApprovedAt: Date | null },
   amount: number, reason: string, now: Date,
 ) {
-  if (!["PENDING_PAYMENT", "CONFIRMED"].includes(booking.status) || booking.cancelApprovedAt) {
+  if (!["PENDING_PAYMENT", "CONFIRMED", "CANCELLED"].includes(booking.status) || booking.cancelApprovedAt) {
     throw new PaymentError(409, "Đơn không còn cho phép duyệt hủy. Không được duyệt lặp lại.");
   }
   const before = await refundLedger(tx, booking.id);

@@ -111,7 +111,7 @@ export async function GET(request: Request) {
         ...window,
         where: {
           ...(pending === "true"
-            ? { status: "PENDING_PAYMENT", expiresAt: { gt: new Date() } }
+            ? { AND: [{ OR: [{ status: "PENDING_PAYMENT" as const, expiresAt: { gt: new Date() } }, { cancelRequestedAt: { not: null }, cancelApprovedAt: null }] }] }
             : {}),
           OR: [
             { code: search },
@@ -127,6 +127,8 @@ export async function GET(request: Request) {
           customerPhone: true,
           status: true,
           paymentStatus: true,
+          cancelRequestedAt: true,
+          cancelApprovedAt: true,
           paymentMethod: true,
           total: true,
           expiresAt: true,
@@ -146,7 +148,7 @@ export async function GET(request: Request) {
       rows = await db.payment.findMany({
         ...window,
         where: {
-          ...(pending === "true" ? { AND: [{ OR: [{ status: "REFUND_PENDING" as const }, { groupRefund: { is: { status: { in: ["PENDING", "REVIEW_REQUIRED"] } } } }] }] } : {}),
+          ...(pending === "true" ? { AND: [{ OR: [{ status: "REFUND_PENDING" as const }, { booking: { cancelRequestedAt: { not: null }, cancelApprovedAt: null } }, { groupRefund: { is: { status: { in: ["PENDING", "REVIEW_REQUIRED"] } } } }] }] } : {}),
           OR: [{ txnRef: search }, { booking: { code: search } }],
         },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
@@ -158,7 +160,7 @@ export async function GET(request: Request) {
           status: true,
           amount: true,
           paidAt: true,
-          booking: { select: { code: true, customerName: true } },
+          booking: { select: { id: true, code: true, customerName: true, cancelRequestedAt: true, cancelApprovedAt: true } },
         },
       });
     if (tab === "receipts") {

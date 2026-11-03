@@ -103,7 +103,7 @@ export function CancelBookingNoticeModal({
       setRequiresApproval(needsApproval);
       setSuccessMessage(
         needsApproval
-          ? "Yêu cầu hủy đơn đã được gửi tới chủ cơ sở. Đang chờ phê duyệt và xử lý hoàn tiền."
+          ? "Đơn đã chuyển sang Đã hủy / Hết hạn. Yêu cầu được xem xét trong 24 giờ; hoàn tiền sau khi duyệt."
           : "Đơn đặt sân đã được hủy thành công."
       );
       onCancelled?.();

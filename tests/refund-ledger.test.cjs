@@ -149,7 +149,7 @@ test('Nhân viên và khách chỉ gửi yêu cầu; không tự duyệt hoặc 
     await assert.rejects(approveBookingCancellation(db, actor, 'b', 1000, 'Tự ý duyệt hoàn'), { status: 403 });
   }
   await assert.rejects(pay(db, 'not-approved', 1, 'NOT-APPROVED'), { status: 409 });
-  assert.equal(db.state.booking.status, 'CONFIRMED');
+  assert.equal(db.state.booking.status, 'CANCELLED');
 });
 
 test('Hủy nhóm sau khi hoàn HLV: chính sách 50% chỉ áp dụng số tiền còn giữ', async () => {
@@ -243,4 +243,22 @@ test('Hủy một ca HLV chỉ bỏ một dòng phí, giữ phí các ca khác c
   assert.equal(db.state.priceLines[0].id, 'line-other');
   assert.equal(db.state.booking.total, 400000);
   assert.equal(db.state.refunds[0].amount, 200000);
+});
+
+test('Khách hủy: nhả sân ngay, giữ số tiền đã trả, retry không dời hạn; admin duyệt rồi ghi chi', async () => {
+  const db = fixture();
+  const now = new Date('2026-11-03T02:00:00Z');
+  await requestBookingCancellation(db, actors.customer, 'b', 'Khách bận việc đột xuất', now);
+  assert.equal(db.state.booking.status, 'CANCELLED');
+  assert.equal(db.state.booking.paymentStatus, 'PAID');
+  assert.equal(db.state.items[0].status, 'CANCELLED');
+  assert.equal(db.state.refunds.length, 0);
+  await requestBookingCancellation(db, actors.customer, 'b', 'Gửi lại yêu cầu hủy', new Date(now.getTime() + 1000));
+  assert.equal(db.state.booking.cancelRequestedAt.getTime(), now.getTime());
+  await approveBookingCancellation(db, actors.owner, 'b', 400000, 'Duyệt hoàn toàn bộ');
+  assert.equal(db.state.booking.paymentStatus, 'REFUND_PENDING');
+  await assert.rejects(approveBookingCancellation(db, actors.owner, 'b', 400000, 'Duyệt lặp lại'), { status: 409 });
+  await pay(db, db.state.refunds[0].id, 400000, 'RETURN-TO-PAYER-001');
+  assert.equal(db.state.booking.paymentStatus, 'REFUNDED');
+  assert.equal(db.state.disbursements.length, 1);
 });

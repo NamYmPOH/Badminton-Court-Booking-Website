@@ -40,6 +40,9 @@ export interface Booking {
   subtotal: number;
   discount: number;
   total: number;
+  cancelRequestedAt?: string | null;
+  cancelApprovedAt?: string | null;
+  cancelReviewDueAt?: string | null;
   contactName: string;
   contactPhone: string;
   note?: string;

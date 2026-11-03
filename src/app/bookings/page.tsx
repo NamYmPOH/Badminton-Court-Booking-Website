@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getUserBookings } from "@/services/booking.service";
 import type { Booking } from "@/types/booking";
@@ -22,6 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 
 function BookingsContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const currentTab =
     (searchParams.get("tab") as "upcoming" | "past" | "cancelled") || "upcoming";
 
@@ -123,6 +124,9 @@ function BookingsContent() {
 
   // Nhãn hiển thị trạng thái tiền riêng biệt
   const renderPaymentStatus = (booking: Booking) => {
+    if (booking.cancelRequestedAt && !booking.cancelApprovedAt) {
+      return <span className="font-semibold text-amber-600">Chờ duyệt hủy trong 24 giờ · hạn {new Date(booking.cancelReviewDueAt!).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</span>;
+    }
     if (booking.paymentStatus === "PAID") {
       return <span className="font-semibold text-emerald-600">Đã thanh toán</span>;
     }
@@ -161,6 +165,8 @@ function BookingsContent() {
         onClose={() => setCancelModalData(null)}
         onCancelled={() => {
           setRefreshKey((k) => k + 1);
+          setCancelModalData(null);
+          router.push("/bookings?tab=cancelled");
         }}
       />
 

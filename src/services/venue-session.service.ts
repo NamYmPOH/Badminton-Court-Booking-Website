@@ -4,7 +4,7 @@ import { randomInt } from "node:crypto";
 import { PaymentError } from "../lib/sepay";
 import { serializable } from "../lib/transaction";
 import { formatHour, vietnamDate } from "../lib/booking";
-import { approveCancellationInTransaction, completeRefund, refundLedger } from "./refund.service";
+import { approveCancellationInTransaction, releaseCancelledResources, completeRefund, refundLedger } from "./refund.service";
 import { recordVoucherConsumption } from "./settlement.service";
 
 export interface BookingTimeSlot {
@@ -1549,12 +1549,13 @@ export async function requestBookingCancellation(
     }
 
     if (actor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
+    if (booking.status === "CANCELLED" && booking.cancelRequestedAt && !booking.cancelApprovedAt) return { success: true, status: "CANCELLED", requiresApproval: true };
     if (!["PENDING_PAYMENT", "CONFIRMED"].includes(booking.status)) {
       throw new PaymentError(409, "Đơn đã kết thúc, đang sử dụng hoặc đã bị hủy.");
     }
     const ledger = await refundLedger(tx, booking.id);
     const isPaid = ledger.received > 0 || ["PAID", "PARTIALLY_PAID", "REFUND_PENDING", "REFUNDED"].includes(booking.paymentStatus);
-    if (!isPaid || isOwnerOrAdmin) {
+    if (!isPaid || (isOwnerOrAdmin && !isCustomer)) {
       const after = await approveCancellationInTransaction(tx, booking, ledger.available, reason, now);
       await tx.adminAudit.create({ data: {
         actorId: actor.id, actorName: actor.name, action: isPaid ? "APPROVE_CANCEL" : "CANCEL_UNPAID",
@@ -1564,10 +1565,12 @@ export async function requestBookingCancellation(
       return { success: true, status: "CANCELLED", requiresApproval: false, refundApproved: after.approved };
     }
 
-    // Nếu là STAFF hoặc CUSTOMER: chỉ được gửi yêu cầu hủy (chờ duyệt)
+    // Nhả sân ngay; nghĩa vụ hoàn chỉ được ghi nhận khi quản lý duyệt.
+    await releaseCancelledResources(tx, booking.id, reason, now);
     await tx.booking.update({
       where: { id: booking.id },
       data: {
+        status: "CANCELLED", cancelledAt: now, expiresAt: null,
         cancelRequestedAt: now,
         cancelReason: reason,
       },
@@ -1595,7 +1598,7 @@ export async function requestBookingCancellation(
       { tag: "CANCEL_REQUEST", bookingId: booking.id, bookingCode: booking.code }
     );
 
-    return { success: true, status: booking.status, requiresApproval: true };
+    return { success: true, status: "CANCELLED", requiresApproval: true };
   });
 }
 

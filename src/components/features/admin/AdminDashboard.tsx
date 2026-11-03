@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import CancellationManageModal from "./CancellationManageModal";
 import VenueStaffModal from "./VenueStaffModal";
 import CoachManageModal from "./CoachManageModal";
 
@@ -45,6 +46,8 @@ type Row = {
   district?: string;
   paymentMode?: string;
   paymentStatus?: string;
+  cancelRequestedAt?: string | null;
+  cancelApprovedAt?: string | null;
   customerName?: string;
   customerPhone?: string;
   total?: number;
@@ -69,7 +72,7 @@ type Row = {
   venue?: { name: string; paymentMode: string };
   paymentMethod?: string | null;
   owner?: { name: string };
-  booking?: { code: string; customerName: string };
+  booking?: { id: string; code: string; customerName: string; cancelRequestedAt?: string | null; cancelApprovedAt?: string | null };
   _count?: { courts: number; pricing: number };
   items?: {
     date: string;
@@ -180,6 +183,7 @@ export default function AdminDashboard() {
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState("");
   const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null);
+  const [cancellationId, setCancellationId] = useState<string | null>(null);
   const [selectedStaffVenue, setSelectedStaffVenue] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => {
     const abort = new AbortController();
@@ -341,11 +345,11 @@ export default function AdminDashboard() {
                 }}
               />
               {tab === "payments"
-                ? "Chờ hoàn tiền"
+                ? "Chờ duyệt hủy / Hoàn tiền"
                 : tab === "receipts"
                   ? "Cần đối soát"
                   : tab === "bookings"
-                    ? "Đang chờ thanh toán"
+                    ? "Chờ thanh toán / Duyệt hủy"
                     : "Chờ duyệt"}
             </label>
           )}
@@ -621,6 +625,7 @@ export default function AdminDashboard() {
                           }
                         />
                         <Badge value={r.paymentStatus} />
+                        {r.cancelRequestedAt && !r.cancelApprovedAt && <span className="text-sm text-amber-600">Chờ duyệt hủy trong 24 giờ</span>}
                       </div>
                     </div>
                     <div className="my-3 text-sm text-muted">
@@ -672,6 +677,7 @@ export default function AdminDashboard() {
                           })}
                         </>
                       )}
+                      {(r.cancelRequestedAt || r.status === "CANCELLED" || r.paymentStatus === "REFUND_PENDING") && <button className={button} onClick={() => setCancellationId(r.id)}>Duyệt hủy / Hoàn tiền</button>}
                       {r.status === "CHECKED_IN" &&
                         r.paymentStatus === "PAID" &&
                         actionButton("Hoàn tất", {
@@ -694,6 +700,7 @@ export default function AdminDashboard() {
                       <p className="mt-1 break-all text-xs text-muted">
                         {r.txnRef} · {date(r.paidAt)}
                       </p>
+                      {r.booking?.id && <button className={`${button} mt-2`} onClick={() => setCancellationId(r.booking!.id)}>{r.booking.cancelRequestedAt && !r.booking.cancelApprovedAt ? "Chờ duyệt hủy · Xử lý" : "Xem hủy / Hoàn tiền"}</button>}
                       {r.groupRefund && <p className="mt-1 text-sm text-muted">
                         Đã duyệt hoàn {money(r.groupRefund.amount)}
                         {r.groupRefund.status !== "REVIEW_REQUIRED" && <> · Đã chi {money(r.groupRefund.completedAmount)} · Còn {money(r.groupRefund.amount - r.groupRefund.completedAmount)}</>}
@@ -938,6 +945,7 @@ export default function AdminDashboard() {
 
       {/* Modal Quản lý Tài khoản & Quyền cơ sở sân */}
       {selectedCoachId && <CoachManageModal key={selectedCoachId} coachId={selectedCoachId} onClose={() => { setSelectedCoachId(null); setRefresh(v => v + 1); }} />}
+      {cancellationId && <CancellationManageModal key={cancellationId} id={cancellationId} onClose={() => { setCancellationId(null); setRefresh(v => v + 1); }} />}
       <VenueStaffModal
         venueId={selectedStaffVenue?.id || null}
         venueName={selectedStaffVenue?.name || ""}

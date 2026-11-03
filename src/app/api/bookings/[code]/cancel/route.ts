@@ -53,7 +53,7 @@ export async function POST(request: Request, { params }: { params: { code: strin
     return NextResponse.json({
       ...result,
       message: result.requiresApproval
-        ? "Yêu cầu hủy đơn đã được gửi tới chủ sân để phê duyệt và xử lý hoàn tiền."
+        ? "Đơn đã chuyển sang Đã hủy / Hết hạn. Yêu cầu sẽ được xem xét trong 24 giờ; tiền hoàn được xử lý sau khi duyệt."
         : "Đơn đặt sân đã được hủy thành công.",
     });
   } catch (error) {
