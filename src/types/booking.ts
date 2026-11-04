@@ -8,7 +8,8 @@ export type BookingStatus =
   | "EXPIRED";
 
 export type PaymentStatus =
-  | "PARTIALLY_PAID" | "UNPAID"
+  | "PARTIALLY_PAID"
+  | "UNPAID"
   | "PENDING"
   | "FAILED"
   | "PAID"
@@ -24,6 +25,36 @@ export interface BookingItem {
   endMin: number;
   price: number;
   status: "HELD" | "CONFIRMED" | "CANCELLED" | "COMPLETED" | "EXPIRED";
+}
+
+export interface BookingRescheduleRecord {
+  id: string;
+  actorName: string;
+  priceDifference: number;
+  reason?: string | null;
+  createdAt: string;
+}
+
+export interface BookingTransferRecord {
+  id: string;
+  senderName: string;
+  receiverName: string;
+  receiverPhone: string;
+  note?: string | null;
+  transferredAt: string;
+}
+
+export interface BookingIncidentRecord {
+  id: string;
+  incidentType: string;
+  requestType: string;
+  description: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "MANUAL_REVIEW";
+  refundRate?: number | null;
+  refundAmount?: number | null;
+  adminNote?: string | null;
+  confirmedAt?: string | null;
+  createdAt: string;
 }
 
 export interface Booking {
@@ -43,12 +74,37 @@ export interface Booking {
   cancelRequestedAt?: string | null;
   cancelApprovedAt?: string | null;
   cancelReviewDueAt?: string | null;
+  cancelReason?: string | null;
+  cancelExpectedRate?: number | null;
+  cancelExpectedAmount?: number | null;
+  cancelNonRefundable?: number | null;
+  cancelPolicyVersion?: string | null;
+  cancelCalculation?: {
+    firstSlotStartsAt?: string;
+    requestedAt?: string;
+    hoursRemaining?: number;
+    refundRate?: number;
+    availableBefore?: number;
+    expectedRefund?: number;
+    nonRefundable?: number;
+    summary?: string;
+  } | null;
+  cancelFirstSlotStartsAt?: string | null;
+  refundAmountApproved?: number | null;
+  refundCompletedAt?: string | null;
+  transfereeName?: string | null;
+  transfereePhone?: string | null;
+  transfereeNote?: string | null;
+  transferredAt?: string | null;
   contactName: string;
   contactPhone: string;
   note?: string;
   expiresAt: string;
   createdAt: string;
   items: BookingItem[];
+  rescheduleHistory?: BookingRescheduleRecord[];
+  transferHistory?: BookingTransferRecord[];
+  incidentRequests?: BookingIncidentRecord[];
 }
 
 export interface Voucher {

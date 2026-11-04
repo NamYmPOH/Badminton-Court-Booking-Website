@@ -12,12 +12,17 @@ import {
   MapPin,
   QrCode,
   Users,
-  AlertCircle,
   LogIn,
   RotateCcw,
   Layers,
+  ArrowRightLeft,
+  UserCheck,
+  CloudRain,
 } from "lucide-react";
 import { CancelBookingNoticeModal } from "@/components/features/booking/CancelBookingNoticeModal";
+import { RescheduleModal } from "@/components/features/booking/RescheduleModal";
+import { TransferModal } from "@/components/features/booking/TransferModal";
+import { IncidentModal } from "@/components/features/booking/IncidentModal";
 import { useAuth } from "@/context/AuthContext";
 
 function BookingsContent() {
@@ -31,6 +36,19 @@ function BookingsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [cancelModalData, setCancelModalData] = useState<{
+    code: string;
+    venueName: string;
+  } | null>(null);
+  const [rescheduleModalData, setRescheduleModalData] = useState<{
+    code: string;
+    venueName: string;
+    date: string;
+  } | null>(null);
+  const [transferModalData, setTransferModalData] = useState<{
+    code: string;
+    venueName: string;
+  } | null>(null);
+  const [incidentModalData, setIncidentModalData] = useState<{
     code: string;
     venueName: string;
   } | null>(null);
@@ -67,7 +85,6 @@ function BookingsContent() {
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  // Huy hiệu hiển thị trạng thái lịch chính xác theo PRODUCT.md
   const renderBookingStatusBadge = (status: Booking["status"]) => {
     switch (status) {
       case "PENDING_PAYMENT":
@@ -122,10 +139,25 @@ function BookingsContent() {
     }
   };
 
-  // Nhãn hiển thị trạng thái tiền riêng biệt
+  // Phân biệt rõ 4 trạng thái hủy/hoàn tiền và các trạng thái tài chính
   const renderPaymentStatus = (booking: Booking) => {
     if (booking.cancelRequestedAt && !booking.cancelApprovedAt) {
-      return <span className="font-semibold text-amber-600">Chờ duyệt hủy trong 24 giờ · hạn {new Date(booking.cancelReviewDueAt!).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</span>;
+      return (
+        <span className="font-semibold text-amber-600">
+          Chờ duyệt hủy trong 24 giờ · hạn {new Date(booking.cancelReviewDueAt!).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}
+        </span>
+      );
+    }
+    if (booking.cancelApprovedAt) {
+      if (booking.refundAmountApproved === 0) {
+        return <span className="font-semibold text-muted">Đã hủy, không được hoàn tiền</span>;
+      }
+      if (booking.paymentStatus === "REFUND_PENDING") {
+        return <span className="font-semibold text-amber-600">Đã duyệt, chờ hoàn tiền</span>;
+      }
+      if (booking.paymentStatus === "REFUNDED") {
+        return <span className="font-semibold text-muted">Đã hoàn tiền</span>;
+      }
     }
     if (booking.paymentStatus === "PAID") {
       return <span className="font-semibold text-emerald-600">Đã thanh toán</span>;
@@ -156,9 +188,9 @@ function BookingsContent() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      {/* Modal hướng dẫn huỷ lịch cá nhân */}
+      {/* Modal huỷ lịch cá nhân */}
       <CancelBookingNoticeModal
-        key={cancelModalData?.code || "none"}
+        key={cancelModalData?.code || "none-cancel"}
         isOpen={cancelModalData !== null}
         bookingCode={cancelModalData?.code || ""}
         venueName={cancelModalData?.venueName || ""}
@@ -169,6 +201,52 @@ function BookingsContent() {
           router.push("/bookings?tab=cancelled");
         }}
       />
+
+      {/* Modal đổi lịch */}
+      {rescheduleModalData && (
+        <RescheduleModal
+          key={rescheduleModalData.code}
+          isOpen={true}
+          bookingCode={rescheduleModalData.code}
+          venueName={rescheduleModalData.venueName}
+          currentDate={rescheduleModalData.date}
+          onClose={() => setRescheduleModalData(null)}
+          onSuccess={() => {
+            setRefreshKey((k) => k + 1);
+            setRescheduleModalData(null);
+          }}
+        />
+      )}
+
+      {/* Modal chuyển nhượng */}
+      {transferModalData && (
+        <TransferModal
+          key={transferModalData.code}
+          isOpen={true}
+          bookingCode={transferModalData.code}
+          venueName={transferModalData.venueName}
+          onClose={() => setTransferModalData(null)}
+          onSuccess={() => {
+            setRefreshKey((k) => k + 1);
+            setTransferModalData(null);
+          }}
+        />
+      )}
+
+      {/* Modal báo sự cố bất khả kháng */}
+      {incidentModalData && (
+        <IncidentModal
+          key={incidentModalData.code}
+          isOpen={true}
+          bookingCode={incidentModalData.code}
+          venueName={incidentModalData.venueName}
+          onClose={() => setIncidentModalData(null)}
+          onSuccess={() => {
+            setRefreshKey((k) => k + 1);
+            setIncidentModalData(null);
+          }}
+        />
+      )}
 
       {/* Tiêu đề & Nút đặt sân mới */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -189,7 +267,7 @@ function BookingsContent() {
         </Link>
       </div>
 
-      {/* Tabs chuyển đổi theo đúng phân loại PRODUCT.md: Sắp tới | Đã chơi | Đã huỷ / Hết hạn */}
+      {/* Tabs chuyển đổi */}
       <div className="mt-6 flex border-b border-border">
         <Link
           href="/bookings?tab=upcoming"
@@ -228,7 +306,6 @@ function BookingsContent() {
       {/* Danh sách thẻ đặt lịch */}
       <div className="mt-6 space-y-4">
         {isUnauthenticated ? (
-          /* Trạng thái chưa đăng nhập */
           <div className="flex min-h-[260px] flex-col items-center justify-center rounded-card border border-dashed border-border bg-surface p-8 text-center shadow-sm">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-court-50 text-court-600 dark:bg-court-950/60 dark:text-court-300">
               <LogIn size={24} />
@@ -259,7 +336,7 @@ function BookingsContent() {
             >
               {/* Header thẻ: Mã đơn, Trạng thái lịch & Trạng thái tiền */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs font-bold text-court-600 dark:text-court-400">
                     #{booking.code}
                   </span>
@@ -268,6 +345,12 @@ function BookingsContent() {
                     <span className="inline-flex items-center gap-1 rounded bg-court-50 px-2 py-0.5 text-[10px] font-semibold text-court-700 dark:bg-court-950/60 dark:text-court-300">
                       <Users size={11} />
                       Nhóm
+                    </span>
+                  )}
+                  {booking.transfereeName && (
+                    <span className="inline-flex items-center gap-1 rounded bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-300">
+                      <UserCheck size={11} />
+                      Nhận sân: {booking.transfereeName} ({booking.transfereePhone})
                     </span>
                   )}
                 </div>
@@ -316,25 +399,70 @@ function BookingsContent() {
               </div>
 
               {/* Hàng hành động phù hợp ngữ cảnh */}
-              <div className="mt-5 flex items-center justify-end gap-2.5 border-t border-border/70 pt-3 text-xs">
-                {/* Nút yêu cầu huỷ đơn cá nhân */}
-                {(booking.status === "PENDING_PAYMENT" ||
-                  booking.status === "CONFIRMED") && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCancelModalData({
-                        code: booking.code,
-                        venueName: booking.venueName,
-                      })
-                    }
-                    className="rounded-control border border-border px-3 py-1.5 font-medium text-rose-600 transition hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                  >
-                    Huỷ lịch
-                  </button>
-                )}
+              <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-3 text-xs">
+                {/* Các nút Đổi lịch, Chuyển nhượng, Báo sự cố, Hủy lịch khi đơn còn hiệu lực */}
+                {(booking.status === "PENDING_PAYMENT" || booking.status === "CONFIRMED") &&
+                  !booking.cancelRequestedAt && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRescheduleModalData({
+                            code: booking.code,
+                            venueName: booking.venueName,
+                            date: booking.items[0]?.date || "",
+                          })
+                        }
+                        className="inline-flex items-center gap-1 rounded-control border border-border px-3 py-1.5 font-medium text-ink transition hover:bg-court-50"
+                      >
+                        <ArrowRightLeft size={12} className="text-court-600" />
+                        Đổi lịch
+                      </button>
 
-                {/* Nút đặt lại khi đơn đã hoàn thành hoặc hết hạn */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTransferModalData({
+                            code: booking.code,
+                            venueName: booking.venueName,
+                          })
+                        }
+                        className="inline-flex items-center gap-1 rounded-control border border-border px-3 py-1.5 font-medium text-ink transition hover:bg-court-50"
+                      >
+                        <UserCheck size={12} className="text-court-600" />
+                        Chuyển nhượng
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setIncidentModalData({
+                            code: booking.code,
+                            venueName: booking.venueName,
+                          })
+                        }
+                        className="inline-flex items-center gap-1 rounded-control border border-border px-3 py-1.5 font-medium text-amber-700 transition hover:bg-amber-50"
+                      >
+                        <CloudRain size={12} className="text-amber-600" />
+                        Báo sự cố
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCancelModalData({
+                            code: booking.code,
+                            venueName: booking.venueName,
+                          })
+                        }
+                        className="rounded-control border border-border px-3 py-1.5 font-medium text-rose-600 transition hover:bg-rose-50"
+                      >
+                        Huỷ lịch
+                      </button>
+                    </>
+                  )}
+
+                {/* Nút đặt lại khi đơn đã hoàn thành hoặc hết hạn/đã hủy */}
                 {(booking.status === "COMPLETED" ||
                   booking.status === "CANCELLED" ||
                   booking.status === "EXPIRED" ||
@@ -348,41 +476,42 @@ function BookingsContent() {
                   </Link>
                 )}
 
-                {/* Nút xem đơn hoặc tiếp tục thanh toán */}
-                <Link
-                  href={
-                    booking.groupToken
-                      ? `/groups/${booking.groupToken}`
-                      : `/payment/result?booking=${encodeURIComponent(booking.code)}`
-                  }
-                  className={`inline-flex items-center gap-1.5 rounded-control px-4 py-1.5 font-semibold text-white shadow-sm transition active:scale-95 ${
-                    booking.status === "PENDING_PAYMENT"
-                      ? "bg-racket-500 text-court-950 hover:bg-racket-600"
-                      : "bg-court-600 hover:bg-court-700"
-                  }`}
-                >
-                  {booking.status === "PENDING_PAYMENT" ? (
-                    <>
-                      <QrCode size={13} />
-                      <span>Thanh toán ngay</span>
-                    </>
-                  ) : booking.groupToken ? (
-                    <>
-                      <Users size={13} />
-                      <span>Phòng chia tiền</span>
-                    </>
-                  ) : (
-                    <>
-                      <QrCode size={13} />
-                      <span>Xem vé & đơn</span>
-                    </>
-                  )}
-                </Link>
+                {/* Nút xem đơn hoặc tiếp tục thanh toán (chỉ khi đơn chưa hủy) */}
+                {booking.status !== "CANCELLED" && booking.status !== "EXPIRED" && (
+                  <Link
+                    href={
+                      booking.groupToken
+                        ? `/groups/${booking.groupToken}`
+                        : `/payment/result?booking=${encodeURIComponent(booking.code)}`
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-control px-4 py-1.5 font-semibold text-white shadow-sm transition active:scale-95 ${
+                      booking.status === "PENDING_PAYMENT"
+                        ? "bg-racket-500 text-court-950 hover:bg-racket-600"
+                        : "bg-court-600 hover:bg-court-700"
+                    }`}
+                  >
+                    {booking.status === "PENDING_PAYMENT" ? (
+                      <>
+                        <QrCode size={13} />
+                        <span>Thanh toán ngay</span>
+                      </>
+                    ) : booking.groupToken ? (
+                      <>
+                        <Users size={13} />
+                        <span>Phòng chia tiền</span>
+                      </>
+                    ) : (
+                      <>
+                        <QrCode size={13} />
+                        <span>Xem vé & đơn</span>
+                      </>
+                    )}
+                  </Link>
+                )}
               </div>
             </div>
           ))
         ) : (
-          /* Trạng thái danh sách rỗng */
           <div className="flex min-h-[260px] flex-col items-center justify-center rounded-card border border-dashed border-border bg-surface p-8 text-center shadow-sm">
             <span className="text-4xl">🏸</span>
             <h3 className="mt-3 text-base font-bold text-ink">

@@ -111,12 +111,24 @@ export async function GET(request: Request) {
         ...window,
         where: {
           ...(pending === "true"
-            ? { AND: [{ OR: [{ status: "PENDING_PAYMENT" as const, expiresAt: { gt: new Date() } }, { cancelRequestedAt: { not: null }, cancelApprovedAt: null }] }] }
+            ? {
+              AND: [
+                {
+                  OR: [
+                    { status: "PENDING_PAYMENT" as const, expiresAt: { gt: new Date() } },
+                    { cancelRequestedAt: { not: null }, cancelApprovedAt: null },
+                    { paymentStatus: "REFUND_PENDING" as const },
+                  ],
+                },
+              ],
+            }
             : {}),
           OR: [
             { code: search },
             { customerName: search },
             { customerPhone: search },
+            { transfereeName: search },
+            { transfereePhone: search },
           ],
         },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
@@ -129,6 +141,16 @@ export async function GET(request: Request) {
           paymentStatus: true,
           cancelRequestedAt: true,
           cancelApprovedAt: true,
+          cancelReason: true,
+          cancelExpectedRate: true,
+          cancelExpectedAmount: true,
+          cancelNonRefundable: true,
+          cancelCalculation: true,
+          refundAmountApproved: true,
+          refundCompletedAt: true,
+          transfereeName: true,
+          transfereePhone: true,
+          transferredAt: true,
           paymentMethod: true,
           total: true,
           expiresAt: true,
@@ -160,7 +182,19 @@ export async function GET(request: Request) {
           status: true,
           amount: true,
           paidAt: true,
-          booking: { select: { id: true, code: true, customerName: true, cancelRequestedAt: true, cancelApprovedAt: true } },
+          booking: {
+            select: {
+              id: true,
+              code: true,
+              customerName: true,
+              cancelRequestedAt: true,
+              cancelApprovedAt: true,
+              cancelExpectedRate: true,
+              cancelExpectedAmount: true,
+              cancelCalculation: true,
+              refundAmountApproved: true,
+            },
+          },
         },
       });
     if (tab === "receipts") {

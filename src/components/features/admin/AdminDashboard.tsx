@@ -48,6 +48,11 @@ type Row = {
   paymentStatus?: string;
   cancelRequestedAt?: string | null;
   cancelApprovedAt?: string | null;
+  cancelExpectedRate?: number | null;
+  cancelExpectedAmount?: number | null;
+  refundAmountApproved?: number | null;
+  transfereeName?: string | null;
+  transfereePhone?: string | null;
   customerName?: string;
   customerPhone?: string;
   total?: number;
@@ -625,7 +630,31 @@ export default function AdminDashboard() {
                           }
                         />
                         <Badge value={r.paymentStatus} />
-                        {r.cancelRequestedAt && !r.cancelApprovedAt && <span className="text-sm text-amber-600">Chờ duyệt hủy trong 24 giờ</span>}
+                        {r.cancelRequestedAt && !r.cancelApprovedAt && (
+                          <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded">
+                            Chờ duyệt hủy trong 24 giờ ({r.cancelExpectedRate ?? 0}%)
+                          </span>
+                        )}
+                        {r.cancelApprovedAt && r.refundAmountApproved === 0 && (
+                          <span className="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                            Đã hủy, không được hoàn tiền
+                          </span>
+                        )}
+                        {r.cancelApprovedAt && (r.refundAmountApproved ?? 0) > 0 && r.paymentStatus === "REFUND_PENDING" && (
+                          <span className="text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded">
+                            Đã duyệt, chờ hoàn tiền
+                          </span>
+                        )}
+                        {r.cancelApprovedAt && r.paymentStatus === "REFUNDED" && (
+                          <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded">
+                            Đã hoàn tiền
+                          </span>
+                        )}
+                        {r.transfereeName && (
+                          <span className="text-xs font-semibold text-purple-700 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded">
+                            Nhận sân: {r.transfereeName} ({r.transfereePhone})
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="my-3 text-sm text-muted">

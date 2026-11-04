@@ -4,6 +4,11 @@ import { randomInt } from "node:crypto";
 import { PaymentError } from "../lib/sepay";
 import { serializable } from "../lib/transaction";
 import { formatHour, vietnamDate } from "../lib/booking";
+import {
+  evaluateCancellationPolicy,
+  analyzeCancellationTime,
+  type CancellationPolicyResult,
+} from "../lib/cancellation-policy";
 import { approveCancellationInTransaction, releaseCancelledResources, completeRefund, refundLedger } from "./refund.service";
 import { recordVoucherConsumption } from "./settlement.service";
 
@@ -1549,30 +1554,84 @@ export async function requestBookingCancellation(
     }
 
     if (actor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
-    if (booking.status === "CANCELLED" && booking.cancelRequestedAt && !booking.cancelApprovedAt) return { success: true, status: "CANCELLED", requiresApproval: true };
+
+    // Nếu khách gửi lại yêu cầu khi đơn đang chờ duyệt: giữ nguyên tỷ lệ và thông số đã chốt, không ghi đè
+    if (booking.status === "CANCELLED" && booking.cancelRequestedAt && !booking.cancelApprovedAt) {
+      return {
+        success: true,
+        status: "CANCELLED",
+        requiresApproval: true,
+        expectedRefundRate: booking.cancelExpectedRate ?? 0,
+        expectedRefundAmount: booking.cancelExpectedAmount ?? 0,
+        nonRefundableAmount: booking.cancelNonRefundable ?? 0,
+      };
+    }
+
     if (!["PENDING_PAYMENT", "CONFIRMED"].includes(booking.status)) {
       throw new PaymentError(409, "Đơn đã kết thúc, đang sử dụng hoặc đã bị hủy.");
     }
+
+    // Đơn đã bắt đầu, đang sử dụng hoặc hoàn tất không được hủy bằng luồng khách hàng thông thường
+    const timeInfo = analyzeCancellationTime(booking.items, now);
+    if (isCustomer && timeInfo && timeInfo.isPastOrStarted) {
+      throw new PaymentError(409, "Đơn đã đến hoặc qua giờ chơi. Không thể hủy bằng luồng khách hàng thông thường.");
+    }
+
     const ledger = await refundLedger(tx, booking.id);
     const isPaid = ledger.received > 0 || ["PAID", "PARTIALLY_PAID", "REFUND_PENDING", "REFUNDED"].includes(booking.paymentStatus);
-    if (!isPaid || (isOwnerOrAdmin && !isCustomer)) {
-      const after = await approveCancellationInTransaction(tx, booking, ledger.available, reason, now);
+
+    // Đơn chưa thu tiền: hủy tức thì, giải phóng tài nguyên, không tạo nghĩa vụ hoàn
+    if (!isPaid) {
+      const after = await approveCancellationInTransaction(tx, booking, 0, reason, now);
       await tx.adminAudit.create({ data: {
-        actorId: actor.id, actorName: actor.name, action: isPaid ? "APPROVE_CANCEL" : "CANCEL_UNPAID",
+        actorId: actor.id, actorName: actor.name, action: "CANCEL_UNPAID",
         entityId: booking.id, reason,
-        details: { bookingCode: booking.code, received: ledger.received, additionalRefund: ledger.available, approvedAmount: after.approved },
+        details: { bookingCode: booking.code, received: 0, additionalRefund: 0, approvedAmount: 0 },
+      } });
+      return { success: true, status: "CANCELLED", requiresApproval: false, refundApproved: 0 };
+    }
+
+    // Tính toán chính sách hủy theo thời gian server và tiền thực thu hợp lệ còn được hoàn
+    const policy = evaluateCancellationPolicy(booking.items, ledger.available, now);
+
+    // Nếu là chủ sân hoặc admin thao tác trực tiếp (hủy đơn khẩn cấp từ ban quản trị)
+    if (isOwnerOrAdmin && !isCustomer) {
+      const after = await approveCancellationInTransaction(tx, booking, policy.expectedRefundAmount, reason, now);
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          cancelExpectedRate: policy.refundRate,
+          cancelExpectedAmount: policy.expectedRefundAmount,
+          cancelNonRefundable: policy.nonRefundableAmount,
+          cancelPolicyVersion: policy.policyVersion,
+          cancelCalculation: policy.calculation as Prisma.InputJsonObject,
+          cancelFirstSlotStartsAt: policy.firstSlotStartsAt,
+        },
+      });
+      await tx.adminAudit.create({ data: {
+        actorId: actor.id, actorName: actor.name, action: "APPROVE_CANCEL",
+        entityId: booking.id, reason,
+        details: { bookingCode: booking.code, received: ledger.received, additionalRefund: policy.expectedRefundAmount, approvedAmount: after.approved },
       } });
       return { success: true, status: "CANCELLED", requiresApproval: false, refundApproved: after.approved };
     }
 
-    // Nhả sân ngay; nghĩa vụ hoàn chỉ được ghi nhận khi quản lý duyệt.
+    // Nhả sân ngay; nghĩa vụ hoàn chỉ được ghi nhận khi quản lý duyệt
     await releaseCancelledResources(tx, booking.id, reason, now);
     await tx.booking.update({
       where: { id: booking.id },
       data: {
-        status: "CANCELLED", cancelledAt: now, expiresAt: null,
+        status: "CANCELLED",
+        cancelledAt: now,
+        expiresAt: null,
         cancelRequestedAt: now,
         cancelReason: reason,
+        cancelExpectedRate: policy.refundRate,
+        cancelExpectedAmount: policy.expectedRefundAmount,
+        cancelNonRefundable: policy.nonRefundableAmount,
+        cancelPolicyVersion: policy.policyVersion,
+        cancelCalculation: policy.calculation as Prisma.InputJsonObject,
+        cancelFirstSlotStartsAt: policy.firstSlotStartsAt,
       },
     });
 
@@ -1586,6 +1645,9 @@ export async function requestBookingCancellation(
         details: {
           bookingCode: booking.code,
           requesterRole: isCustomer ? "CUSTOMER" : "STAFF",
+          refundRate: policy.refundRate,
+          expectedRefundAmount: policy.expectedRefundAmount,
+          nonRefundableAmount: policy.nonRefundableAmount,
         },
       },
     });
@@ -1594,11 +1656,19 @@ export async function requestBookingCancellation(
       tx,
       booking.venueId,
       `Yêu cầu hủy đơn · ${booking.code}`,
-      `${isCustomer ? "Khách hàng" : "Nhân viên"} đã gửi yêu cầu hủy đơn đã thanh toán ${booking.code}. Lý do: ${reason}`,
+      `${isCustomer ? "Khách hàng" : "Nhân viên"} đã gửi yêu cầu hủy đơn đã thanh toán ${booking.code}. Tỷ lệ hoàn: ${policy.refundRate}%. Lý do: ${reason}`,
       { tag: "CANCEL_REQUEST", bookingId: booking.id, bookingCode: booking.code }
     );
 
-    return { success: true, status: "CANCELLED", requiresApproval: true };
+    return {
+      success: true,
+      status: "CANCELLED",
+      requiresApproval: true,
+      expectedRefundRate: policy.refundRate,
+      expectedRefundAmount: policy.expectedRefundAmount,
+      nonRefundableAmount: policy.nonRefundableAmount,
+      calculation: policy.calculation,
+    };
   });
 }
 
@@ -1606,8 +1676,10 @@ export async function approveBookingCancellation(
   db: PrismaClient,
   actor: { id: string; role: string; status: string; name: string },
   bookingId: string,
-  refundAmount: number,
-  reason: string,
+  refundAmount?: number,
+  reason = "Duyệt hủy đơn theo chính sách",
+  override = false,
+  overrideReason?: string,
   now = new Date()
 ) {
   return serializable(db, async (tx) => {
@@ -1618,6 +1690,7 @@ export async function approveBookingCancellation(
       where: { id: bookingId },
       include: {
         venue: true,
+        items: true,
         payments: { where: { status: "PAID" } },
       },
     });
@@ -1629,24 +1702,63 @@ export async function approveBookingCancellation(
     }
 
     if (actor.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
-    const ledger = await approveCancellationInTransaction(tx, booking, refundAmount, reason, now);
+    if (booking.cancelApprovedAt) {
+      throw new PaymentError(409, "Đơn đã được duyệt hủy trước đó. Không được duyệt lặp lại.");
+    }
+
+    const ledger = await refundLedger(tx, booking.id);
+
+    // Xác định số tiền duyệt hoàn:
+    // Admin duyệt muộn không được làm thay đổi tỷ lệ đã xác định lúc khách gửi yêu cầu.
+    let finalAmount = booking.cancelExpectedAmount ?? refundAmount ?? 0;
+
+    if (override) {
+      // Chỉ ADMIN mới có quyền duyệt ngoại lệ khác chính sách
+      if (actor.role !== "ADMIN") {
+        throw new PaymentError(403, "Chỉ Quản trị viên hệ thống (ADMIN) mới có quyền duyệt ngoại lệ khác chính sách.");
+      }
+      if (!overrideReason || overrideReason.trim().length < 5) {
+        throw new PaymentError(400, "Khi duyệt ngoại lệ, bắt buộc cung cấp lý do ngoại lệ ít nhất 5 ký tự.");
+      }
+      if (typeof refundAmount !== "number" || refundAmount < 0) {
+        throw new PaymentError(400, "Số tiền duyệt ngoại lệ không hợp lệ.");
+      }
+      finalAmount = refundAmount;
+    } else if (typeof refundAmount === "number" && typeof booking.cancelExpectedAmount === "number") {
+      // Nếu không bật cờ override mà nhập số tiền khác mức chính sách quy định -> chặn lại
+      if (refundAmount !== booking.cancelExpectedAmount) {
+        throw new PaymentError(
+          400,
+          `Số tiền duyệt phải đúng mức chính sách đã xác định (${booking.cancelExpectedAmount.toLocaleString("vi-VN")} đ). Để duyệt số khác, cần quyền Quản trị viên và lý do ngoại lệ.`
+        );
+      }
+    }
+
+    if (finalAmount > ledger.available) {
+      throw new PaymentError(409, `Số tiền duyệt hoàn (${finalAmount.toLocaleString("vi-VN")} đ) vượt quá số tiền thực thu còn lại (${ledger.available.toLocaleString("vi-VN")} đ).`);
+    }
+
+    const updatedLedger = await approveCancellationInTransaction(tx, booking, finalAmount, reason, now);
 
     await tx.adminAudit.create({
       data: {
         actorId: actor.id,
         actorName: actor.name,
-        action: "APPROVE_CANCEL",
+        action: override ? "APPROVE_CANCEL_OVERRIDE" : "APPROVE_CANCEL",
         entityId: booking.id,
-        reason,
+        reason: override ? `[NGOẠI LỆ] ${overrideReason} | ${reason}` : reason,
         details: {
           bookingCode: booking.code,
-          refundAmountApproved: refundAmount,
+          refundAmountApproved: finalAmount,
           approvedBy: actor.name,
+          isOverride: override,
+          policyRate: booking.cancelExpectedRate,
+          expectedAmount: booking.cancelExpectedAmount,
         },
       },
     });
 
-    return { success: true, refundAmountApproved: ledger.approved };
+    return { success: true, refundAmountApproved: updatedLedger.approved };
   });
 }
 

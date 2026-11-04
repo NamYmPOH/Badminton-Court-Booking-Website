@@ -275,6 +275,7 @@ model Venue {
   maxBookingMin     Int         @default(240)
   advanceDays       Int         @default(30)
   cancelBeforeHours Int         @default(4)
+  forceMajeurePolicy Json?       // Cấu hình tỷ lệ hoàn sự cố theo từng loại sự cố (ví dụ { "HEAVY_RAIN": 100, "POWER_OUTAGE": 100 })
   paymentMode       PaymentMode @default(ONLINE_FULL)
   status            VenueStatus @default(PENDING)
   priceFrom         Int         @default(0) // denormalized: giá vãng lai thấp nhất / giờ
@@ -410,6 +411,16 @@ model Booking {
   refundAmountApproved    Int?
   refundCompletedAt       DateTime?
   refundCompletedById     String?
+  cancelExpectedRate      Int?          // Tỷ lệ hoàn dự kiến: 100, 50, 0
+  cancelExpectedAmount    Int?          // Số tiền dự kiến hoàn
+  cancelNonRefundable     Int?          // Số tiền không được hoàn
+  cancelPolicyVersion     String?       // Phiên bản chính sách, vd: "2026-v1"
+  cancelCalculation       Json?         // Snapshot phép tính giải trình
+  cancelFirstSlotStartsAt DateTime?     // Giờ bắt đầu chơi đầu tiên của đơn lúc gửi yêu cầu
+  transfereeName          String?       // Tên người nhận chuyển nhượng
+  transfereePhone         String?       // Số điện thoại người nhận chuyển nhượng
+  transfereeNote          String?       // Ghi chú khi nhận sân chuyển nhượng
+  transferredAt           DateTime?     // Thời điểm chuyển nhượng gần nhất
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -423,6 +434,9 @@ model Booking {
   priceLines  BookingPriceLine[]
   offerUsages OfferUsage[]
   voucherUsages VoucherUsage[]
+  rescheduleHistory BookingRescheduleHistory[]
+  transferHistory   BookingTransferHistory[]
+  incidentRequests  BookingIncidentRequest[]
 
   @@index([userId, createdAt])
   @@index([venueId, status])
@@ -869,4 +883,64 @@ model CoachSettlement {
   @@index([coachId, status])
   @@index([periodStart, periodEnd])
 }
+
+// ───────────── Lịch sử Đổi lịch & Chuyển nhượng & Sự cố ─────────────
+model BookingRescheduleHistory {
+  id               String   @id @default(cuid())
+  bookingId        String
+  actorId          String
+  actorName        String
+  oldItemsSnapshot Json
+  newItemsSnapshot Json
+  oldTotal         Int
+  newTotal         Int
+  priceDifference  Int      // newTotal - oldTotal
+  reason           String?
+  createdAt        DateTime @default(now())
+
+  booking          Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+}
+
+model BookingTransferHistory {
+  id            String   @id @default(cuid())
+  bookingId     String
+  senderId      String
+  senderName    String
+  receiverName  String
+  receiverPhone String
+  note          String?
+  transferredAt DateTime @default(now())
+
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, transferredAt])
+}
+
+model BookingIncidentRequest {
+  id              String    @id @default(cuid())
+  bookingId       String
+  venueId         String
+  requestedById   String
+  requestedByName String
+  incidentType    String    // HEAVY_RAIN | POWER_OUTAGE | COURT_MAINTENANCE | SYSTEM_ERROR | OTHER
+  requestType     String    // REFUND | RESCHEDULE
+  description     String
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED | MANUAL_REVIEW
+  resolution      String?   // REFUND | RESCHEDULE
+  refundRate      Int?
+  refundAmount    Int?
+  confirmedById   String?
+  confirmedByName String?
+  confirmedAt     DateTime?
+  adminNote       String?
+  createdAt       DateTime  @default(now())
+
+  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([venueId, status])
+}
+
 

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, filename);
 const actors = {
+  admin: { id: 'admin-1', name: 'Quản trị viên', role: 'ADMIN', status: 'ACTIVE' },
   owner: { id: 'owner', name: 'Chủ sân', role: 'OWNER', status: 'ACTIVE' },
   staff: { id: 'staff', name: 'Nhân viên', role: 'STAFF', status: 'ACTIVE' },
   customer: { id: 'customer', name: 'Khách', role: 'CUSTOMER', status: 'ACTIVE' },
@@ -22,11 +23,16 @@ function fixture({ total = 400000, fee = 200000, amounts = [400000], shares = nu
     shares: shares ? shares.map((s, i) => ({ id: `s${i}`, position: i + 1, cashRequested: false, currentIntentId: 'intent', ...s })) : [],
     intents: [{ id: 'intent', groupId: 'g', status: 'OPEN' }],
     offers: [{ id: 'offer', bookingId: 'b', state: 'RESERVED', expiresAt: new Date() }],
+    rescheduleHistories: [],
+    transferHistories: [],
+    incidentRequests: [],
+    courtBlocks: [],
   };
   const matches = (row, where = {}) => Object.entries(where).every(([key, value]) => {
     if (['bookingItem', 'group', 'payment', 'venue', 'OR'].includes(key)) return true;
     if (value && typeof value === 'object') {
       if ('in' in value) return value.in.includes(row[key]);
+      if ('notIn' in value) return !value.notIn.includes(row[key]);
       if ('not' in value) return row[key] !== value.not;
       return true;
     }
@@ -63,6 +69,16 @@ function fixture({ total = 400000, fee = 200000, amounts = [400000], shares = nu
       groupRefund: model(s.refunds, { completedAmount: 0, status: 'PENDING', completedAt: null }),
       refundDisbursement: model(s.disbursements),
       notification: model(s.notifications),
+      bookingRescheduleHistory: model(s.rescheduleHistories),
+      bookingTransferHistory: model(s.transferHistories),
+      bookingIncidentRequest: {
+        ...model(s.incidentRequests),
+        findUnique: async ({ where }) => {
+          const row = s.incidentRequests.find((r) => matches(r, where));
+          return row ? structuredClone({ ...row, booking: booking() }) : null;
+        },
+      },
+      courtBlock: model(s.courtBlocks),
       adminAudit: { ...model(s.audits), create: async ({ data }) => { if (failAudit) throw new Error('audit unavailable'); s.audits.push(data); return data; } },
     };
     return tx;

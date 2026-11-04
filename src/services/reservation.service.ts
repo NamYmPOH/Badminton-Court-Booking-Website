@@ -30,6 +30,18 @@ export const bookingDetails = {
     },
   },
   priceLines: true,
+  rescheduleHistory: {
+    orderBy: { createdAt: "desc" },
+    select: { id: true, actorName: true, priceDifference: true, reason: true, createdAt: true },
+  },
+  transferHistory: {
+    orderBy: { transferredAt: "desc" },
+    select: { id: true, senderName: true, receiverName: true, receiverPhone: true, note: true, transferredAt: true },
+  },
+  incidentRequests: {
+    orderBy: { createdAt: "desc" },
+    select: { id: true, incidentType: true, requestType: true, description: true, status: true, refundRate: true, refundAmount: true, adminNote: true, confirmedAt: true, createdAt: true },
+  },
 } satisfies Prisma.BookingInclude;
 
 type StoredBooking = Prisma.BookingGetPayload<{ include: typeof bookingDetails }>;
@@ -71,6 +83,19 @@ export function publicBooking(booking: StoredBooking, config?: SepayConfig) {
     cancelRequestedAt: booking.cancelRequestedAt?.toISOString() || null,
     cancelApprovedAt: booking.cancelApprovedAt?.toISOString() || null,
     cancelReviewDueAt: booking.cancelRequestedAt ? new Date(booking.cancelRequestedAt.getTime() + 86400000).toISOString() : null,
+    cancelReason: booking.cancelReason || null,
+    cancelExpectedRate: booking.cancelExpectedRate ?? null,
+    cancelExpectedAmount: booking.cancelExpectedAmount ?? null,
+    cancelNonRefundable: booking.cancelNonRefundable ?? null,
+    cancelPolicyVersion: booking.cancelPolicyVersion || null,
+    cancelCalculation: (booking.cancelCalculation as Record<string, unknown>) || null,
+    cancelFirstSlotStartsAt: booking.cancelFirstSlotStartsAt?.toISOString() || null,
+    refundAmountApproved: booking.refundAmountApproved ?? null,
+    refundCompletedAt: booking.refundCompletedAt?.toISOString() || null,
+    transfereeName: booking.transfereeName || null,
+    transfereePhone: booking.transfereePhone || null,
+    transfereeNote: booking.transfereeNote || null,
+    transferredAt: booking.transferredAt?.toISOString() || null,
     paymentStatus: booking.paymentStatus,
     paymentMethod: booking.paymentMethod === "CASH" ? "AT_VENUE" : "BANK_TRANSFER",
     canChoosePayment: payable,
@@ -119,6 +144,19 @@ export function publicBooking(booking: StoredBooking, config?: SepayConfig) {
       ? `SEVQR ${booking.code}`
       : booking.code,
     bank: payable && config ? { name: config.SEPAY_BANK_GATEWAY, accountNo: config.BANK_ACCOUNT_NO, accountName: config.BANK_ACCOUNT_NAME } : null,
+    rescheduleHistory: (booking.rescheduleHistory || []).map((r) => ({
+      ...r,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    })),
+    transferHistory: (booking.transferHistory || []).map((t) => ({
+      ...t,
+      transferredAt: t.transferredAt instanceof Date ? t.transferredAt.toISOString() : String(t.transferredAt),
+    })),
+    incidentRequests: (booking.incidentRequests || []).map((i) => ({
+      ...i,
+      confirmedAt: i.confirmedAt instanceof Date ? i.confirmedAt.toISOString() : i.confirmedAt ? String(i.confirmedAt) : null,
+      createdAt: i.createdAt instanceof Date ? i.createdAt.toISOString() : String(i.createdAt),
+    })),
   };
 }
 
