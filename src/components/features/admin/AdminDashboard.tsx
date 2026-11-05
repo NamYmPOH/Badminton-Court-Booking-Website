@@ -306,7 +306,9 @@ export default function AdminDashboard() {
             key={key}
             onClick={() => choose(key)}
             aria-current={tab === key ? "page" : undefined}
-            className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-3 text-sm font-medium ${tab === key ? "bg-court-600 text-white" : "text-muted hover:bg-court-500/10"}`}
+            className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-3 text-sm font-medium transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] motion-reduce:active:scale-100 ${
+              tab === key ? "bg-court-600 text-white shadow-xs" : "text-muted hover:bg-court-500/10"
+            }`}
           >
             <Icon size={17} />
             {label}

@@ -33,7 +33,7 @@ export function VenueSearchSuggestions({
   return (
     <div
       role="listbox"
-      className={`absolute left-0 top-full z-50 mt-2 w-full min-w-[320px] sm:min-w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-border bg-white text-ink shadow-2xl dark:border-border/80 dark:bg-surface animate-in fade-in slide-in-from-top-2 duration-150 ${className}`}
+      className={`absolute left-0 top-full z-50 mt-2 w-full min-w-[320px] sm:min-w-[420px] max-w-[92vw] origin-top overflow-hidden rounded-2xl border border-border bg-white text-ink shadow-2xl dark:border-border/80 dark:bg-surface animate-in fade-in slide-in-from-top-2 zoom-in-98 duration-150 ease-out ${className}`}
     >
       <div className="max-h-[380px] overflow-y-auto overscroll-contain p-2">
         {isLoading ? (
@@ -72,7 +72,7 @@ export function VenueSearchSuggestions({
                     key={item.id}
                     type="button"
                     onClick={() => onSelect(item)}
-                    className={`flex w-full items-center gap-3 rounded-control p-2.5 text-left transition ${
+                    className={`flex w-full items-center gap-3 rounded-control p-2.5 text-left transition-[background-color,box-shadow] duration-100 ease-out ${
                       isSelected
                         ? "bg-court-50 dark:bg-court-950/60 ring-1 ring-court-500/40"
                         : "hover:bg-court-50/70 dark:hover:bg-surface/80"
@@ -130,7 +130,7 @@ export function VenueSearchSuggestions({
                         {!isDistrict && item.ratingAvg > 0 && (
                           <span className="flex shrink-0 items-center gap-0.5 font-medium text-amber-500">
                             <Star size={11} className="fill-current text-amber-500" />
-                            <span>{item.ratingAvg.toFixed(1)}</span>
+                            <span>{item.ratingAvg.toFixed(1)}{item.demoRatingCount ? ` · gồm ${item.demoRatingCount} mẫu` : ""}</span>
                           </span>
                         )}
                       </div>
@@ -144,7 +144,7 @@ export function VenueSearchSuggestions({
             <button
               type="button"
               onClick={onViewAll}
-              className="mt-2 flex w-full items-center justify-between rounded-control border-t border-border bg-court-50/50 px-3 py-2 text-xs font-semibold text-court-700 transition hover:bg-court-100/70 dark:bg-court-950/40 dark:text-court-300 dark:hover:bg-court-900/60"
+              className="mt-2 flex w-full items-center justify-between rounded-control border-t border-border bg-court-50/50 px-3 py-2 text-xs font-semibold text-court-700 transition-colors duration-150 ease-out hover:bg-court-100/70 dark:bg-court-950/40 dark:text-court-300 dark:hover:bg-court-900/60 active:scale-[0.99]"
             >
               <span>
                 Xem tất cả kết quả cho <strong>&ldquo;{keyword}&rdquo;</strong>

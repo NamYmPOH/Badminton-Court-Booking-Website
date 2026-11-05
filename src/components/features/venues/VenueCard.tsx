@@ -3,7 +3,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
-  Star,
   MapPin,
   Clock,
   Heart,
@@ -17,6 +16,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { StarRating } from "@/components/ui/StarRating";
 import type { Venue } from "@/types/venue";
 import { formatVND } from "@/lib/utils";
 import { useState } from "react";
@@ -80,7 +80,7 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
 
   return (
     <div
-      className={`group flex flex-col overflow-hidden rounded-card border border-border bg-surface shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-court-300 hover:shadow-md dark:hover:border-court-700 ${className}`}
+      className={`group flex flex-col overflow-hidden rounded-card border border-border bg-surface shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-court-300 hover:shadow-md dark:hover:border-court-700 motion-reduce:hover:translate-y-0 ${className}`}
     >
       {/* Vùng ảnh 16:9 với fallback đồ họa vector đạt chuẩn BWF */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-court-100 dark:bg-court-950">
@@ -90,7 +90,7 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
             alt={venue.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            className="object-cover transition-transform duration-300 ease-out group-hover:scale-105 motion-reduce:group-hover:scale-100"
             loading="lazy"
             onError={() => {
               if (imgSrc !== "/images/courts/court-1.svg") {
@@ -126,7 +126,7 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
         <button
           type="button"
           onClick={handleToggleFavorite}
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur transition hover:scale-110 active:scale-95 dark:bg-surface/85"
+          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur transition-[transform,background-color] duration-150 ease-out hover:scale-110 active:scale-95 dark:bg-surface/85 motion-reduce:hover:scale-100 motion-reduce:active:scale-100"
           aria-label={fav ? `Bỏ lưu ${venue.name}` : `Lưu ${venue.name} vào danh sách yêu thích`}
           aria-pressed={fav}
           title={fav ? "Bỏ yêu thích" : "Lưu vào yêu thích"}
@@ -135,7 +135,7 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
             size={17}
             className={
               fav
-                ? "fill-rose-500 text-rose-500 transition-colors"
+                ? "fill-rose-500 text-rose-500 transition-transform duration-200 animate-pop-subtle"
                 : "text-muted transition-colors hover:text-rose-500"
             }
           />
@@ -154,17 +154,10 @@ export function VenueCard({ venue, className = "" }: VenueCardProps) {
       <div className="flex flex-1 flex-col p-4">
         {/* Hàng 1: Đánh giá & Vị trí / Khoảng cách */}
         <div className="flex items-center justify-between text-xs text-muted">
-          {venue.ratingCount > 0 ? (
-            <div className="flex items-center gap-1 font-semibold text-amber-500">
-              <Star size={14} className="fill-amber-400 text-amber-400" />
-              <span>{venue.ratingAvg.toFixed(1)}</span>
-              <span className="font-normal text-muted">({venue.ratingCount})</span>
-            </div>
-          ) : (
-            <span className="inline-flex items-center rounded bg-amber-500/10 px-1.5 py-0.5 font-medium text-amber-600 dark:text-amber-400">
-              Sân mới
-            </span>
-          )}
+          <div className="text-xs">
+            <StarRating rating={venue.ratingCount > 0 ? venue.ratingAvg : 0} count={venue.ratingCount} demoCount={venue.demoRatingCount} />
+            {venue.ratingCount === 0 && <span className="ml-1 text-muted">Chưa có đánh giá</span>}
+          </div>
 
           {/* Khoảng cách nếu có hoặc Quận nếu không có tọa độ GPS */}
           {venue.distanceKm !== undefined ? (

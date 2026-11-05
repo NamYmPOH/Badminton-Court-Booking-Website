@@ -35,9 +35,93 @@ body {
   *,
   *::before,
   *::after {
-    transition: none !important;
-    animation: none !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+}
+
+/* ─────────────── Motion Primitives & Keyframes ─────────────── */
+@keyframes enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0) scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes exit {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  to {
+    opacity: var(--tw-exit-opacity, 1);
+    transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0) scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1));
+  }
+}
+
+.animate-in {
+  animation-name: enter;
+  animation-duration: 150ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+
+.animate-out {
+  animation-name: exit;
+  animation-duration: 120ms;
+  animation-timing-function: ease-in;
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  --tw-enter-opacity: 0;
+}
+
+.fade-out {
+  --tw-exit-opacity: 0;
+}
+
+.zoom-in-95 {
+  --tw-enter-scale: 0.95;
+}
+
+.zoom-in-98 {
+  --tw-enter-scale: 0.98;
+}
+
+.zoom-out-95 {
+  --tw-exit-scale: 0.95;
+}
+
+.slide-in-from-top-2 {
+  --tw-enter-translate-y: -0.5rem;
+}
+
+.slide-in-from-bottom-2 {
+  --tw-enter-translate-y: 0.5rem;
+}
+
+/* Radix UI Dialog Animations: bảo toàn căn giữa -translate-x-1/2 -translate-y-1/2 */
+[role="dialog"][data-state="open"].fixed.left-1\/2 {
+  animation: dialogContentShow 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+[role="dialog"][data-state="closed"].fixed.left-1\/2 {
+  animation: dialogContentHide 150ms ease-in forwards;
+}
+
+.fixed.inset-0[data-state="open"]:not([role="dialog"]) {
+  animation: dialogOverlayShow 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fixed.inset-0[data-state="closed"]:not([role="dialog"]) {
+  animation: dialogOverlayHide 150ms ease-in forwards;
 }
 
 /* ─────────────── Focus ring ─────────────── */

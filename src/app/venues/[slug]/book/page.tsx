@@ -712,7 +712,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                                 ? `${court.name}: ${ts.label} - Đang chọn (${formatVND(price)})`
                                 : `${court.name}: ${ts.label} - Trống (${formatVND(price)}/30ph)`
                             }
-                            className={`h-11 w-full rounded-slot border text-xs font-medium transition flex items-center justify-center active:scale-95 ${
+                            className={`h-11 w-full rounded-slot border text-xs font-medium transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out flex items-center justify-center active:scale-95 motion-reduce:active:scale-100 ${
                               isSelected
                                 ? "border-court-600 bg-court-600 font-bold text-white shadow-sm ring-2 ring-court-600/30"
                                 : isHeld
@@ -730,7 +730,7 @@ export default function CourtBookingGridPage({ params }: BookPageProps) {
                               <div className="flex flex-col items-center justify-center leading-none">
                                 <div className="flex items-center gap-0.5">
                                   <Clock size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-200">
+                                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-200 tabular-nums">
                                     {remSec > 0
                                       ? `${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, "0")}`
                                       : "0:00"}

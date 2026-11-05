@@ -23,6 +23,7 @@ import { CancelBookingNoticeModal } from "@/components/features/booking/CancelBo
 import { RescheduleModal } from "@/components/features/booking/RescheduleModal";
 import { TransferModal } from "@/components/features/booking/TransferModal";
 import { IncidentModal } from "@/components/features/booking/IncidentModal";
+import { StarRating } from "@/components/ui/StarRating";
 import { useAuth } from "@/context/AuthContext";
 
 function BookingsContent() {
@@ -271,33 +272,30 @@ function BookingsContent() {
       <div className="mt-6 flex border-b border-border">
         <Link
           href="/bookings?tab=upcoming"
-          className={`flex-1 border-b-2 py-3 text-center text-xs sm:text-sm font-semibold transition ${
-            currentTab === "upcoming"
+          className={`flex-1 border-b-2 py-3 text-center text-xs sm:text-sm font-semibold transition-[color,border-color] duration-150 ease-out ${currentTab === "upcoming"
               ? "border-court-600 text-court-600"
               : "border-transparent text-muted hover:text-ink"
-          }`}
+            }`}
         >
           Sắp tới
         </Link>
 
         <Link
           href="/bookings?tab=past"
-          className={`flex-1 border-b-2 py-3 text-center text-xs sm:text-sm font-semibold transition ${
-            currentTab === "past"
+          className={`flex-1 border-b-2 py-3 text-center text-xs sm:text-sm font-semibold transition-[color,border-color] duration-150 ease-out ${currentTab === "past"
               ? "border-court-600 text-court-600"
               : "border-transparent text-muted hover:text-ink"
-          }`}
+            }`}
         >
           Đã chơi
         </Link>
 
         <Link
           href="/bookings?tab=cancelled"
-          className={`flex-1 border-b-2 py-3 text-center text-xs sm:text-sm font-semibold transition ${
-            currentTab === "cancelled"
+          className={`flex-1 border-b-2 py-3 text-center text-xs sm:text-sm font-semibold transition-[color,border-color] duration-150 ease-out ${currentTab === "cancelled"
               ? "border-court-600 text-court-600"
               : "border-transparent text-muted hover:text-ink"
-          }`}
+            }`}
         >
           Đã huỷ / Hết hạn
         </Link>
@@ -318,7 +316,7 @@ function BookingsContent() {
             </p>
             <Link
               href="/login?callbackUrl=/bookings"
-              className="mt-4 rounded-control bg-court-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-court-700 active:scale-95"
+              className="mt-4 rounded-control bg-court-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition-[background-color,transform] duration-150 ease-out hover:bg-court-700 active:scale-95 motion-reduce:active:scale-100"
             >
               Đăng nhập ngay
             </Link>
@@ -332,7 +330,7 @@ function BookingsContent() {
           bookings.map((booking) => (
             <div
               key={booking.id}
-              className="rounded-card border border-border bg-surface p-5 shadow-sm transition hover:border-court-300 dark:hover:border-court-700"
+              className="rounded-card border border-border bg-surface p-5 shadow-sm transition-[border-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-court-300 hover:shadow-md dark:hover:border-court-700 motion-reduce:hover:translate-y-0"
             >
               {/* Header thẻ: Mã đơn, Trạng thái lịch & Trạng thái tiền */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3">
@@ -462,19 +460,21 @@ function BookingsContent() {
                     </>
                   )}
 
+                {booking.canReview && <Link href={`/venues/${booking.venueSlug}/reviews?booking=${encodeURIComponent(booking.code)}`} className="rounded-control bg-amber-400 px-3.5 py-1.5 font-semibold text-court-950 hover:bg-amber-300">Đánh giá sân</Link>}
+                {booking.review && <span className="inline-flex flex-wrap items-center gap-2 text-xs text-muted">Đã đánh giá <StarRating rating={booking.review.rating} /></span>}
                 {/* Nút đặt lại khi đơn đã hoàn thành hoặc hết hạn/đã hủy */}
                 {(booking.status === "COMPLETED" ||
                   booking.status === "CANCELLED" ||
                   booking.status === "EXPIRED" ||
                   booking.status === "NO_SHOW") && (
-                  <Link
-                    href={`/venues/${booking.venueSlug}`}
-                    className="inline-flex items-center gap-1 rounded-control border border-border px-3.5 py-1.5 font-semibold text-ink transition hover:bg-court-50 active:scale-95"
-                  >
-                    <RotateCcw size={12} />
-                    <span>Đặt lại sân này</span>
-                  </Link>
-                )}
+                    <Link
+                      href={`/venues/${booking.venueSlug}`}
+                      className="inline-flex items-center gap-1 rounded-control border border-border px-3.5 py-1.5 font-semibold text-ink transition hover:bg-court-50 active:scale-95"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Đặt lại sân này</span>
+                    </Link>
+                  )}
 
                 {/* Nút xem đơn hoặc tiếp tục thanh toán (chỉ khi đơn chưa hủy) */}
                 {booking.status !== "CANCELLED" && booking.status !== "EXPIRED" && (
@@ -484,11 +484,10 @@ function BookingsContent() {
                         ? `/groups/${booking.groupToken}`
                         : `/payment/result?booking=${encodeURIComponent(booking.code)}`
                     }
-                    className={`inline-flex items-center gap-1.5 rounded-control px-4 py-1.5 font-semibold text-white shadow-sm transition active:scale-95 ${
-                      booking.status === "PENDING_PAYMENT"
+                    className={`inline-flex items-center gap-1.5 rounded-control px-4 py-1.5 font-semibold text-white shadow-sm transition active:scale-95 ${booking.status === "PENDING_PAYMENT"
                         ? "bg-racket-500 text-court-950 hover:bg-racket-600"
                         : "bg-court-600 hover:bg-court-700"
-                    }`}
+                      }`}
                   >
                     {booking.status === "PENDING_PAYMENT" ? (
                       <>
@@ -518,8 +517,8 @@ function BookingsContent() {
               {currentTab === "upcoming"
                 ? "Chưa có lịch sắp tới nào"
                 : currentTab === "past"
-                ? "Chưa có lịch thi đấu nào đã hoàn thành"
-                : "Không có đơn nào bị huỷ hoặc hết hạn"}
+                  ? "Chưa có lịch thi đấu nào đã hoàn thành"
+                  : "Không có đơn nào bị huỷ hoặc hết hạn"}
             </h3>
             <p className="mt-1 max-w-sm text-xs text-muted leading-relaxed">
               {currentTab === "upcoming"

@@ -234,7 +234,7 @@ export function VenueSearchFilter({ totalResults }: VenueSearchFilterProps) {
       <div className="relative" ref={searchContainerRef}>
         <form
           onSubmit={handleSearchSubmit}
-          className="flex items-center gap-2 rounded-full border border-border bg-surface p-1.5 shadow-sm transition-all hover:border-court-400 hover:shadow-md focus-within:border-court-500 focus-within:ring-4 focus-within:ring-court-500/15"
+          className="flex items-center gap-2 rounded-full border border-border bg-surface p-1.5 shadow-sm transition-[border-color,box-shadow] duration-150 ease-out hover:border-court-400 hover:shadow-md focus-within:border-court-500 focus-within:ring-4 focus-within:ring-court-500/15"
         >
           <div className="flex flex-1 items-center gap-2 px-3.5">
             <Search size={18} className="shrink-0 text-muted" />

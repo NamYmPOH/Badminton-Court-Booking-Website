@@ -4,9 +4,11 @@ import { type BookingRequest, priceBooking } from "../lib/booking-request";
 import { buildVietQrPayload, createVietQrUrl, PaymentError, type SepayConfig } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { canPayBooking } from "../lib/booking-payment";
+import { hasFinishedPlaying } from "../lib/review-policy";
 import { HOLD_TTL_SECONDS } from "../lib/config/constants";
 
 export const bookingDetails = {
+  review: { select: { id: true, rating: true, comment: true } },
   venue: true,
   group: { select: { inviteToken: true } },
   items: {
@@ -75,6 +77,8 @@ export function publicBooking(booking: StoredBooking, config?: SepayConfig) {
   return {
     id: booking.id,
     code: booking.code,
+    review: booking.review || null,
+    canReview: !booking.review && hasFinishedPlaying(booking),
     venueId: booking.venueId,
     venueName: booking.venue?.name || "",
     venueAddress: booking.venue?.address || "",

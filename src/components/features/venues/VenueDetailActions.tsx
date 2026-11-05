@@ -49,7 +49,7 @@ export function VenueDetailActions({ venueId, venueName }: VenueDetailActionsPro
         <button
           type="button"
           onClick={handleShare}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-border bg-surface text-muted transition hover:border-court-400 hover:bg-court-50 hover:text-court-700 active:scale-95 dark:hover:bg-surface/80"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-border bg-surface text-muted transition-[border-color,background-color,color,transform] duration-150 ease-out hover:border-court-400 hover:bg-court-50 hover:text-court-700 active:scale-95 dark:hover:bg-surface/80 motion-reduce:active:scale-100"
           aria-label={`Chia sẻ cơ sở ${venueName}`}
           title="Sao chép liên kết cơ sở"
         >
@@ -61,7 +61,7 @@ export function VenueDetailActions({ venueId, venueName }: VenueDetailActionsPro
         </button>
 
         {isCopied && (
-          <span className="absolute -bottom-8 right-0 z-20 whitespace-nowrap rounded bg-ink px-2 py-0.5 text-[11px] font-medium text-white shadow-md animate-in fade-in zoom-in-95">
+          <span className="absolute -bottom-8 right-0 z-20 whitespace-nowrap rounded bg-ink px-2 py-0.5 text-[11px] font-medium text-white shadow-md animate-in fade-in zoom-in-95 duration-150 ease-out">
             Đã sao chép liên kết!
           </span>
         )}
@@ -71,7 +71,7 @@ export function VenueDetailActions({ venueId, venueName }: VenueDetailActionsPro
       <button
         type="button"
         onClick={handleToggleFavorite}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-border bg-surface text-muted transition hover:border-court-400 hover:bg-court-50 active:scale-95 dark:hover:bg-surface/80"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-border bg-surface text-muted transition-[border-color,background-color,transform] duration-150 ease-out hover:border-court-400 hover:bg-court-50 active:scale-95 dark:hover:bg-surface/80 motion-reduce:active:scale-100"
         aria-label={fav ? `Bỏ lưu ${venueName}` : `Lưu ${venueName} vào yêu thích`}
         aria-pressed={fav}
         title={fav ? "Bỏ yêu thích" : "Lưu vào yêu thích"}
@@ -80,7 +80,7 @@ export function VenueDetailActions({ venueId, venueName }: VenueDetailActionsPro
           size={16}
           className={
             fav
-              ? "fill-rose-500 text-rose-500 transition-colors"
+              ? "fill-rose-500 text-rose-500 transition-transform duration-200 animate-pop-subtle"
               : "text-muted transition-colors hover:text-rose-500"
           }
         />

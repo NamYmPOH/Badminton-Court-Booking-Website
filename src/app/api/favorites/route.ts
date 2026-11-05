@@ -1,3 +1,4 @@
+import { summarizeVenueReviews } from "@/lib/review-summary";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -62,8 +63,9 @@ export async function GET(request: Request) {
       openMin: f.venue.openMin,
       closeMin: f.venue.closeMin,
       priceFrom: f.venue.priceFrom,
-      ratingAvg: f.venue.ratingAvg,
-      ratingCount: f.venue.ratingCount,
+      ratingAvg: summarizeVenueReviews(f.venue.id, f.venue.ratingAvg * f.venue.ratingCount, f.venue.ratingCount).average,
+      ratingCount: f.venue.ratingCount + summarizeVenueReviews(f.venue.id, 0, 0).demoCount,
+      demoRatingCount: summarizeVenueReviews(f.venue.id, 0, 0).demoCount,
       images: f.venue.images && f.venue.images.length ? f.venue.images : ["/images/courts/court-1.svg"],
       amenities: f.venue.amenities,
       cancelBeforeHours: f.venue.cancelBeforeHours,

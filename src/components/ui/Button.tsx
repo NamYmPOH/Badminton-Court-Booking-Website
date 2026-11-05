@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
   // Base styles
-  "inline-flex items-center justify-center gap-2 font-semibold transition-colors duration-120 rounded-control disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-court-400 focus-visible:ring-offset-2",
+  "inline-flex items-center justify-center gap-2 font-semibold transition-[color,background-color,border-color,transform,box-shadow] duration-150 ease-out active:scale-[0.98] motion-reduce:active:scale-100 motion-reduce:transition-none rounded-control disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-court-400 focus-visible:ring-offset-2",
   {
     variants: {
       variant: {

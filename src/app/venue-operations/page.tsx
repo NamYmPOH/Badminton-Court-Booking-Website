@@ -938,7 +938,7 @@ export default function VenueOperationsPage() {
               return (
                 <div
                   key={court.id}
-                  className={`relative rounded-card border p-4 shadow-sm transition-all ${
+                  className={`relative rounded-card border p-4 shadow-sm transition-[border-color,background-color] duration-150 ease-out ${
                     isOverdue
                       ? "border-rose-400 bg-rose-50/50 dark:bg-rose-950/20"
                       : inUse
@@ -1001,7 +1001,7 @@ export default function VenueOperationsPage() {
         <button
           type="button"
           onClick={() => setActiveTab("OPERATIONS")}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors duration-150 ease-out active:scale-[0.98] motion-reduce:active:scale-100 ${
             activeTab === "OPERATIONS"
               ? "border-court-600 text-court-600"
               : "border-transparent text-muted hover:text-ink"
@@ -1017,7 +1017,7 @@ export default function VenueOperationsPage() {
         <button
           type="button"
           onClick={() => setActiveTab("TIMELINE")}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors duration-150 ease-out active:scale-[0.98] motion-reduce:active:scale-100 ${
             activeTab === "TIMELINE"
               ? "border-court-600 text-court-600"
               : "border-transparent text-muted hover:text-ink"
@@ -1030,7 +1030,7 @@ export default function VenueOperationsPage() {
         <button
           type="button"
           onClick={() => setActiveTab("ALL_BOOKINGS")}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors duration-150 ease-out active:scale-[0.98] motion-reduce:active:scale-100 ${
             activeTab === "ALL_BOOKINGS"
               ? "border-court-600 text-court-600"
               : "border-transparent text-muted hover:text-ink"
@@ -1047,7 +1047,7 @@ export default function VenueOperationsPage() {
           <button
             type="button"
             onClick={() => setActiveTab("VENUE_INFO")}
-            className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors ${
+            className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-bold transition-colors duration-150 ease-out active:scale-[0.98] motion-reduce:active:scale-100 ${
               activeTab === "VENUE_INFO"
                 ? "border-court-600 text-court-600"
                 : "border-transparent text-muted hover:text-ink"

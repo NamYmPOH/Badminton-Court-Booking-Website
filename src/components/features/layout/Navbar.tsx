@@ -163,18 +163,18 @@ export function Navbar({ className }: NavbarProps) {
               <button
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-court-50 dark:hover:bg-surface/80"
+                className="flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-[background-color,border-color,transform] duration-150 hover:bg-court-50 dark:hover:bg-surface/80 active:scale-[0.98]"
               >
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-court-600 text-xs font-bold text-white">
                   {user.name.charAt(0).toUpperCase()}
                 </div>
                 <span className="max-w-[120px] truncate">{user.name}</span>
-                <ChevronDown size={14} className="text-muted" />
+                <ChevronDown size={14} className={`text-muted transition-transform duration-150 ${dropdownOpen ? "rotate-180" : ""}`} />
               </button>
 
               {/* Menu thả xuống */}
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 rounded-card border border-border bg-surface p-2 shadow-lg animate-in fade-in zoom-in-95">
+                <div className="absolute right-0 mt-2 w-56 origin-top-right rounded-card border border-border bg-surface p-2 shadow-lg animate-in fade-in zoom-in-95 duration-150 ease-out">
                   <div className="border-b border-border/60 px-3 py-2">
                     <p className="text-xs font-bold text-ink truncate">{user.name}</p>
                     <p className="text-[11px] text-muted truncate">

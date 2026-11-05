@@ -139,7 +139,7 @@ export function NavbarSearch() {
   return (
     <div data-navbar-search className="relative w-full" ref={containerRef}>
       <form onSubmit={handleSubmit} className="relative">
-        <div className="group flex h-10 w-full items-center rounded-full border border-border/80 bg-surface/90 px-3.5 py-2 shadow-sm transition-all duration-200 hover:border-court-400 hover:shadow-md focus-within:border-court-500 focus-within:bg-surface focus-within:ring-4 focus-within:ring-court-500/15">
+        <div className="group flex h-10 w-full items-center rounded-full border border-border/80 bg-surface/90 px-3.5 py-2 shadow-sm transition-[border-color,box-shadow,background-color] duration-200 ease-out hover:border-court-400 hover:shadow-md focus-within:border-court-500 focus-within:bg-surface focus-within:ring-4 focus-within:ring-court-500/15">
           {isLoading ? (
             <Loader2 size={16} className="shrink-0 animate-spin text-court-600" />
           ) : (

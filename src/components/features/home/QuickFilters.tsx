@@ -29,7 +29,7 @@ export function QuickFilters() {
           <Link
             key={filter.label}
             href={filter.href}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm backdrop-blur transition-all duration-150 hover:border-white/50 hover:bg-white/20 active:scale-95"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm backdrop-blur transition-[border-color,background-color,transform,box-shadow] duration-150 ease-out hover:border-white/50 hover:bg-white/20 active:scale-95 motion-reduce:active:scale-100"
           >
             <Icon size={12} className="text-racket-400" />
             <span>{filter.label}</span>

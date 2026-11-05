@@ -95,9 +95,12 @@ export function RescheduleModal({
       aria-labelledby="reschedule-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={!busy ? onClose : undefined} />
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+        onClick={!busy ? onClose : undefined}
+      />
 
-      <div className="relative w-full max-w-md overflow-hidden rounded-card border border-border bg-surface p-6 shadow-2xl">
+      <div className="relative w-full max-w-md overflow-hidden rounded-card border border-border bg-surface p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 ease-out">
         <button
           type="button"
           disabled={busy}

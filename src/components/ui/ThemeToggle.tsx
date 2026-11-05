@@ -24,11 +24,11 @@ export function ThemeToggle({ className }: { className?: string }) {
       aria-label={isDark ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"}
       onClick={() => setTheme(isDark ? "light" : "dark")}
       className={cn(
-        "inline-flex h-10 w-10 items-center justify-center rounded-control text-muted transition-colors hover:bg-court-50 dark:hover:bg-surface",
+        "inline-flex h-10 w-10 items-center justify-center rounded-control text-muted transition-[background-color,color,transform] duration-150 ease-out hover:bg-court-50 dark:hover:bg-surface active:scale-95 motion-reduce:active:scale-100",
         className
       )}
     >
-      {isDark ? <Sun size={20} /> : <Moon size={20} />}
+      {isDark ? <Sun size={20} className="transition-transform duration-200 rotate-0 dark:rotate-0" /> : <Moon size={20} className="transition-transform duration-200 rotate-0" />}
     </button>
   );
 }

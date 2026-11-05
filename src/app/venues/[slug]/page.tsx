@@ -5,7 +5,6 @@ import Image from "next/image";
 import { getVenueBySlug } from "@/services/venue.service";
 import { formatVND } from "@/lib/utils";
 import {
-  Star,
   MapPin,
   Clock,
   ShieldCheck,
@@ -15,9 +14,10 @@ import {
   CreditCard,
   Timer,
   AlertCircle,
-  MessageSquare,
 } from "lucide-react";
 import { VenueDetailActions } from "@/components/features/venues/VenueDetailActions";
+import { StarRating } from "@/components/ui/StarRating";
+import { VenueReviewPreview } from "@/components/features/venues/VenueReviewPreview";
 
 interface VenueDetailPageProps {
   params: {
@@ -112,17 +112,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
                   {venue.name}
                 </h1>
                 <div className="mt-2.5 flex flex-wrap items-center gap-3 text-sm text-muted">
-                  {venue.ratingCount > 0 ? (
-                    <div className="flex items-center gap-1 font-semibold text-amber-500">
-                      <Star size={16} className="fill-amber-400 text-amber-400" />
-                      <span>{venue.ratingAvg.toFixed(1)}</span>
-                      <span className="font-normal text-muted">({venue.ratingCount} đánh giá)</span>
-                    </div>
-                  ) : (
-                    <span className="rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                      Sân mới chưa có đánh giá
-                    </span>
-                  )}
+                  <StarRating rating={venue.ratingCount > 0 ? venue.ratingAvg : 0} count={venue.ratingCount} demoCount={venue.demoRatingCount} />
                   <span>•</span>
                   <div className="flex items-center gap-1 text-ink">
                     <MapPin size={15} className="text-court-500 shrink-0" />
@@ -250,46 +240,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
             </div>
           </div>
 
-          {/* Đánh giá từ người chơi */}
-          <div className="rounded-card border border-border bg-surface p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-ink">
-              Đánh giá từ người chơi ({venue.reviews.length})
-            </h2>
-
-            {venue.reviews.length > 0 ? (
-              <div className="mt-4 space-y-4">
-                {venue.reviews.map((rev) => (
-                  <div
-                    key={rev.id}
-                    className="border-b border-border/60 pb-4 last:border-none last:pb-0"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-bold text-ink">
-                        {rev.userName}
-                      </span>
-                      <span className="text-xs text-muted">{rev.createdAt}</span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-1 text-amber-500">
-                      {Array.from({ length: rev.rating }).map((_, i) => (
-                        <Star key={i} size={13} className="fill-amber-400 text-amber-400" />
-                      ))}
-                    </div>
-                    <p className="mt-2 text-xs leading-relaxed text-muted">
-                      {rev.comment}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-col items-center justify-center rounded-control border border-dashed border-border/80 p-8 text-center">
-                <MessageSquare size={32} className="text-muted/60" />
-                <p className="mt-2 text-sm font-medium text-ink">Chưa có đánh giá nào</p>
-                <p className="mt-1 text-xs text-muted">
-                  Hãy đặt sân và trải nghiệm để trở thành người đầu tiên để lại nhận xét!
-                </p>
-              </div>
-            )}
-          </div>
+          <VenueReviewPreview venue={venue} />
         </div>
 
         {/* Cột phải (Desktop): Thẻ đặt sân cố định (Sticky Booking Card) */}
@@ -304,10 +255,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
                 </div>
               </div>
               {venue.ratingCount > 0 && (
-                <div className="flex items-center gap-1 text-xs font-semibold text-amber-500">
-                  <Star size={14} className="fill-amber-400 text-amber-400" />
-                  <span>{venue.ratingAvg.toFixed(1)}</span>
-                </div>
+                <div className="text-xs"><StarRating rating={venue.ratingAvg} count={venue.ratingCount} /></div>
               )}
             </div>
 

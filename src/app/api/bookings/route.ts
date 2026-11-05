@@ -36,6 +36,6 @@ export async function GET() {
   try {
     const userId = await requirePaymentUser();
     const bookings = await db.booking.findMany({ where: { OR: [{ userId }, { group: { shares: { some: { userId } } } }] }, include: bookingDetails, orderBy: { createdAt: "desc" }, take: 100 });
-    return Response.json({ success: true, bookings: bookings.map(b => { const data = publicBooking(b); return b.userId === userId ? data : { ...data, contactName: "", contactPhone: "", note: null }; }) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ success: true, bookings: bookings.map(b => { const data = publicBooking(b); return b.userId === userId ? data : { ...data, contactName: "", contactPhone: "", note: null, canReview: false }; }) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return paymentErrorResponse(error); }
 }

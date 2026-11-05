@@ -210,7 +210,7 @@ export default function OffersPage() {
                       </div>
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
                         <div
-                          className="h-full rounded-full bg-court-500 transition-all duration-300"
+                          className="h-full rounded-full bg-court-500 transition-[width] duration-300 ease-out"
                           style={{ width: `${budgetPercent}%` }}
                         />
                       </div>

@@ -58,6 +58,8 @@ export interface BookingIncidentRecord {
 }
 
 export interface Booking {
+  canReview?: boolean;
+  review?: { id: string; rating: number; comment: string | null } | null;
   groupToken?: string | null;
   id: string;
   code: string;       // SB-YYMMDD-XXXX

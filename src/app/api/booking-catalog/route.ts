@@ -1,3 +1,4 @@
+import { summarizeVenueReviews } from "@/lib/review-summary";
 import { requirePaymentUser } from "@/lib/payment-session";
 import { heldBookingPaymentUrl } from "@/lib/held-booking";
 import { db } from "@/lib/db";
@@ -139,8 +140,9 @@ export async function GET(request: Request) {
           openMin: venue.openMin,
           closeMin: venue.closeMin,
           priceFrom: venue.priceFrom,
-          ratingAvg: venue.ratingAvg,
-          ratingCount: venue.ratingCount,
+          ratingAvg: summarizeVenueReviews(venue.id, venue.ratingAvg * venue.ratingCount, venue.ratingCount).average,
+          ratingCount: venue.ratingCount + summarizeVenueReviews(venue.id, 0, 0).demoCount,
+          demoRatingCount: summarizeVenueReviews(venue.id, 0, 0).demoCount,
           images: venue.images,
           amenities: venue.amenities,
           cancelBeforeHours: venue.cancelBeforeHours,

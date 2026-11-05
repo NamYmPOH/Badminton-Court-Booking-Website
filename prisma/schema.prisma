@@ -636,8 +636,21 @@ model Review {
   booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  images    ReviewImage[]
 
   @@index([venueId, createdAt])
+}
+
+model ReviewImage {
+  id        String @id @default(cuid())
+  reviewId  String
+  mimeType  String
+  data      Bytes
+  sha256    String
+  position  Int
+  review    Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, position])
 }
 
 model Favorite {

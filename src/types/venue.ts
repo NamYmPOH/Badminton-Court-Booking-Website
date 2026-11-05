@@ -18,6 +18,8 @@ export interface Review {
   id: string;
   userName: string;
   userAvatar?: string;
+  isDemo?: boolean;
+  images?: string[];
   rating: number;       // 1..5
   comment: string;
   createdAt: string;
@@ -38,6 +40,7 @@ export interface Venue {
   priceFrom: number;    // VND / giờ nhỏ nhất
   ratingAvg: number;
   ratingCount: number;
+  demoRatingCount?: number;
   images: string[];
   amenities: string[];  // AC, PARKING, RACKET_RENTAL, CANTEEN, SHOWER, WIFI
   cancelBeforeHours: number;
@@ -47,6 +50,7 @@ export interface Venue {
   courts: Court[];
   pricingRules: PricingRule[];
   reviews: Review[];
+  reviewsUnavailable?: boolean;
   ownerId?: string;
   status?: string;
 }
@@ -67,6 +71,7 @@ export interface VenueFilterParams {
 export type SuggestionType = "district" | "venue";
 
 export interface VenueSearchSuggestion {
+  demoRatingCount?: number;
   id: string;
   name: string;
   slug: string;

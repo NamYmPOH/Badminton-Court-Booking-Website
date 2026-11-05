@@ -59,7 +59,7 @@ export function VenuesMap({ venues }: { venues: Venue[] }) {
           const address = document.createElement("p");
           address.textContent = `${venue.address}, ${venue.district}`;
           const price = document.createElement("p");
-          price.textContent = `Từ ${formatVND(venue.priceFrom)}/giờ · ★ ${venue.ratingAvg}`;
+          price.textContent = `Từ ${formatVND(venue.priceFrom)}/giờ · ★ ${venue.ratingAvg.toFixed(1)}${venue.demoRatingCount ? ` (gồm ${venue.demoRatingCount} mẫu)` : ""}`;
           const detail = document.createElement("a");
           detail.href = `/venues/${encodeURIComponent(venue.slug)}`;
           detail.textContent = "Xem sân và đặt lịch →";
@@ -154,7 +154,7 @@ export function VenuesMap({ venues }: { venues: Venue[] }) {
             <p className="text-xs font-semibold text-court-600">Đang chọn</p>
             <h2 className="mt-1 font-bold">{selected.name}</h2>
             <p className="mt-2 text-xs text-muted">{selected.address}, {selected.district}, {selected.city}</p>
-            <p className="mt-2 text-sm font-semibold">{formatVND(selected.priceFrom)}/giờ · ★ {selected.ratingAvg}</p>
+            <p className="mt-2 text-sm font-semibold">{formatVND(selected.priceFrom)}/giờ · ★ {selected.ratingAvg.toFixed(1)}{selected.demoRatingCount ? ` (gồm ${selected.demoRatingCount} mẫu)` : ""}</p>
             <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold">
               <Link className="rounded-control bg-court-600 px-3 py-2 text-white" href={`/venues/${selected.slug}`}>Xem sân và đặt lịch</Link>
               {validCoordinates(selected) && <a className="rounded-control border border-border px-3 py-2" target="_blank" rel="noopener noreferrer" href={directionsUrl(selected)}>Chỉ đường ↗</a>}
@@ -168,7 +168,7 @@ export function VenuesMap({ venues }: { venues: Venue[] }) {
                 <span className="text-xs font-semibold text-court-600">{index + 1}. {venue.district}</span>
                 <span className="mt-1 block text-sm font-bold">{venue.name}</span>
                 <span className="mt-1 block text-xs text-muted">{venue.address}</span>
-                <span className="mt-2 block text-xs">Từ {formatVND(venue.priceFrom)}/giờ · ★ {venue.ratingAvg}</span>
+                <span className="mt-2 block text-xs">Từ {formatVND(venue.priceFrom)}/giờ · ★ {venue.ratingAvg.toFixed(1)}{venue.demoRatingCount ? ` (gồm ${venue.demoRatingCount} mẫu)` : ""}</span>
               </button>
               <Link href={`/venues/${venue.slug}`} className="mt-2 inline-block text-xs font-semibold text-court-600 underline">Xem chi tiết</Link>
             </div>)}

@@ -60,7 +60,7 @@ export function MobileTabBar() {
               key={tab.label}
               href={tab.href}
               className={cn(
-                "flex min-w-[56px] flex-col items-center gap-1 px-1.5 py-1 text-xs transition-colors",
+                "flex min-w-[56px] flex-col items-center gap-1 px-1.5 py-1 text-xs transition-[color,transform] duration-150 ease-out active:scale-95 motion-reduce:active:scale-100",
                 isActive
                   ? "font-bold text-court-600 dark:text-court-400"
                   : "text-muted hover:text-ink"

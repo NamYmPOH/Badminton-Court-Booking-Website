@@ -2,6 +2,7 @@ import type { Venue, VenueFilterParams, VenueSearchSuggestion } from "@/types/ve
 import { db } from "@/lib/db";
 import { matchesVietnamese } from "@/lib/utils/vietnamese";
 import { calculateMatchScore } from "@/lib/utils/search-ranker";
+import { summarizeVenueReviews } from "../lib/review-summary";
 import { MOCK_VENUES } from "@/data/venues.data";
 
 /**
@@ -17,6 +18,8 @@ async function loadVenues(): Promise<Venue[]> {
     });
 
     if (rows && rows.length > 0) {
+      const ratings = await db.review.groupBy({ by: ["venueId"], where: { venueId: { in: rows.map(v => v.id) } }, _avg: { rating: true }, _count: { _all: true } });
+      const ratingByVenue = new Map(ratings.map(r => [r.venueId, r]));
       return rows.map((v) => ({
         id: v.id,
         slug: v.slug,
@@ -30,8 +33,9 @@ async function loadVenues(): Promise<Venue[]> {
         openMin: v.openMin,
         closeMin: v.closeMin,
         priceFrom: v.priceFrom,
-        ratingAvg: v.ratingAvg,
-        ratingCount: v.ratingCount,
+        ratingAvg: summarizeVenueReviews(v.id, (ratingByVenue.get(v.id)?._avg.rating || 0) * (ratingByVenue.get(v.id)?._count._all || 0), ratingByVenue.get(v.id)?._count._all || 0).average,
+        ratingCount: summarizeVenueReviews(v.id, 0, ratingByVenue.get(v.id)?._count._all || 0).count,
+        demoRatingCount: summarizeVenueReviews(v.id, 0, 0).demoCount,
         images: v.images && v.images.length ? v.images : ["/images/courts/court-1.svg"],
         amenities: v.amenities,
         cancelBeforeHours: v.cancelBeforeHours,
@@ -54,7 +58,7 @@ async function loadVenues(): Promise<Venue[]> {
     console.warn("[VENUE_SERVICE_DB_FALLBACK] Database offline, using MOCK_VENUES:", err instanceof Error ? err.message : String(err));
   }
 
-  return MOCK_VENUES;
+  return MOCK_VENUES.map(venue => { const summary = summarizeVenueReviews(venue.id, venue.reviews.reduce((sum, r) => sum + r.rating, 0), venue.reviews.length); return { ...venue, ratingAvg: summary.average, ratingCount: summary.count, demoRatingCount: summary.demoCount }; });
 }
 
 /**
@@ -216,6 +220,7 @@ export async function searchVenueSuggestions(
         district: v.district,
         priceFrom: v.priceFrom,
         ratingAvg: v.ratingAvg,
+        demoRatingCount: v.demoRatingCount,
         images: v.images,
         _score: bestScore + priorityBonus,
       });
@@ -235,7 +240,12 @@ export async function searchVenueSuggestions(
 
 export async function getVenueBySlug(slug: string): Promise<Venue | null> {
   const venue = (await loadVenues()).find((v) => v.slug === slug);
-  return venue ?? null;
+  if (!venue) return null;
+  if (!process.env.DATABASE_URL) return venue;
+  try {
+  const reviews = await db.review.findMany({ where: { venueId: venue.id }, include: { user: { select: { name: true } } }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], take: 100 });
+  return { ...venue, reviews: reviews.map(r => ({ id: r.id, userName: r.user.name, rating: r.rating, comment: r.comment || "", createdAt: r.createdAt.toISOString().slice(0, 10) })) };
+  } catch { return { ...venue, reviewsUnavailable: true }; }
 }
 
 export async function getVenueById(id: string): Promise<Venue | null> {
