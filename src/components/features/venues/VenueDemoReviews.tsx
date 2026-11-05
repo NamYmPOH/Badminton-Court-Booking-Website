@@ -20,7 +20,7 @@ export function VenueDemoReviews({ venueId }: { venueId: string }) {
           <p className="text-xs text-muted">Điểm trung bình mẫu</p>
         </div>
         <div className="min-w-0 flex-1 space-y-2">
-          {[5, 4, 1].map(rating => {
+          {[5, 4, 3, 2, 1].map(rating => {
             const count = reviews.filter(review => review.rating === rating).length;
             return (
               <div key={rating} className="flex items-center gap-3 text-xs text-muted">
@@ -43,7 +43,7 @@ export function VenueDemoReviews({ venueId }: { venueId: string }) {
                 <span className="text-sm font-bold text-ink">{review.userName}</span>
                 <span className="rounded-full bg-court-50 px-2 py-0.5 text-[10px] font-semibold text-court-700 dark:bg-court-950 dark:text-court-200">Mẫu</span>
               </div>
-              <time dateTime={review.createdAt} className="text-xs text-muted">{review.createdAt.split("-").reverse().join("/")}</time>
+              <time dateTime={review.createdAt} className="text-xs text-muted">{review.createdAt.slice(0, 10).split("-").reverse().join("/")}</time>
             </div>
             <div aria-label={`${review.rating} trên 5 sao`} className="mt-2 flex items-center gap-1">
               {Array.from({ length: 5 }, (_, index) => <Star aria-hidden="true" key={index} size={13} className={index < review.rating ? "fill-amber-400 text-amber-400" : "text-muted/40"} />)}

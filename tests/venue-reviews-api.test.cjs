@@ -27,6 +27,9 @@ const older = Array.from({ length: 20 }, (_, i) => ({
 }));
 const foreign = { id: 'foreign-review', venueId: 'another-venue', rating: 5, comment: 'Không thuộc sân này', createdAt: new Date('2027-01-01'), user: { name: 'Khách sân khác' }, images: [] };
 const realRows = [...recent, ...older, foreign];
+const allVenueRows = [...recent, ...older, ...getDemoReviews(venue.id)].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt) || a.id.localeCompare(b.id));
+const expectedIds = allVenueRows.map(r => r.id);
+const expectedPages = Math.ceil(expectedIds.length / 12);
 
 function setup({ missingVenue = false } = {}) {
   const calls = [];
@@ -87,30 +90,29 @@ test('Venue reviews API: summary includes all real and demo reviews with counts 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
   assert.deepEqual(body.venue, venue);
-  assert.equal(body.summary.count, 40);
+  assert.equal(body.summary.count, allVenueRows.length);
   assert.equal(body.summary.realCount, 28);
-  assert.equal(body.summary.demoCount, 12);
-  assert.equal(body.summary.average, 129 / 40);
-  assert.deepEqual(body.summary.distribution, { '1': 9, '2': 5, '3': 5, '4': 10, '5': 11 });
-  assert.equal(body.totalPages, 4);
+  assert.equal(body.summary.demoCount, getDemoReviews(venue.id).length);
+  assert.equal(body.summary.average, allVenueRows.reduce((sum, r) => sum + r.rating, 0) / allVenueRows.length);
+  assert.deepEqual(body.summary.distribution, Object.fromEntries([1,2,3,4,5].map(rating => [String(rating), allVenueRows.filter(r => r.rating === rating).length])));
+  assert.equal(body.totalPages, expectedPages);
   assert.equal(body.page, 1);
 });
 
 test('Venue reviews API: combined pagination retains sample and older real rows at page boundaries', async () => {
   const api = setup();
-  const expectedIds = [...recent.map(r => r.id), ...getDemoReviews(venue.id).map(r => r.id), ...older.map(r => r.id)];
   const returned = [];
-  for (let page = 1; page <= 4; page++) {
+  for (let page = 1; page <= expectedPages; page++) {
     const { body, response } = await api.request(`page=${page}&rating=all`);
     assert.equal(response.status, 200);
     assert.equal(body.page, page);
-    assert.equal(body.totalPages, 4);
-    assert.equal(body.reviews.length, page === 4 ? 4 : 12);
+    assert.equal(body.totalPages, expectedPages);
+    assert.equal(body.reviews.length, expectedIds.slice((page - 1) * 12, page * 12).length);
     assert.deepEqual(body.reviews.map(r => r.id), expectedIds.slice((page - 1) * 12, page * 12));
     returned.push(...body.reviews.map(r => r.id));
   }
   assert.deepEqual(returned, expectedIds);
-  assert.equal(new Set(returned).size, 40);
+  assert.equal(new Set(returned).size, expectedIds.length);
   assert.ok(!returned.includes(foreign.id));
 });
 
@@ -144,9 +146,9 @@ test('Venue reviews API: published photo links and demo metadata stay attached t
 test('Venue reviews API: out-of-range page clamps to final valid page', async () => {
   const { response, body } = await setup().request('page=999&rating=all');
   assert.equal(response.status, 200);
-  assert.equal(body.page, 4);
-  assert.equal(body.totalPages, 4);
-  assert.deepEqual(body.reviews.map(r => r.id), older.slice(-4).map(r => r.id));
+  assert.equal(body.page, expectedPages);
+  assert.equal(body.totalPages, expectedPages);
+  assert.deepEqual(body.reviews.map(r => r.id), expectedIds.slice((expectedPages - 1) * 12));
 });
 
 test('Venue reviews API: invalid page or rating returns 400 before database access', async () => {
