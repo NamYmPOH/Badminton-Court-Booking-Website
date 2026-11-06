@@ -3,6 +3,7 @@ import { z } from "zod";
 import { coachAvailabilityInputSchema, coachProfileInputSchema } from "../lib/coach-policy";
 import { PaymentError } from "../lib/payment-error";
 import { serializable } from "../lib/transaction";
+import { invalidatePublicCoachCache } from "../lib/public-cache";
 
 export const coachManagementSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("profile"), profile: coachProfileInputSchema }).strict(),
@@ -15,7 +16,7 @@ export async function manageCoach(database: PrismaClient, actorId: string, coach
   const parsed = coachManagementSchema.safeParse(raw);
   if (!parsed.success) throw new PaymentError(400, parsed.error.issues[0]?.message || "Dữ liệu không hợp lệ.");
   const input = parsed.data;
-  return serializable(database, async (tx) => {
+  const result = await serializable(database, async (tx) => {
     const actor = await tx.user.findUnique({ where: { id: actorId } });
     if (!actor || actor.role !== "ADMIN" || actor.status !== "ACTIVE") throw new PaymentError(403, "Chỉ quản trị viên được quản lý HLV.");
     const coach = await tx.coachProfile.findUnique({ where: { id: coachId } });
@@ -57,4 +58,6 @@ export async function manageCoach(database: PrismaClient, actorId: string, coach
     await tx.adminAudit.create({ data: { actorId, actorName: actor.name || "Quản trị viên", action: "COACH_MANAGE", entityId: coachId, reason: "Quản lý hồ sơ, cơ sở và ca rảnh HLV", details: input } });
     return { success: true };
   });
+  if (input.action === "profile" || input.action === "venue") await invalidatePublicCoachCache();
+  return result;
 }

@@ -4,61 +4,81 @@ import { matchesVietnamese } from "@/lib/utils/vietnamese";
 import { calculateMatchScore } from "@/lib/utils/search-ranker";
 import { summarizeVenueReviews } from "../lib/review-summary";
 import { MOCK_VENUES } from "@/data/venues.data";
+import { cachedPublicData, recordPublicCacheDbQueries } from "../lib/public-cache";
+import { PaymentError } from "../lib/payment-error";
 
 /**
- * Tải danh sách sân từ Database.
- * Nếu cơ sở dữ liệu chưa sẵn sàng hoặc rỗng, tự động kích hoạt fallback sang MOCK_VENUES (100 sân).
+ * Chỉ cache catalog dùng chung; lọc theo thời gian và ưu tiên chủ sân chạy sau cache.
+ * Dữ liệu demo khi database lỗi/rỗng không được ghi vào Redis.
  */
 async function loadVenues(): Promise<Venue[]> {
   try {
-    const rows = await db.venue.findMany({
-      where: { status: "ACTIVE" },
-      include: { courts: { orderBy: { sortOrder: "asc" } }, pricing: true },
-      orderBy: { name: "asc" },
+    const venues = await cachedPublicData("venues", loadDatabaseVenues, {
+      shouldCache: (value) => value.length > 0,
     });
-
-    if (rows && rows.length > 0) {
-      const ratings = await db.review.groupBy({ by: ["venueId"], where: { venueId: { in: rows.map(v => v.id) } }, _avg: { rating: true }, _count: { _all: true } });
-      const ratingByVenue = new Map(ratings.map(r => [r.venueId, r]));
-      return rows.map((v) => ({
-        id: v.id,
-        slug: v.slug,
-        name: v.name,
-        description: v.description || "",
-        address: v.address,
-        district: v.district,
-        city: v.province,
-        lat: v.lat,
-        lng: v.lng,
-        openMin: v.openMin,
-        closeMin: v.closeMin,
-        priceFrom: v.priceFrom,
-        ratingAvg: summarizeVenueReviews(v.id, (ratingByVenue.get(v.id)?._avg.rating || 0) * (ratingByVenue.get(v.id)?._count._all || 0), ratingByVenue.get(v.id)?._count._all || 0).average,
-        ratingCount: summarizeVenueReviews(v.id, 0, ratingByVenue.get(v.id)?._count._all || 0).count,
-        demoRatingCount: summarizeVenueReviews(v.id, 0, 0).demoCount,
-        images: v.images && v.images.length ? v.images : ["/images/courts/court-1.svg"],
-        amenities: v.amenities,
-        cancelBeforeHours: v.cancelBeforeHours,
-        paymentMode: v.paymentMode,
-        hasSlotTonight: v.courts.some((c) => c.status === "ACTIVE"),
-        courts: v.courts.map((c) => ({
-          id: c.id,
-          name: c.name,
-          surface: c.surface || "",
-          isActive: c.status === "ACTIVE",
-        })),
-        pricingRules: v.pricing,
-        reviews: [],
-        ownerId: v.ownerId,
-        status: v.status,
-      }));
-    }
+    if (venues.length > 0) return venues;
   } catch (err) {
-    // Database chưa kết nối, sử dụng MOCK_VENUES để đảm bảo trải nghiệm người dùng
-    console.warn("[VENUE_SERVICE_DB_FALLBACK] Database offline, using MOCK_VENUES:", err instanceof Error ? err.message : String(err));
+    // Giữ giới hạn tải của cache, không che lỗi quá tải bằng dữ liệu demo.
+    if (err instanceof PaymentError) throw err;
+    console.warn("[VENUE_SERVICE_DB_FALLBACK] Database unavailable; using demo catalog.");
   }
 
   return MOCK_VENUES.map(venue => { const summary = summarizeVenueReviews(venue.id, venue.reviews.reduce((sum, r) => sum + r.rating, 0), venue.reviews.length); return { ...venue, ratingAvg: summary.average, ratingCount: summary.count, demoRatingCount: summary.demoCount }; });
+}
+
+async function loadDatabaseVenues(): Promise<Venue[]> {
+  recordPublicCacheDbQueries(1);
+  const rows = await db.venue.findMany({
+    where: { status: "ACTIVE" },
+    include: { courts: { orderBy: { sortOrder: "asc" } }, pricing: true },
+    orderBy: { name: "asc" },
+  });
+
+  if (rows && rows.length > 0) {
+    recordPublicCacheDbQueries(1);
+    const ratings = await db.review.groupBy({ by: ["venueId"], where: { venueId: { in: rows.map(v => v.id) } }, _avg: { rating: true }, _count: { _all: true } });
+    const ratingByVenue = new Map(ratings.map(r => [r.venueId, r]));
+    return rows.map((v) => ({
+      id: v.id,
+      slug: v.slug,
+      name: v.name,
+      description: v.description || "",
+      address: v.address,
+      district: v.district,
+      city: v.province,
+      lat: v.lat,
+      lng: v.lng,
+      openMin: v.openMin,
+      closeMin: v.closeMin,
+      priceFrom: v.priceFrom,
+      ratingAvg: summarizeVenueReviews(v.id, (ratingByVenue.get(v.id)?._avg.rating || 0) * (ratingByVenue.get(v.id)?._count._all || 0), ratingByVenue.get(v.id)?._count._all || 0).average,
+      ratingCount: summarizeVenueReviews(v.id, 0, ratingByVenue.get(v.id)?._count._all || 0).count,
+      demoRatingCount: summarizeVenueReviews(v.id, 0, 0).demoCount,
+      images: v.images && v.images.length ? v.images : ["/images/courts/court-1.svg"],
+      amenities: v.amenities,
+      cancelBeforeHours: v.cancelBeforeHours,
+      paymentMode: v.paymentMode,
+      hasSlotTonight: v.courts.some((c) => c.status === "ACTIVE"),
+      courts: v.courts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        surface: c.surface || "",
+        isActive: c.status === "ACTIVE",
+      })),
+      pricingRules: v.pricing.map((rule) => ({
+        id: rule.id,
+        daysOfWeek: rule.daysOfWeek,
+        startMin: rule.startMin,
+        endMin: rule.endMin,
+        walkInPrice: rule.walkInPrice,
+        fixedPrice: rule.fixedPrice,
+      })),
+      reviews: [],
+      ownerId: v.ownerId,
+      status: v.status,
+    }));
+  }
+  return [];
 }
 
 /**

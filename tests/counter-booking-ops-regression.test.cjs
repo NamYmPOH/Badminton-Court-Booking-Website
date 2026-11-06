@@ -24,6 +24,13 @@ const {
 
 const { recordVoucherConsumption } = require("../src/services/settlement.service.ts");
 
+function getTestFutureDate(daysAhead = 7) {
+  const d = new Date(Date.now() + 86400000 * daysAhead);
+  return d.toISOString().slice(0, 10);
+}
+const TEST_DATE_STR = getTestFutureDate();
+const TEST_DATE_OBJ = new Date(`${TEST_DATE_STR}T00:00:00Z`);
+
 function createMockDb(initialState = {}) {
   let state = {
     users: [
@@ -315,7 +322,7 @@ test("Issue A: Idempotency tại quầy - Replay cùng key và cùng payload tr�
   const input = {
     venueId: "venue_b",
     courtId: "court_b1",
-    date: "2026-11-05",
+    date: TEST_DATE_STR,
     startMin: 480,
     endMin: 540,
     customerName: "Nguyễn Văn A",
@@ -360,7 +367,7 @@ test("Issue A: Idempotency tại quầy - Chặn replay chéo cơ sở hoặc ke
     id: "it_a",
     bookingId: "bk_a",
     courtId: "court_a1",
-    date: new Date("2026-11-05"),
+    date: TEST_DATE_OBJ,
     startMin: 480,
     endMin: 540,
   });
@@ -374,7 +381,7 @@ test("Issue A: Idempotency tại quầy - Chặn replay chéo cơ sở hoặc ke
       await createCounterBooking(db, actorB, {
         venueId: "venue_b",
         courtId: "court_b1",
-        date: "2026-11-05",
+        date: TEST_DATE_STR,
         startMin: 480,
         endMin: 540,
         customerName: "Nguyễn Văn B",
@@ -399,7 +406,7 @@ test("Issue A: Idempotency tại quầy - Trùng requestId nhưng khác payload 
   const input1 = {
     venueId: "venue_b",
     courtId: "court_b1",
-    date: "2026-11-05",
+    date: TEST_DATE_STR,
     startMin: 480,
     endMin: 540,
     customerName: "Nguyễn Văn A",
@@ -437,7 +444,7 @@ test("Issue B: OWNER sân A kiêm STAFF sân B - bắt buộc ca trực khi thao
       await createCounterBooking(db, actorMulti, {
         venueId: "venue_b",
         courtId: "court_b1",
-        date: "2026-11-05",
+        date: TEST_DATE_STR,
         startMin: 480,
         endMin: 540,
         customerName: "Khách Test",
@@ -457,7 +464,7 @@ test("Issue B: OWNER sân A kiêm STAFF sân B - bắt buộc ca trực khi thao
   const res = await createCounterBooking(db, actorMulti, {
     venueId: "venue_b",
     courtId: "court_b1",
-    date: "2026-11-05",
+    date: TEST_DATE_STR,
     startMin: 480,
     endMin: 540,
     customerName: "Khách Test",
@@ -473,7 +480,7 @@ test("Issue B: OWNER sân A kiêm STAFF sân B - bắt buộc ca trực khi thao
       await createCounterBooking(db, actorMulti, {
         venueId: "venue_b",
         courtId: "court_b1",
-        date: "2026-11-05",
+        date: TEST_DATE_STR,
         startMin: 600,
         endMin: 660,
         customerName: "Khách Test 2",
@@ -494,7 +501,7 @@ test("Issue B: OWNER sân A kiêm STAFF sân B - bắt buộc ca trực khi thao
   const resOwner = await createCounterBooking(db, actorOwnerA, {
     venueId: "venue_a",
     courtId: "court_a1",
-    date: "2026-11-05",
+    date: TEST_DATE_STR,
     startMin: 480,
     endMin: 540,
     customerName: "Khách Sân A",
@@ -576,7 +583,7 @@ test("Issue D: Đặt sân tại quầy cắt qua 2 khung giá - Tính chính x�
   const res = await createCounterBooking(db, actor, {
     venueId: "venue_a",
     courtId: "court_a1",
-    date: "2026-11-05", // Thứ 5
+    date: TEST_DATE_STR, // Thứ 5
     startMin: 1050, // 17:30
     endMin: 1110,   // 18:30
     customerName: "Khách 2 khung giá",
@@ -630,7 +637,7 @@ test("Issue E: Yêu cầu hủy đơn - Phân biệt rõ giữa đơn chưa than
     id: "it_unpaid",
     bookingId: "bk_unpaid",
     courtId: "court_a1",
-    date: new Date("2026-11-05"),
+    date: TEST_DATE_OBJ,
     startMin: 480,
     endMin: 540,
     status: "HELD",
@@ -663,7 +670,7 @@ test("Issue E: Yêu cầu hủy đơn - Phân biệt rõ giữa đơn chưa than
     id: "it_paid",
     bookingId: "bk_paid",
     courtId: "court_a1",
-    date: new Date("2026-11-05"),
+    date: TEST_DATE_OBJ,
     startMin: 480,
     endMin: 540,
     status: "CONFIRMED",

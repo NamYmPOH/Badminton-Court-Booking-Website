@@ -9,13 +9,14 @@ import { getSepayConfig, parseSepayEvent, PaymentError } from "../lib/sepay";
 import { serializable } from "./sepay.service";
 import { operatorVenueScope } from "../lib/venue-operations";
 import { recordVoucherConsumption } from "./settlement.service";
+import { invalidatePublicVenueCache, invalidatePublicCoachCache } from "../lib/public-cache";
 
 export async function performAdminAction(
   db: PrismaClient,
   actorId: string,
   input: AdminAction,
 ) {
-  return serializable(db, async (tx) => {
+  const result = await serializable(db, async (tx) => {
     // Đọc lại quyền TRONG transaction: cookie không lưu hoặc quyết định quyền.
     const actor = await tx.user.findUnique({
       where: { id: actorId },
@@ -412,4 +413,7 @@ export async function performAdminAction(
     });
     return { success: true };
   });
+  if (input.action === "VENUE_STATUS") await invalidatePublicVenueCache();
+  if (["USER_ACCESS", "COACH_STATUS", "COACH_VENUE_STATUS"].includes(input.action)) await invalidatePublicCoachCache();
+  return result;
 }

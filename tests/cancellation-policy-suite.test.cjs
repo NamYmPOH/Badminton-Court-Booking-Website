@@ -221,19 +221,20 @@ test("Đơn chưa thu tiền được hủy tức thì mà không tạo nghĩa v
 
 test("Khách hàng thông thường không được hủy đơn sau giờ bắt đầu chơi hoặc đã hoàn tất", async () => {
   const db = fixture({ total: 200000, amounts: [200000] });
-  // Giờ chơi là 2 giờ trước (đã qua giờ chơi)
-  const pastTime = new Date(Date.now() - 2 * 3600000);
-  db.state.items[0].date = pastTime;
+  db.state.items[0].date = "2026-11-10";
+  db.state.items[0].startMin = 600; // 10:00 ngày 10/11
+  const playTime = new Date("2026-11-10T10:00:00+07:00");
+  const pastTime = new Date(playTime.getTime() + 2 * 3600000); // 2 giờ sau giờ bắt đầu chơi
 
   await assert.rejects(
-    requestBookingCancellation(db, actors.customer, "b", "Hủy sau giờ chơi"),
+    requestBookingCancellation(db, actors.customer, "b", "Hủy sau giờ chơi", pastTime),
     { status: 409 }
   );
 
   // Đơn COMPLETED không được hủy
   db.state.booking.status = "COMPLETED";
   await assert.rejects(
-    requestBookingCancellation(db, actors.customer, "b", "Hủy đơn đã hoàn tất"),
+    requestBookingCancellation(db, actors.customer, "b", "Hủy đơn đã hoàn tất", pastTime),
     { status: 409 }
   );
 });
@@ -247,10 +248,12 @@ test("Không áp dụng tỷ lệ hủy sân lần nữa lên khoản phí HLV �
   assert.equal(db.state.refunds[0].amount, 200000); // 200k HLV đã vào nghĩa vụ hoàn
 
   // 2. Khách hủy sân lúc còn 12 giờ (tỷ lệ 50%)
-  const playTime = new Date(Date.now() + 12 * 3600000);
-  db.state.items[0].date = playTime;
+  db.state.items[0].date = "2026-11-10";
+  db.state.items[0].startMin = 600; // 10:00 ngày 10/11
+  const playTime = new Date("2026-11-10T10:00:00+07:00");
+  const requestTime = new Date(playTime.getTime() - 12 * 3600000); // Trước đúng 12 giờ
 
-  const cancelRes = await requestBookingCancellation(db, actors.customer, "b", "Khách hủy sân");
+  const cancelRes = await requestBookingCancellation(db, actors.customer, "b", "Khách hủy sân", requestTime);
   assert.equal(cancelRes.expectedRefundRate, 50);
 
   // Tiền sân còn lại là 200.000đ -> hoàn 50% = 100.000đ (tuyệt đối không tính lại 50% lên 200k HLV)

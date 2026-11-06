@@ -1,6 +1,7 @@
 import { PrismaClient, CourtStatus } from "@prisma/client";
 import { PaymentError } from "../lib/sepay";
 import { serializable } from "../lib/transaction";
+import { invalidatePublicVenueCache } from "../lib/public-cache";
 
 export interface CreateCourtInput {
   venueId: string;
@@ -134,7 +135,7 @@ export async function createCourt(
   actor: { id: string; role: string; status: string; name: string },
   input: CreateCourtInput
 ) {
-  return serializable(db, async (tx) => {
+  const result = await serializable(db, async (tx) => {
     await assertCourtManagementAccess(tx, actor, input.venueId);
 
     const existing = await tx.court.findFirst({
@@ -173,6 +174,8 @@ export async function createCourt(
 
     return { success: true, court };
   });
+  await invalidatePublicVenueCache();
+  return result;
 }
 
 /**
@@ -183,7 +186,7 @@ export async function updateCourt(
   actor: { id: string; role: string; status: string; name: string },
   input: UpdateCourtInput
 ) {
-  return serializable(db, async (tx) => {
+  const result = await serializable(db, async (tx) => {
     const court = await tx.court.findUnique({
       where: { id: input.courtId },
       include: { venue: { select: { id: true, ownerId: true } } },
@@ -243,6 +246,8 @@ export async function updateCourt(
 
     return { success: true, court: updated };
   });
+  await invalidatePublicVenueCache();
+  return result;
 }
 
 /**
@@ -253,7 +258,7 @@ export async function deleteCourt(
   actor: { id: string; role: string; status: string; name: string },
   courtId: string
 ) {
-  return serializable(db, async (tx) => {
+  const result = await serializable(db, async (tx) => {
     const court = await tx.court.findUnique({
       where: { id: courtId },
       include: {
@@ -276,6 +281,8 @@ export async function deleteCourt(
     await tx.court.delete({ where: { id: court.id } });
     return { success: true, message: "Đã xóa sân con thành công." };
   });
+  await invalidatePublicVenueCache();
+  return result;
 }
 
 /**
@@ -286,7 +293,7 @@ export async function upsertPricingRule(
   actor: { id: string; role: string; status: string; name: string },
   input: UpsertPricingRuleInput
 ) {
-  return serializable(db, async (tx) => {
+  const result = await serializable(db, async (tx) => {
     await assertCourtManagementAccess(tx, actor, input.venueId);
 
     if (input.startMin >= input.endMin) {
@@ -336,6 +343,8 @@ export async function upsertPricingRule(
 
     return { success: true, rule };
   });
+  await invalidatePublicVenueCache();
+  return result;
 }
 
 /**
@@ -346,7 +355,7 @@ export async function deletePricingRule(
   actor: { id: string; role: string; status: string; name: string },
   pricingRuleId: string
 ) {
-  return serializable(db, async (tx) => {
+  const result = await serializable(db, async (tx) => {
     const rule = await tx.pricingRule.findUnique({
       where: { id: pricingRuleId },
     });
@@ -357,6 +366,8 @@ export async function deletePricingRule(
     await tx.pricingRule.delete({ where: { id: pricingRuleId } });
     return { success: true };
   });
+  await invalidatePublicVenueCache();
+  return result;
 }
 
 /**

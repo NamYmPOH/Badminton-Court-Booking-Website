@@ -11,6 +11,9 @@ services:
       - DATABASE_URL=postgresql://smashbook:smashbook@postgres:5432/smashbook
       - DIRECT_URL=postgresql://smashbook:smashbook@postgres:5432/smashbook
       - REDIS_URL=redis://redis:6379
+      - PUBLIC_CACHE_ENABLED=true
+      - PUBLIC_CACHE_TTL_SECONDS=60
+      - REDIS_CACHE_PREFIX=smashbook:local:public:v1
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,8 +46,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:

@@ -10,8 +10,6 @@ import {
   assertCoachOwner,
   isDemoCoach,
   DEMO_COACH_HOURLY_RATE,
-  COACH_SPECIALTY_ALIASES,
-  normalizeCoachSpecialty,
   normalizeCoachSpecialties,
   type CoachProfileInput,
   type CoachCertificateInput,
@@ -22,6 +20,8 @@ import { operatorVenueScope } from "../lib/venue-operations";
 import { refundLedger, reserveRefund } from "./refund.service";
 import { serializable } from "./sepay.service";
 import { completeBookingSettlement } from "./settlement.service";
+import { invalidatePublicCoachCache } from "../lib/public-cache";
+import { listPublicCoachCatalog, publicCoachCatalog } from "./public-coach-catalog";
 
 export interface CoachFilterParams {
   page?: number;
@@ -59,196 +59,13 @@ export async function getPublicCoaches(
   database: PrismaClient = db,
   params: CoachFilterParams = {}
 ): Promise<{ coaches: PublicCoachListItem[]; total: number; page: number; limit: number }> {
-  const page = Math.max(1, params.page || 1);
-  const limit = Math.min(50, Math.max(1, params.limit || 12));
-  const skip = (page - 1) * limit;
-
-  // Build where filters
-  const where: Record<string, unknown> = {
-    status: "ACTIVE",
-    user: {
-      status: "ACTIVE",
-    },
-  };
-
-  if (params.q && params.q.trim()) {
-    const search = params.q.trim();
-    where.OR = [
-      { user: { name: { contains: search, mode: "insensitive" } } },
-      { bio: { contains: search, mode: "insensitive" } },
-      { specialties: { has: search } },
-    ];
-  }
-
-  if (params.specialty && params.specialty.trim()) {
-    const rawSpec = params.specialty.trim();
-    const norm = normalizeCoachSpecialty(rawSpec);
-    const variants = new Set<string>([rawSpec, norm]);
-    for (const [alias, canonical] of Object.entries(COACH_SPECIALTY_ALIASES)) {
-      if (canonical.toLowerCase() === norm.toLowerCase() || alias.toLowerCase() === rawSpec.toLowerCase()) {
-        variants.add(alias);
-        variants.add(canonical);
-      }
-    }
-    where.specialties = { hasSome: Array.from(variants) };
-  }
-
-  if (params.minRate !== undefined || params.maxRate !== undefined) {
-    where.hourlyRate = {
-      ...(params.minRate !== undefined ? { gte: params.minRate } : {}),
-      ...(params.maxRate !== undefined ? { lte: params.maxRate } : {}),
-    };
-  }
-
-  if (params.venueId) {
-    where.venues = {
-      some: {
-        venueId: params.venueId,
-        status: "ACTIVE",
-      },
-    };
-  } else if (params.district) {
-    where.venues = {
-      some: {
-        venue: {
-          district: { contains: params.district, mode: "insensitive" },
-        },
-        status: "ACTIVE",
-      },
-    };
-  }
-
-  const [total, rows] = await Promise.all([
-    database.coachProfile.count({ where }),
-    database.coachProfile.findMany({
-      where,
-      select: {
-        id: true,
-        userId: true,
-        bio: true,
-        specialties: true,
-        experienceYears: true,
-        hourlyRate: true,
-        user: {
-          select: {
-            name: true,
-            image: true,
-          },
-        },
-        venues: {
-          where: { status: "ACTIVE" },
-          select: {
-            venue: {
-              select: {
-                id: true,
-                name: true,
-                address: true,
-                district: true,
-                province: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: [{ hourlyRate: "asc" }, { createdAt: "desc" }],
-      skip,
-      take: limit,
-    }),
-  ]);
-
-  const coaches: PublicCoachListItem[] = rows.map((r) => ({
-    id: r.id,
-    userId: r.userId,
-    name: r.user.name,
-    image: r.user.image,
-    bio: r.bio,
-    specialties: r.specialties,
-    experienceYears: r.experienceYears,
-    hourlyRate: r.hourlyRate,
-    isDemo: isDemoCoach({ id: r.id, userId: r.userId, name: r.user.name }),
-    venues: r.venues.map((v) => ({
-      id: v.venue.id,
-      name: v.venue.name,
-      address: v.venue.address,
-      district: v.venue.district,
-      province: v.venue.province,
-    })),
-  }));
-
-  return { coaches, total, page, limit };
+  return listPublicCoachCatalog(database, params);
 }
 
 export async function getPublicCoachById(database: PrismaClient = db, coachId: string) {
-  const coach = await database.coachProfile.findFirst({
-    where: {
-      id: coachId,
-      status: "ACTIVE",
-      user: { status: "ACTIVE" },
-    },
-    select: {
-      id: true,
-      userId: true,
-      bio: true,
-      specialties: true,
-      experienceYears: true,
-      hourlyRate: true,
-      createdAt: true,
-      user: {
-        select: {
-          name: true,
-          image: true,
-        },
-      },
-      certificates: {
-        where: { verifiedAt: { not: null } },
-        select: {
-          id: true,
-          title: true,
-          verifiedAt: true,
-        },
-      },
-      venues: {
-        where: { status: "ACTIVE" },
-        select: {
-          venue: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              address: true,
-              district: true,
-              province: true,
-              openMin: true,
-              closeMin: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!coach) {
-    throw new PaymentError(404, "Không tìm thấy huấn luyện viên hoặc hồ sơ chưa được kích hoạt.");
-  }
-
-  return {
-    id: coach.id,
-    userId: coach.userId,
-    name: coach.user.name,
-    image: coach.user.image,
-    bio: coach.bio,
-    specialties: coach.specialties,
-    experienceYears: coach.experienceYears,
-    hourlyRate: coach.hourlyRate,
-    isDemo: isDemoCoach({ id: coach.id, userId: coach.userId, name: coach.user.name }),
-    createdAt: coach.createdAt.toISOString(),
-    certificates: coach.certificates.map((c) => ({
-      id: c.id,
-      title: c.title,
-      verifiedAt: c.verifiedAt?.toISOString() || null,
-    })),
-    venues: coach.venues.map((v) => v.venue),
-  };
+  const coach = (await publicCoachCatalog(database)).find(coach => coach.id === coachId);
+  if (!coach) throw new PaymentError(404, "Không tìm thấy huấn luyện viên hoặc hồ sơ chưa được kích hoạt.");
+  return coach;
 }
 
 interface Interval {
@@ -419,7 +236,7 @@ export async function upsertMyCoachProfile(
 
   const cleanSpecialties = normalizeCoachSpecialties(input.specialties);
 
-  return serializable(database, async (tx) => {
+  const result = await serializable(database, async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
       select: { id: true, status: true },
@@ -458,6 +275,8 @@ export async function upsertMyCoachProfile(
       },
     });
   });
+  await invalidatePublicCoachCache();
+  return result;
 }
 
 export async function addCoachCertificate(
@@ -496,7 +315,9 @@ export async function deleteCoachCertificate(
     throw new PaymentError(404, "Không tìm thấy chứng chỉ hoặc bạn không có quyền xóa.");
   }
 
-  return database.coachCertificate.delete({ where: { id: certificateId } });
+  const result = await database.coachCertificate.delete({ where: { id: certificateId } });
+  await invalidatePublicCoachCache();
+  return result;
 }
 
 export async function registerCoachVenue(
@@ -559,7 +380,7 @@ export async function reviewCoachVenue(
 ) {
   const input = coachVenueApprovalSchema.parse(rawInput);
 
-  return serializable(database, async (tx) => {
+  const result = await serializable(database, async (tx) => {
     const actor = await tx.user.findUnique({
       where: { id: actorId },
       select: { id: true, name: true, role: true, status: true },
@@ -626,6 +447,8 @@ export async function reviewCoachVenue(
 
     return updated;
   });
+  await invalidatePublicCoachCache();
+  return result;
 }
 
 export async function createCoachAvailability(

@@ -3,13 +3,14 @@ import { PaymentError } from "../lib/payment-error";
 import { serializable } from "../lib/transaction";
 import { validateReviewPhotos, type ReviewPhotoInput } from "../lib/review-images";
 import { hasFinishedPlaying, reviewInputSchema } from "../lib/review-policy";
+import { invalidatePublicVenueCache } from "../lib/public-cache";
 
 export async function submitBookingReview(db: PrismaClient, userId: string, code: string, raw: unknown, now = new Date(), photos: ReviewPhotoInput[] = []) {
   const validatedPhotos = validateReviewPhotos(photos);
   const parsed = reviewInputSchema.safeParse(raw);
   if (!parsed.success) throw new PaymentError(400, parsed.error.issues[0]?.message || "Đánh giá không hợp lệ.");
   const input = parsed.data;
-  return serializable(db, async tx => {
+  const result = await serializable(db, async tx => {
     const user = await tx.user.findUnique({ where: { id: userId }, select: { status: true } });
     if (user?.status !== "ACTIVE") throw new PaymentError(403, "Tài khoản không hoạt động.");
     const booking = await tx.booking.findFirst({
@@ -31,4 +32,6 @@ export async function submitBookingReview(db: PrismaClient, userId: string, code
     } });
     return review;
   });
+  await invalidatePublicVenueCache();
+  return result;
 }

@@ -6,6 +6,7 @@ import { getUserById } from "@/services/auth.service";
 import { getPendingEmailVerification } from "@/services/email.service";
 import { paymentErrorResponse, PaymentError } from "@/lib/sepay";
 import { assertSameOrigin } from "@/lib/admin-policy";
+import { invalidatePublicCoachCache } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,7 @@ export async function PATCH(request: Request) {
       },
     });
 
+    await invalidatePublicCoachCache();
     return NextResponse.json({
       success: true,
       message: "Cập nhật thông tin cá nhân thành công.",

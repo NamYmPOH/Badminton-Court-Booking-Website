@@ -6,6 +6,7 @@ import { assertSameOrigin } from "@/lib/admin-policy";
 import { PaymentError, paymentErrorResponse } from "@/lib/sepay";
 import { normalizeAmenities } from "@/lib/config/constants";
 import { parseCoordinates } from "@/lib/coordinates";
+import { invalidatePublicVenueCache } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -408,6 +409,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       return venue;
     });
 
+    await invalidatePublicVenueCache();
     return NextResponse.json({
       success: true,
       message: "Cập nhật toàn bộ thông tin cơ sở và cấu hình thành công.",

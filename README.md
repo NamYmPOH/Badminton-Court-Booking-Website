@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
+Hướng dẫn Redis cache catalog sân và HLV, cấu hình local/online và kiểm tra: [docs/redis-cache.vi.md](docs/redis-cache.vi.md). Chạy `npm run cache:check -- --catalog` để kiểm tra thêm catalog HLV từ database thật. Prompt mở rộng: [docs/prompts/redis-cache-next-phase.vi.md](docs/prompts/redis-cache-next-phase.vi.md).
+
 ## Getting Started
 
 First, run the development server:

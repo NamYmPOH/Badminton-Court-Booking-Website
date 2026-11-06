@@ -8,7 +8,10 @@ import { z } from "zod";
 const serverSchema = z.object({
   DATABASE_URL: z.string().url("DATABASE_URL phải là URL hợp lệ"),
   DIRECT_URL: z.string().url().optional(),
-  REDIS_URL: z.string().min(1, "REDIS_URL không được trống"),
+  REDIS_URL: z.string().optional(),
+  PUBLIC_CACHE_ENABLED: z.enum(["true", "false"]).optional(),
+  PUBLIC_CACHE_TTL_SECONDS: z.coerce.number().int().min(5).max(300).optional(),
+  REDIS_CACHE_PREFIX: z.string().min(1).optional(),
   AUTH_SECRET: z.string().min(16, "AUTH_SECRET phải >= 16 ký tự"),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),

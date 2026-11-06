@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { searchVenueSuggestions } from "@/services/venue.service";
+import { PaymentError } from "@/lib/payment-error";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
           message,
         },
       },
-      { status: 500 }
+      { status: error instanceof PaymentError ? error.status : 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }
