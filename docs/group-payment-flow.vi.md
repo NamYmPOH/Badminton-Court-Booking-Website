@@ -70,33 +70,7 @@ Ví dụ đơn 150.000đ, bốn người mỗi người 37.500đ: hai người c
 
 ## 6. Luồng tổng quát
 
-```mermaid
-flowchart TD
-    A[Tạo đơn và giữ sân theo hạn hiện tại] --> B[Chọn chia tiền nhóm]
-    B --> C[Chốt các phần phải trả và tạo mã riêng]
-    C --> D[Chia sẻ liên kết hoặc QR mời]
-    D --> E[Thành viên nhận phần của mình]
-    E --> F{Chọn cách trả}
-    F -->|Online mặc định| G[Hiện VietQR theo phần tiền]
-    G --> H[SePay báo giao dịch - máy chủ xác thực và đối soát]
-    H --> I[Cộng khoản thu hợp lệ đúng một lần]
-    F -->|Tiền mặt| J[Gửi yêu cầu trả tại sân]
-    J --> K{Sân duyệt toàn bộ phần còn thiếu?}
-    K -->|Có| L[Xác nhận sân - vẫn còn tiền chưa thu]
-    L --> M[Nhân viên thu tiền và ghi nhận từng phần]
-    M --> I
-    I --> N{Đã thu đủ tổng tiền?}
-    N -->|Có| O[Xác nhận đơn và kích hoạt vé cá nhân]
-    N -->|Chưa| P{Đã được sân duyệt trả phần còn lại?}
-    P -->|Có| L
-    P -->|Chưa| Q{Còn hạn giữ chỗ?}
-    K -->|Chưa| Q
-    Q -->|Có| R[Tiếp tục trả hoặc trưởng nhóm trả thay]
-    R --> F
-    Q -->|Hết hạn| S[Giải phóng sân và khóa yêu cầu thanh toán]
-    S --> T[Lập yêu cầu hoàn cho khoản đã thu nếu có]
-    O --> U[Nhân viên quét vé cá nhân khi đến sân]
-```
+Sơ đồ hoạt động và tuần tự của luồng nhóm đã vẽ lại theo mã triển khai: HĐ-02 và TT-04 trong [so-do-hoat-dong-va-tuan-tu.vi.md](so-do-hoat-dong-va-tuan-tu.vi.md).
 
 Thông báo SePay không khớp đi vào hàng chờ đối soát, không đi thẳng đến bước cộng tiền. Quy trình hết hạn phải chạy được ngay cả khi không ai mở trang nhóm; không phụ thuộc đồng hồ trên trình duyệt.
 

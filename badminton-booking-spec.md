@@ -795,102 +795,11 @@ classDiagram
 
 ### 5.5 Biểu đồ tuần tự
 
-**(a) Đặt sân và thanh toán VNPAY**
+Đã vẽ lại theo mã nguồn ngày 2026-11-26 (SePay/VietQR, giữ chỗ 5 phút, hủy có duyệt hoàn). Xem [docs/so-do-hoat-dong-va-tuan-tu.vi.md](docs/so-do-hoat-dong-va-tuan-tu.vi.md): TT-01 đặt sân và thanh toán, TT-02 hủy và hoàn tiền, TT-03 vận hành tại sân, TT-04 thanh toán nhóm.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor KH as Khách hàng
-  participant UI as Next.js UI
-  participant API as POST /api/bookings
-  participant RD as Redis
-  participant DB as PostgreSQL
-  participant VNP as VNPAY
-  KH->>UI: Chọn ô giờ và bấm Tiếp tục
-  UI->>API: items, voucherCode, thông tin liên hệ
-  API->>API: Zod validate và kiểm tra quy tắc BR-02, BR-03, BR-15
-  API->>RD: Lua giữ chỗ nhiều ô (TTL 10 phút)
-  alt có ô đã bị giữ
-    RD-->>API: 0
-    API-->>UI: 409 SLOT_TAKEN
-    UI-->>KH: Đánh dấu ô xung đột, cho chọn lại
-  else giữ chỗ thành công
-    RD-->>API: 1
-    API->>DB: BEGIN, dọn HELD hết hạn, tạo Booking và BookingItem(HELD)
-    alt vi phạm ràng buộc chống trùng
-      DB-->>API: lỗi exclusion (23P01)
-      API->>RD: Nhả khoá giữ chỗ
-      API-->>UI: 409 SLOT_TAKEN
-    else tạo thành công
-      DB-->>API: COMMIT
-      API-->>UI: bookingCode, expiresAt
-      UI->>API: POST /api/bookings/code/pay (VNPAY)
-      API->>DB: Tạo Payment(PENDING, txnRef)
-      API-->>UI: paymentUrl
-      UI->>VNP: Chuyển hướng khách sang cổng thanh toán
-      KH->>VNP: Thanh toán
-      VNP->>API: GET /api/payments/vnpay/ipn
-      API->>API: Xác thực chữ ký, đối chiếu số tiền, kiểm tra idempotent
-      API->>DB: Payment=PAID, Booking=CONFIRMED, Item=CONFIRMED
-      API->>RD: Nhả khoá giữ chỗ
-      API-->>VNP: RspCode 00
-      VNP-->>UI: Chuyển về /payment/result
-      UI->>API: GET /api/bookings/code
-      API-->>UI: status CONFIRMED
-      API-)KH: Email và thông báo xác nhận
-    end
-  end
-```
+### 5.6 Biểu đồ hoạt động
 
-**(b) Huỷ lịch**
-
-```mermaid
-sequenceDiagram
-  autonumber
-  actor KH as Khách hàng
-  participant UI as Next.js UI
-  participant API as POST /api/bookings/id/cancel
-  participant DB as PostgreSQL
-  participant RD as Redis
-  participant NT as NotificationService
-  KH->>UI: Bấm Huỷ lịch
-  UI->>API: Xem trước chính sách (dryRun)
-  API-->>UI: refundable true hoặc false
-  KH->>UI: Xác nhận huỷ
-  UI->>API: cancel(reason)
-  API->>DB: Kiểm tra quyền sở hữu và trạng thái hợp lệ
-  API->>DB: Booking=CANCELLED, Item=CANCELLED, paymentStatus=REFUND_PENDING nếu đủ điều kiện
-  API->>RD: Xoá khoá giữ chỗ nếu còn
-  API-)NT: Thông báo khách và chủ sân
-  API-->>UI: Booking đã huỷ
-```
-
-### 5.6 Biểu đồ hoạt động — Quy trình đặt sân
-
-```mermaid
-flowchart TD
-  A(["Bắt đầu: mở trang đặt sân"]) --> B["Chọn ngày"]
-  B --> C["Tải lưới lịch trống"]
-  C --> D["Chọn ô giờ trên một hoặc nhiều sân"]
-  D --> E{"Dải hợp lệ?<br/>(60-240 phút, liền kề)"}
-  E -- "Không" --> D
-  E -- "Có" --> F{"Đã đăng nhập?"}
-  F -- "Chưa" --> G["Đăng nhập, khôi phục bản nháp"] --> H
-  F -- "Rồi" --> H["Gửi yêu cầu tạo đặt sân"]
-  H --> I{"Giữ chỗ Redis<br/>thành công?"}
-  I -- "Không" --> X1["Báo SLOT_TAKEN"] --> C
-  I -- "Có" --> J{"Ghi DB qua ràng buộc<br/>chống trùng?"}
-  J -- "Trùng" --> X1
-  J -- "OK" --> K["Trang thanh toán + đếm ngược 10 phút"]
-  K --> L{"Chọn phương thức"}
-  L -- "Online" --> M["Chuyển sang VNPAY"]
-  L -- "Trả tại sân" --> P
-  M --> N{"Kết quả IPN"}
-  N -- "Thành công" --> P["Booking CONFIRMED"]
-  N -- "Thất bại / Hết hạn" --> Q["Giải phóng ô, booking EXPIRED hoặc CANCELLED"]
-  P --> R["Gửi thông báo + email"] --> S(["Kết thúc"])
-  Q --> S
-```
+Đã vẽ lại cùng tài liệu trên: HĐ-01 luồng chính đặt sân, HĐ-02 chia tiền nhóm, HĐ-03 hủy và hoàn tiền, HĐ-04 vận hành tại sân.
 
 ### 5.7 Biểu đồ trạng thái — Booking
 
